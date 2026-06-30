@@ -1,0 +1,41 @@
+import { NextRequest, NextResponse } from "next/server"
+import { createClient } from "@/lib/supabase/server"
+
+const WA_SERVICE_URL = process.env.WA_SERVICE_URL ?? "http://localhost:3099"
+const WA_HTTP_SECRET = process.env.WA_HTTP_SECRET ?? ""
+
+export async function POST(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: "Non authentifié" }, { status: 401 })
+
+  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single()
+  const role = (profile as { role: string } | null)?.role
+  if (role !== "super_admin" && role !== "admin") {
+    return NextResponse.json({ error: "Accès refusé" }, { status: 403 })
+  }
+
+  const { id } = await params
+
+  try {
+    const res = await fetch(`${WA_SERVICE_URL}/pairing-code`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(WA_HTTP_SECRET ? { "x-inaya-secret": WA_HTTP_SECRET } : {}),
+      },
+      body: JSON.stringify({ accountId: id }),
+      signal: AbortSignal.timeout(15_000),
+    })
+    const data = await res.json() as Record<string, unknown>
+    return NextResponse.json(data, { status: res.status })
+  } catch {
+    return NextResponse.json(
+      { error: "Service WhatsApp inaccessible — vérifiez que le service est démarré (pm2 restart inaya-whatsapp-service)" },
+      { status: 503 },
+    )
+  }
+}

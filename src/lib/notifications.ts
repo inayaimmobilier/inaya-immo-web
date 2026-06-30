@@ -1,0 +1,408 @@
+// ============================================================================
+// Notifications internes (§6.10) — création des notifications destinées au
+// staff/agents lors d'événements (nouveau lead, nouveau bien, match…).
+// L'ENVOI effectif (WhatsApp / Telegram / Push app Pi / email) est réalisé par
+// un service dispatcher qui consomme les lignes `envoye = false`. Ici on ne
+// fait que CRÉER les notifications (insertion via service_role).
+// ============================================================================
+
+import { createAdminClient } from "@/lib/supabase/server"
+import type { NotifCanal } from "@/types/database"
+import { sendSms } from "@/lib/sms"
+
+const VALID_CANAUX: NotifCanal[] = ["push", "email", "whatsapp", "telegram"]
+const DEFAULT_CANAUX: NotifCanal[] = ["push", "whatsapp", "telegram"]
+
+interface NotifPayload {
+  type: string                 // 'nouveau_lead', 'nouveau_bien', 'match_offre'…
+  titre: string
+  contenu: string
+  payload?: Record<string, unknown>
+}
+
+/** Lit les canaux de notification configurés dans app_settings. */
+async function getConfiguredCanaux(db: ReturnType<typeof createAdminClient>): Promise<NotifCanal[]> {
+  const { data } = await db.from("app_settings").select("value").eq("key", "notif_canaux").single()
+  const raw = (data as { value: unknown } | null)?.value
+  if (Array.isArray(raw)) {
+    const canaux = raw.filter((c): c is NotifCanal => VALID_CANAUX.includes(c as NotifCanal))
+    if (canaux.length) return canaux
+  }
+  return DEFAULT_CANAUX
+}
+
+/** Destinataires staff : admins + (optionnellement) agents. */
+async function getStaffRecipients(
+  db: ReturnType<typeof createAdminClient>,
+  opts: { includeAgents: boolean; agentId?: string | null },
+): Promise<string[]> {
+  // Si un agent est explicitement assigné, on le cible lui + les admins.
+  const roles = opts.includeAgents
+    ? ["super_admin", "admin", "moderateur", "agent"]
+    : ["super_admin", "admin"]
+  const { data } = await db
+    .from("profiles").select("id").in("role", roles).eq("status", "actif")
+  const ids = (data ?? []).map(p => (p as { id: string }).id)
+  if (opts.agentId && !ids.includes(opts.agentId)) ids.push(opts.agentId)
+  return ids
+}
+
+/**
+ * Crée une notification pour chaque destinataire et chaque canal configuré.
+ * Renvoie le nombre de lignes créées.
+ */
+export async function notifyStaff(
+  notif: NotifPayload,
+  opts: { includeAgents?: boolean; agentId?: string | null } = {},
+): Promise<number> {
+  const db = createAdminClient()
+  const [canaux, recipients] = await Promise.all([
+    getConfiguredCanaux(db),
+    getStaffRecipients(db, { includeAgents: opts.includeAgents ?? false, agentId: opts.agentId }),
+  ])
+  if (recipients.length === 0) return 0
+
+  const rows = recipients.flatMap(user_id =>
+    canaux.map(canal => ({
+      user_id,
+      canal,
+      type: notif.type,
+      titre: notif.titre,
+      contenu: notif.contenu,
+      payload: notif.payload ?? {},
+      lu: false,
+      envoye: false,
+    })),
+  )
+
+  const { error, count } = await db.from("notifications").insert(rows as never, { count: "exact" })
+  if (error) {
+    console.error("INAYA-NOTIF-001", error)
+    return 0
+  }
+  return count ?? rows.length
+}
+
+/**
+ * Alerte un chercheur qu'un bien correspond à sa requête (§6.9).
+ * Connecté → notification push (in-app). Anonyme (WhatsApp) → canal whatsapp
+ * sur son numéro. L'identité/contact du propriétaire n'est jamais inclus.
+ */
+export async function notifySearcher(args: {
+  userId: string | null
+  contactTel: string | null
+  propertyTitre: string
+  quartier?: string | null
+  propertyId: string
+  requestId: string
+  type: "exacte" | "similaire"
+}): Promise<void> {
+  const db = createAdminClient()
+  const lieu = args.quartier ? ` à ${args.quartier}` : ""
+  const intro = args.type === "exacte" ? "Un bien correspond à votre recherche" : "Un bien similaire à votre recherche est disponible"
+
+  const base = {
+    type: "match_offre",
+    titre: "Nouveau bien pour vous",
+    contenu: `${intro} : « ${args.propertyTitre} »${lieu}.`,
+    payload: { property_id: args.propertyId, request_id: args.requestId, match_type: args.type },
+    lu: false,
+    envoye: false,
+  }
+
+  const row = args.userId
+    ? { ...base, user_id: args.userId, canal: "push" as NotifCanal }
+    : args.contactTel
+      ? { ...base, contact_telephone: args.contactTel, canal: "whatsapp" as NotifCanal }
+      : null
+
+  if (!row) return
+  const { error } = await db.from("notifications").insert(row as never)
+  if (error) console.error("INAYA-NOTIF-003", error.message)
+}
+
+// ---------------------------------------------------------------------------
+// Notifications liées à une demande de visite (WhatsApp vers un numéro précis).
+// ---------------------------------------------------------------------------
+
+/** Envoie une notification WhatsApp à un numéro de téléphone donné. */
+async function notifyPhone(args: {
+  telephone: string | null | undefined
+  type: string
+  titre: string
+  contenu: string
+  payload?: Record<string, unknown>
+}): Promise<void> {
+  const tel = args.telephone?.trim()
+  if (!tel) return
+  const db = createAdminClient()
+  const { error } = await db.from("notifications").insert({
+    contact_telephone: tel,
+    canal: "whatsapp" as NotifCanal,
+    type: args.type,
+    titre: args.titre,
+    contenu: args.contenu,
+    payload: args.payload ?? {},
+    lu: false,
+    envoye: false,
+  } as never)
+  if (error) console.error("INAYA-NOTIF-020", error.message)
+}
+
+/** Confirmation envoyée au CLIENT dès la réception de sa demande de visite/réservation. */
+export async function notifyClientVisiteRecue(args: {
+  contactTel: string | null; contactNom: string; propertyTitre: string; quartier?: string | null
+  reservation?: boolean
+}): Promise<void> {
+  const lieu = args.quartier ? ` (${args.quartier})` : ""
+  const contenu = args.reservation
+    ? `Bonjour ${args.contactNom}, votre demande de réservation pour « ${args.propertyTitre} »${lieu} a bien été reçue. Nous confirmons la disponibilité avec le propriétaire très bientôt. Merci de votre confiance.`
+    : `Bonjour ${args.contactNom}, votre demande de visite pour « ${args.propertyTitre} »${lieu} a bien été reçue. Nous confirmons votre rendez-vous très bientôt. Merci de votre confiance.`
+
+  // WhatsApp (via dispatcher whatsapp-service)
+  await notifyPhone({
+    telephone: args.contactTel,
+    type: args.reservation ? "reservation_recue" : "visite_recue",
+    titre: args.reservation ? "Inaya Immo — réservation reçue" : "Inaya Immo — demande reçue",
+    contenu,
+  })
+
+  // SMS (envoi direct via Africa's Talking — indépendant du dispatcher WA)
+  const smsText = args.reservation
+    ? `Inaya Immo : Bonjour ${args.contactNom}, votre réservation pour « ${args.propertyTitre} »${lieu} est bien reçue. Nous revenons vers vous très bientôt.`
+    : `Inaya Immo : Bonjour ${args.contactNom}, votre demande de visite pour « ${args.propertyTitre} »${lieu} est bien reçue. Nous confirmons votre RDV très bientôt.`
+  await sendSms(args.contactTel, smsText)
+}
+
+/** Notification au PROPRIÉTAIRE/PUBLIEUR avec le lien de validation du rendez-vous / de la réservation. */
+export async function notifyProprietaireVisite(args: {
+  ownerTel: string | null; propertyTitre: string; quartier?: string | null
+  creneau?: string | null; validationUrl: string; reservation?: boolean
+}): Promise<void> {
+  const lieu = args.quartier ? ` (${args.quartier})` : ""
+  const contenu = args.reservation
+    ? `Une demande de réservation a été reçue pour votre résidence « ${args.propertyTitre} »${lieu}.${args.creneau ? ` Dates souhaitées : ${args.creneau}.` : ""} Confirmez ou refusez cette réservation : ${args.validationUrl}`
+    : `Une demande de visite a été reçue pour votre bien « ${args.propertyTitre} »${lieu}.${args.creneau ? ` Créneau souhaité : ${args.creneau}.` : ""} Validez ou refusez ce rendez-vous : ${args.validationUrl}`
+  await notifyPhone({
+    telephone: args.ownerTel,
+    type: args.reservation ? "reservation_a_valider" : "visite_a_valider",
+    titre: args.reservation ? "Inaya Immo — réservation à valider" : "Inaya Immo — rendez-vous à valider",
+    contenu,
+  })
+}
+
+/** Information au CLIENT de la décision du propriétaire (confirmé / refusé). */
+export async function notifyClientDecision(args: {
+  contactTel: string | null; propertyTitre: string; confirme: boolean
+}): Promise<void> {
+  const contenu = args.confirme
+    ? `Bonne nouvelle ! Votre visite de « ${args.propertyTitre} » est confirmée par le propriétaire. Un conseiller Inaya vous recontacte pour finaliser le créneau.`
+    : `Concernant « ${args.propertyTitre} » : le créneau proposé n'a pas pu être retenu. Un conseiller Inaya vous recontacte pour convenir d'un autre rendez-vous.`
+  await notifyPhone({
+    telephone: args.contactTel,
+    type: args.confirme ? "visite_confirmee" : "visite_refusee",
+    titre: "Inaya Immo — votre rendez-vous",
+    contenu,
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Helpers communs
+// ---------------------------------------------------------------------------
+
+/** Référence courte (4 hex majuscules) dérivée de l'UUID du lead. */
+function makeRef(id: string): string {
+  return id.replace(/-/g, "").slice(0, 4).toUpperCase()
+}
+
+/** Code alphanumérique unique (5 chars) sans caractères ambigus. */
+function generateConfirmCode(): string {
+  const CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+  let c = ""
+  for (let i = 0; i < 5; i++) c += CHARS[Math.floor(Math.random() * CHARS.length)]
+  return c
+}
+
+// ---------------------------------------------------------------------------
+// Helpers de formatage pour les messages WhatsApp agents
+// ---------------------------------------------------------------------------
+
+function formatPrix(prix: number, typeOffre: string): string {
+  const montant = prix.toLocaleString("fr-FR")
+  return typeOffre === "location" ? `${montant} FCFA/mois` : `${montant} FCFA`
+}
+
+function formatSurface(surface: number | null, nbPieces: number | null): string {
+  const parts: string[] = []
+  if (surface) parts.push(`${surface} m²`)
+  if (nbPieces) parts.push(`${nbPieces} pièce${nbPieces > 1 ? "s" : ""}`)
+  return parts.join(" · ") || ""
+}
+
+function formatTypeOffre(t: string): string {
+  return t === "location" ? "À louer" : t === "vente" ? "À vendre" : t
+}
+
+/**
+ * Notifie un AGENT qu'une tâche (lead) lui a été assignée.
+ * Fetche toutes les données nécessaires (lead + bien + publieur + agent) pour
+ * composer un message WhatsApp complet avec tous les détails de la mise en relation.
+ */
+export async function notifyAgentAssignment(args: {
+  agentId: string
+  leadId: string
+  propertyId: string
+  /** Fallbacks si la requête DB échoue */
+  propertyTitre?: string
+  contactNom?: string
+}): Promise<void> {
+  const db = createAdminClient()
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? ""
+
+  // Fetch toutes les données en parallèle
+  const [agentRes, leadRes, pubRes] = await Promise.all([
+    db.from("profiles").select("telephone, nom, prenom").eq("id", args.agentId).single(),
+    db.from("leads")
+      .select("contact_nom, contact_telephone, contact_email, message, creneaux, canal, properties(titre, type_offre, prix, surface, nb_pieces, quartier, ville)")
+      .eq("id", args.leadId)
+      .single(),
+    db.from("property_publishers")
+      .select("contact_nom, contact_phone")
+      .eq("property_id", args.propertyId)
+      .eq("est_original", true)
+      .limit(1)
+      .maybeSingle(),
+  ])
+
+  // Agent
+  const agent = agentRes.data as { telephone: string | null; nom: string | null; prenom: string | null } | null
+  const tel = agent?.telephone ?? null
+  const agentNom = [agent?.prenom, agent?.nom].filter(Boolean).join(" ") || "l'agent"
+
+  // Lead + bien
+  type LeadRow = {
+    contact_nom: string | null; contact_telephone: string | null; contact_email: string | null
+    message: string | null; creneaux: { souhaite?: string }[] | null; canal: string
+    properties: { titre: string; type_offre: string; prix: number; surface: number | null; nb_pieces: number | null; quartier: string | null; ville: string } | null
+  }
+  const lead = leadRes.data as LeadRow | null
+  const prop = Array.isArray(lead?.properties) ? lead?.properties[0] : lead?.properties
+
+  // Publieur original
+  type PubRow = { contact_nom: string | null; contact_phone: string | null }
+  const pub = pubRes.data as PubRow | null
+
+  // Fallbacks si DB fail
+  const clientNom = lead?.contact_nom || args.contactNom || "Client inconnu"
+  const propTitre = prop?.titre || args.propertyTitre || "Bien immobilier"
+  const creneau = lead?.creneaux?.[0]?.souhaite ?? null
+
+  // ── Composition du message WhatsApp ─────────────────────────────────────
+  const lines: string[] = []
+  lines.push(`*Nouvelle tâche assignée — Inaya Immo*`)
+  lines.push("")
+
+  // Bien
+  lines.push(`*🏠 Bien*`)
+  lines.push(`${propTitre}`)
+  if (prop) {
+    lines.push(`${formatTypeOffre(prop.type_offre)} · *${formatPrix(prop.prix, prop.type_offre)}*`)
+    const surf = formatSurface(prop.surface, prop.nb_pieces)
+    if (surf) lines.push(surf)
+    const lieu = [prop.quartier, prop.ville].filter(Boolean).join(", ")
+    if (lieu) lines.push(`📍 ${lieu}`)
+  }
+  lines.push("")
+
+  // Client
+  lines.push(`*👤 Client*`)
+  lines.push(clientNom)
+  if (lead?.contact_telephone) lines.push(`📞 ${lead.contact_telephone}`)
+  if (lead?.contact_email) lines.push(`✉ ${lead.contact_email}`)
+  if (lead?.message) lines.push(`💬 _"${lead.message}"_`)
+  if (creneau) lines.push(`🗓 Créneau souhaité : *${creneau}*`)
+  lines.push("")
+
+  // Publieur / propriétaire
+  if (pub?.contact_nom || pub?.contact_phone) {
+    lines.push(`*🤝 Propriétaire / Publieur*`)
+    if (pub.contact_nom) lines.push(pub.contact_nom)
+    if (pub.contact_phone) lines.push(`📞 ${pub.contact_phone}`)
+    lines.push("")
+  }
+
+  // Lien admin
+  if (baseUrl) lines.push(`🔗 ${baseUrl}/admin/leads/${args.leadId}`)
+
+  // Code unique de confirmation
+  const confirmCode = generateConfirmCode()
+  lines.push("")
+  lines.push(`🔑 *Code de confirmation : ${confirmCode}*`)
+  lines.push(`Envoyez ce code par WhatsApp pour confirmer la prise en charge.`)
+
+  const contenu = lines.join("\n")
+  const contenuCourt = `Nouvelle tâche : ${clientNom} pour « ${propTitre} »${creneau ? ` · créneau : ${creneau}` : ""}`
+  const payload = { lead_id: args.leadId, property_id: args.propertyId }
+
+  const rows: Record<string, unknown>[] = [
+    // 1. Push in-app (message court pour la notification)
+    {
+      user_id: args.agentId, canal: "push" as NotifCanal, type: "tache_assignee",
+      titre: "Tâche assignée", contenu: contenuCourt, payload, lu: false, envoye: false,
+    },
+    // 2. WhatsApp — message complet avec tous les détails
+    {
+      user_id: args.agentId, contact_telephone: tel,
+      canal: "whatsapp" as NotifCanal, type: "tache_assignee",
+      titre: "Inaya Immo — tâche assignée", contenu, payload: { lead_id: args.leadId }, lu: false, envoye: false,
+    },
+    // 3. Telegram groupe staff interne
+    {
+      canal: "telegram" as NotifCanal, type: "tache_assignee",
+      titre: `Tâche assignée → ${agentNom}`,
+      contenu: contenuCourt, payload, lu: false, envoye: false,
+    },
+  ]
+
+  const { error } = await db.from("notifications").insert(rows as never)
+  if (error) { console.error("INAYA-NOTIF-030", error.message); return }
+
+  // Crée une ligne de suivi avec le code de confirmation
+  const { error: fErr } = await db.from("lead_followups").insert({
+    lead_id: args.leadId,
+    agent_id: args.agentId,
+    ref: makeRef(args.leadId),
+    statut_avant: "nouveau",
+    awaiting_confirmation: true,
+    confirmation_code: confirmCode,
+  } as never)
+  if (fErr && fErr.code !== "42703" && fErr.code !== "42P01") {
+    console.error("INAYA-NOTIF-031", fErr.message)
+  }
+
+  // Met à jour derniere_relance_le pour que le scheduler ne re-relance pas immédiatement
+  await db.from("leads")
+    .update({ derniere_relance_le: new Date().toISOString() } as never)
+    .eq("id", args.leadId)
+}
+
+/** Notification dédiée : nouveau lead reçu sur une annonce. */
+export async function notifyNewLead(args: {
+  propertyTitre: string
+  quartier?: string | null
+  contactNom: string
+  contactTel: string
+  creneau?: string | null
+  leadId: string
+  propertyId: string
+  agentId?: string | null
+}): Promise<number> {
+  const lieu = args.quartier ? ` (${args.quartier})` : ""
+  const creneau = args.creneau ? ` · créneau souhaité : ${args.creneau}` : ""
+  return notifyStaff({
+    type: "nouveau_lead",
+    titre: "Nouvelle demande de visite",
+    contenu: `${args.contactNom} (${args.contactTel}) souhaite visiter « ${args.propertyTitre} »${lieu}${creneau}.`,
+    payload: { lead_id: args.leadId, property_id: args.propertyId },
+  }, { includeAgents: true, agentId: args.agentId })
+}
