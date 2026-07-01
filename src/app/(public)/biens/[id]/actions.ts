@@ -154,9 +154,11 @@ export async function signalerAnnonce(form: FormData): Promise<ReportResult> {
     contact,
     statut: "nouveau",
   } as never)
-  // 42P01 = table absente (migration 031 non appliquée) ; on ne bloque pas :
-  // le staff est tout de même alerté ci-dessous.
-  if (error && error.code !== "42P01") {
+  // Table absente (migration 031 non appliquée) : 42P01 (Postgres) ou PGRST205
+  // (cache de schéma PostgREST). On ne bloque pas — le staff est tout de même
+  // alerté ci-dessous, le signalement n'est pas perdu.
+  const tableMissing = error?.code === "42P01" || error?.code === "PGRST205"
+  if (error && !tableMissing) {
     console.error("INAYA-DB-060", error)
     return { ok: false, error: "Échec de l'envoi du signalement. Réessayez." }
   }

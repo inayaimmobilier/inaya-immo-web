@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation"
 import Link from "next/link"
-import { createClient } from "@/lib/supabase/server"
+import { createClient, createAdminClient } from "@/lib/supabase/server"
+import SignalementsPanel from "./SignalementsPanel"
 import {
   ArrowLeft, Users, Copy, Star, Phone, User, MessageSquare, Globe, Star as StarIcon, Images, Smartphone,
 } from "lucide-react"
@@ -86,6 +87,19 @@ export default async function AdminBienDetail({ params }: PageProps) {
   const candidates = ((candData ?? []) as Candidate[]).filter(c => c.candidate_id)
   const medias = (mediaData ?? []) as MediaRow[]
 
+  // Signalements ouverts (résilient si migration 031 non appliquée → aucun).
+  type SigRow = { id: string; categorie: string | null; motif: string | null; contact: string | null; created_at: string }
+  let signalements: SigRow[] = []
+  {
+    const admin = createAdminClient()
+    const { data: sigData, error: sigErr } = await admin
+      .from("signalements")
+      .select("id,categorie,motif,contact,created_at")
+      .eq("property_id", id).eq("statut", "nouveau")
+      .order("created_at", { ascending: false })
+    if (!sigErr && sigData) signalements = sigData as SigRow[]
+  }
+
   return (
     <div className="p-6 space-y-6 max-w-4xl">
       <div>
@@ -111,6 +125,11 @@ export default async function AdminBienDetail({ params }: PageProps) {
           </div>
         </div>
       </div>
+
+      {/* Signalements — mis en avant en rouge pour traitement rapide */}
+      {signalements.length > 0 && (
+        <SignalementsPanel propertyId={prop.id} reports={signalements} />
+      )}
 
       {/* Édition + changement de statut */}
       <PropertyEditForm

@@ -132,3 +132,33 @@ export async function deleteProperty(propertyId: string): Promise<{ ok: true } |
   revalidatePath("/admin/annonces")
   return { ok: true }
 }
+
+/**
+ * Marque comme traités tous les signalements ouverts d'une annonce.
+ * L'annonce ne ressort alors plus en rouge dans la liste. Réservé au staff.
+ * Résilient si la migration 031 n'est pas appliquée (42P01).
+ */
+export async function marquerSignalementsTraites(propertyId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const role = await getCallerRole()
+  if (!role || !["super_admin", "admin", "moderateur"].includes(role)) {
+    return { ok: false, error: "Accès refusé" }
+  }
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  const admin = createAdminClient()
+  const { error } = await admin
+    .from("signalements")
+    .update({ statut: "traite", traite_par: user?.id ?? null, traite_le: new Date().toISOString() } as never)
+    .eq("property_id", propertyId).eq("statut", "nouveau")
+  const tableMissing = error?.code === "42P01" || error?.code === "PGRST205"
+  if (error && !tableMissing) {
+    console.error("INAYA-SIG-001", error)
+    return { ok: false, error: error.message }
+  }
+
+  revalidatePath(`/admin/annonces/${propertyId}`)
+  revalidatePath("/admin/annonces")
+  return { ok: true }
+}

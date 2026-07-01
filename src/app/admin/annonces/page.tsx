@@ -1,6 +1,6 @@
-import { createClient } from "@/lib/supabase/server"
+import { createClient, createAdminClient } from "@/lib/supabase/server"
 import { formatPrix, formatRelativeDate, TYPE_OFFRE_LABEL } from "@/lib/utils"
-import { CheckCircle, XCircle, Eye, Plus, Clock, Globe, Archive, Copy } from "lucide-react"
+import { CheckCircle, XCircle, Eye, Plus, Clock, Globe, Archive, Copy, Flag } from "lucide-react"
 import Link from "next/link"
 import AutoRefresh from "@/components/shared/AutoRefresh"
 
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic"
 const PER_PAGE = 20
 
 interface PageProps {
-  searchParams: Promise<{ statut?: string; q?: string; page?: string }>
+  searchParams: Promise<{ statut?: string; q?: string; page?: string; signalees?: string }>
 }
 
 const STATUTS = [
@@ -45,6 +45,21 @@ export default async function AnnoncesAdminPage({ searchParams }: PageProps) {
     property_media: { url: string; type: string; ordre: number; thumbnail_url: string | null }[]
   }
 
+  // Signalements ouverts (résilient si migration 031 non appliquée → aucun).
+  const adminDb = createAdminClient()
+  const reportCount = new Map<string, number>()
+  {
+    const { data: sigs, error: sigErr } = await adminDb
+      .from("signalements").select("property_id").eq("statut", "nouveau")
+    if (!sigErr && sigs) {
+      for (const s of sigs as { property_id: string }[]) {
+        reportCount.set(s.property_id, (reportCount.get(s.property_id) ?? 0) + 1)
+      }
+    }
+  }
+  const reportedIds = [...reportCount.keys()]
+  const signaleesActive = params.signalees === "1"
+
   let countQ = supabase.from("properties").select("*", { count: "exact", head: true })
   let dataQ  = supabase.from("properties")
     .select("id,titre,type_offre,categorie,statut,prix,quartier,created_at,source,property_media(url,type,ordre,thumbnail_url)")
@@ -53,6 +68,11 @@ export default async function AnnoncesAdminPage({ searchParams }: PageProps) {
 
   if (params.statut) { countQ = countQ.eq("statut", params.statut); dataQ = dataQ.eq("statut", params.statut as never) }
   if (params.q)      { countQ = countQ.ilike("titre", `%${params.q}%`); dataQ = dataQ.ilike("titre", `%${params.q}%`) }
+  if (signaleesActive) {
+    // Restreint aux annonces signalées (uuid factice si aucune → 0 résultat).
+    const ids = reportedIds.length ? reportedIds : ["00000000-0000-0000-0000-000000000000"]
+    countQ = countQ.in("id", ids); dataQ = dataQ.in("id", ids)
+  }
 
   const [{ count }, { data }] = await Promise.all([countQ, dataQ])
   const properties = (data ?? []) as PropRow[]
@@ -63,6 +83,7 @@ export default async function AnnoncesAdminPage({ searchParams }: PageProps) {
     const p = new URLSearchParams({ ...params, ...overrides })
     if (!p.get("statut")) p.delete("statut")
     if (!p.get("q")) p.delete("q")
+    if (!p.get("signalees")) p.delete("signalees")
     p.delete("page")
     Object.entries(overrides).forEach(([k, v]) => { if (!v) p.delete(k) })
     return `/admin/annonces?${p.toString()}`
@@ -98,11 +119,11 @@ export default async function AnnoncesAdminPage({ searchParams }: PageProps) {
         {/* Tabs statut */}
         <div className="flex flex-wrap gap-2">
           {STATUTS.map(({ value, label }) => {
-            const active = (params.statut ?? "") === value
+            const active = !signaleesActive && (params.statut ?? "") === value
             return (
               <a
                 key={value}
-                href={buildUrl({ statut: value, page: "1" })}
+                href={buildUrl({ statut: value, signalees: "", page: "1" })}
                 className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-colors border ${
                   active
                     ? "bg-blue-700 text-white border-blue-700"
@@ -113,10 +134,24 @@ export default async function AnnoncesAdminPage({ searchParams }: PageProps) {
               </a>
             )
           })}
+          {/* Onglet signalées — mis en avant en rouge */}
+          {reportedIds.length > 0 && (
+            <a
+              href={signaleesActive ? buildUrl({ signalees: "", page: "1" }) : buildUrl({ signalees: "1", statut: "", page: "1" })}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors border ${
+                signaleesActive
+                  ? "bg-red-600 text-white border-red-600"
+                  : "bg-red-50 text-red-700 border-red-200 hover:border-red-400"
+              }`}
+            >
+              <Flag className="w-3.5 h-3.5" /> Signalées ({reportedIds.length})
+            </a>
+          )}
         </div>
         {/* Recherche */}
         <form method="get" action="/admin/annonces" className="flex gap-2">
           {params.statut && <input type="hidden" name="statut" value={params.statut} />}
+          {signaleesActive && <input type="hidden" name="signalees" value="1" />}
           <input
             name="q"
             defaultValue={params.q}
@@ -158,9 +193,10 @@ export default async function AnnoncesAdminPage({ searchParams }: PageProps) {
                   const media = p.property_media ?? []
                   const thumb = media.filter(m => m.type === "image").sort((a, b) => a.ordre - b.ordre)[0]?.url
                     ?? media.filter(m => m.type === "video" && m.thumbnail_url).sort((a, b) => a.ordre - b.ordre)[0]?.thumbnail_url
+                  const reported = reportCount.get(p.id) ?? 0
 
                   return (
-                    <tr key={p.id} className="hover:bg-gray-50/60 transition-colors">
+                    <tr key={p.id} className={`transition-colors ${reported > 0 ? "bg-red-50/70 hover:bg-red-50 border-l-4 border-l-red-500" : "hover:bg-gray-50/60"}`}>
                       <td className="px-5 py-3">
                         <Link href={`/admin/annonces/${p.id}`} className="flex items-center gap-3 group">
                           {thumb ? (
@@ -169,8 +205,14 @@ export default async function AnnoncesAdminPage({ searchParams }: PageProps) {
                             <div className="w-10 h-10 rounded-lg bg-gray-100 flex-shrink-0" />
                           )}
                           <div className="min-w-0">
-                            <p className="font-medium text-gray-900 group-hover:text-blue-700 truncate max-w-[200px]">{p.titre}</p>
-                            <p className="text-xs text-gray-400">{p.quartier}</p>
+                            <p className={`font-medium truncate max-w-[200px] ${reported > 0 ? "text-red-700 group-hover:text-red-800" : "text-gray-900 group-hover:text-blue-700"}`}>{p.titre}</p>
+                            {reported > 0 ? (
+                              <span className="inline-flex items-center gap-1 mt-0.5 text-[11px] font-semibold text-red-600 bg-red-100 px-1.5 py-0.5 rounded-full">
+                                <Flag className="w-3 h-3" /> {reported} signalement{reported > 1 ? "s" : ""}
+                              </span>
+                            ) : (
+                              <p className="text-xs text-gray-400">{p.quartier}</p>
+                            )}
                           </div>
                         </Link>
                       </td>
