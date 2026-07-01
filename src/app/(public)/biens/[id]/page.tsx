@@ -4,6 +4,7 @@ import { createClient, createAdminClient } from "@/lib/supabase/server"
 import Navbar from "@/components/shared/Navbar"
 import ContactForm from "./ContactForm"
 import FavoriteButton from "./FavoriteButton"
+import ReportButton from "./ReportButton"
 import Gallery from "./Gallery"
 import { isRealEmail } from "@/lib/account-actions"
 import {
@@ -213,7 +214,10 @@ export default async function BienDetailPage({ params }: PageProps) {
                   <div className="flex items-center gap-1.5 text-xs text-green-600">
                     <CheckCircle2 className="w-4 h-4" /> Annonce vérifiée par Inaya
                   </div>
-                  <FavoriteButton propertyId={property.id} initialActive={isFav} loggedIn={!!user} />
+                  <div className="flex items-center gap-2">
+                    <ReportButton propertyId={property.id} />
+                    <FavoriteButton propertyId={property.id} initialActive={isFav} loggedIn={!!user} />
+                  </div>
                 </div>
               </div>
 
