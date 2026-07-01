@@ -1,4 +1,3 @@
-import { redirect } from "next/navigation"
 import { createClient, createAdminClient } from "@/lib/supabase/server"
 import Navbar from "@/components/shared/Navbar"
 import NouvelleRequeteForm from "./NouvelleRequeteForm"
@@ -17,11 +16,9 @@ export default async function NouvelleRequetePage({ searchParams }: PageProps) {
   const { data: { user } } = await supabase.auth.getUser()
 
   const params = await searchParams
-  const qs = new URLSearchParams(params as Record<string, string>).toString()
 
-  if (!user) {
-    redirect(`/connexion?redirect=${encodeURIComponent(`/mes-requetes/nouvelle${qs ? `?${qs}` : ""}`)}`)
-  }
+  // Pas de compte ? On ne force PAS la connexion : le formulaire demandera le
+  // numéro WhatsApp pour pouvoir recontacter le chercheur (§6.9).
 
   // Résolution quartier_id → nom si venu de HomeSearch
   let quartierNom = params.quartier || ""
@@ -55,10 +52,12 @@ export default async function NouvelleRequetePage({ searchParams }: PageProps) {
           <div className="mb-6">
             <h1 className="text-2xl font-bold text-gray-900">Sauvegarder ma recherche</h1>
             <p className="text-sm text-gray-500 mt-1">
-              Vous serez alerté(e) par email dès qu&apos;un bien correspondant est publié.
+              {user
+                ? "Vous serez alerté(e) dès qu'un bien correspondant est publié."
+                : "Vous serez alerté(e) sur WhatsApp dès qu'un bien correspondant est publié — sans créer de compte."}
             </p>
           </div>
-          <NouvelleRequeteForm initial={initial} quartiers={quartiers} />
+          <NouvelleRequeteForm initial={initial} quartiers={quartiers} isAuthenticated={!!user} />
         </div>
       </main>
     </>

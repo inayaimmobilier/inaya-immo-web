@@ -1,13 +1,18 @@
 "use server"
 
-import { createClient } from "@/lib/supabase/server"
+import { createClient, createAdminClient } from "@/lib/supabase/server"
 import { runMatchingForRequest } from "@/lib/matching"
 import type { PropertyCat, PropertyType } from "@/types/database"
+
+function normalizePhone(raw: string): string | null {
+  const cleaned = raw.replace(/[^\d+]/g, "").trim()
+  if (cleaned.replace(/\D/g, "").length < 8) return null
+  return cleaned
+}
 
 export async function saveSearchFull(form: FormData) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: "Non authentifié" }
 
   const type      = (form.get("type") as string) || null
   const categorie = (form.get("categorie") as string) || null
@@ -17,8 +22,7 @@ export async function saveSearchFull(form: FormData) {
   const pieces_min = form.get("pieces_min") ? Number(form.get("pieces_min")) : null
   const q         = (form.get("q") as string) || null
 
-  const payload = {
-    user_id:          user.id,
+  const criteres = {
     canal:            "web" as const,
     type_offre:       type as PropertyType | null,
     categories:       categorie ? [categorie as PropertyCat] : null,
@@ -30,13 +34,30 @@ export async function saveSearchFull(form: FormData) {
     statut:           "active" as const,
   }
 
-  const { data, error } = await supabase
-    .from("search_requests").insert(payload as never).select("id").single()
-  if (error) return { error: "Échec de l'enregistrement : " + error.message }
+  let requestId: string
 
-  const requestId = (data as { id: string }).id
+  if (user) {
+    const { data, error } = await supabase
+      .from("search_requests").insert({ ...criteres, user_id: user.id } as never).select("id").single()
+    if (error) return { error: "Échec de l'enregistrement : " + error.message }
+    requestId = (data as { id: string }).id
+  } else {
+    // Anonyme : numéro WhatsApp obligatoire (le formulaire l'exige côté front).
+    const tel = normalizePhone((form.get("telephone") as string) || "")
+    if (!tel) return { error: "Numéro WhatsApp requis pour être alerté sans compte." }
+    const nom = (form.get("nom") as string)?.trim() || null
+
+    const admin = createAdminClient()
+    const { data, error } = await admin
+      .from("search_requests")
+      .insert({ ...criteres, user_id: null, contact_telephone: tel, contact_nom: nom } as never)
+      .select("id").single()
+    if (error) return { error: "Échec de l'enregistrement : " + error.message }
+    requestId = (data as { id: string }).id
+  }
+
   try { await runMatchingForRequest(requestId, { notify: false }) }
   catch { /* matching optionnel */ }
 
-  return { ok: true, requestId }
+  return { ok: true, requestId, anonymous: !user }
 }

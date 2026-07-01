@@ -104,20 +104,31 @@ export async function notifySearcher(args: {
   const base = {
     type: "match_offre",
     titre: "Nouveau bien pour vous",
-    contenu: `${intro} : « ${args.propertyTitre} »${lieu}.`,
+    contenu: `${intro} : « ${args.propertyTitre} »${lieu}. Voir : ${(process.env.NEXT_PUBLIC_APP_URL ?? "").replace(/\/$/, "")}/biens/${args.propertyId}`,
     payload: { property_id: args.propertyId, request_id: args.requestId, match_type: args.type },
     lu: false,
     envoye: false,
   }
 
-  const row = args.userId
-    ? { ...base, user_id: args.userId, canal: "push" as NotifCanal }
-    : args.contactTel
-      ? { ...base, contact_telephone: args.contactTel, canal: "whatsapp" as NotifCanal }
-      : null
+  const rows: Record<string, unknown>[] = []
 
-  if (!row) return
-  const { error } = await db.from("notifications").insert(row as never)
+  if (args.userId) {
+    // Connecté : notification push in-app…
+    rows.push({ ...base, user_id: args.userId, canal: "push" as NotifCanal })
+    // …+ WhatsApp sur le numéro de son profil s'il existe (recontact direct).
+    const { data: prof } = await db
+      .from("profiles").select("telephone").eq("id", args.userId).single()
+    const tel = (prof as { telephone: string | null } | null)?.telephone?.trim()
+    if (tel) {
+      rows.push({ ...base, user_id: args.userId, contact_telephone: tel, canal: "whatsapp" as NotifCanal })
+    }
+  } else if (args.contactTel) {
+    // Anonyme : WhatsApp sur le numéro fourni lors de la sauvegarde.
+    rows.push({ ...base, contact_telephone: args.contactTel, canal: "whatsapp" as NotifCanal })
+  }
+
+  if (rows.length === 0) return
+  const { error } = await db.from("notifications").insert(rows as never)
   if (error) console.error("INAYA-NOTIF-003", error.message)
 }
 

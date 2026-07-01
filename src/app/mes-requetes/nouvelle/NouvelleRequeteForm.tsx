@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { BellPlus, Loader2, Check } from "lucide-react"
+import { BellPlus, Loader2, Check, MessageCircle } from "lucide-react"
 import { saveSearchFull } from "./actions"
 
 const CATEGORIES = [
@@ -32,10 +32,11 @@ interface Initial {
 const inputCls = "w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-700 bg-gray-50 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
 
 export default function NouvelleRequeteForm({
-  initial, quartiers,
+  initial, quartiers, isAuthenticated,
 }: {
   initial: Initial
   quartiers: { id: string; nom: string }[]
+  isAuthenticated: boolean
 }) {
   const router = useRouter()
   const [pending, start] = useTransition()
@@ -43,18 +44,29 @@ export default function NouvelleRequeteForm({
   const [error, setError] = useState<string | null>(null)
 
   const [form, setForm] = useState(initial)
+  const [telephone, setTelephone] = useState("")
+  const [nom, setNom] = useState("")
   const set = (k: keyof Initial, v: string) => setForm(p => ({ ...p, [k]: v }))
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
+    // Sans compte : le numéro WhatsApp est requis pour le recontact.
+    if (!isAuthenticated) {
+      const digits = telephone.replace(/\D/g, "")
+      if (digits.length < 8) { setError("Entrez un numéro WhatsApp valide pour être alerté(e)."); return }
+    }
     start(async () => {
       const fd = new FormData()
       Object.entries(form).forEach(([k, v]) => fd.append(k, v))
+      if (!isAuthenticated) {
+        fd.append("telephone", telephone.replace(/[^\d+]/g, ""))
+        fd.append("nom", nom)
+      }
       const res = await saveSearchFull(fd)
       if ("error" in res) { setError(res.error ?? null); return }
       setDone(true)
-      setTimeout(() => router.push("/client/mes-requetes"), 1500)
+      setTimeout(() => router.push(isAuthenticated ? "/client/mes-requetes" : "/biens"), 1800)
     })
   }
 
@@ -157,6 +169,30 @@ export default function NouvelleRequeteForm({
           rows={2} placeholder="Ex : villa avec jardin, proche du marché…"
           className={`${inputCls} resize-none`} />
       </div>
+
+      {/* Numéro WhatsApp — requis sans compte, pour le recontact */}
+      {!isAuthenticated && (
+        <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <MessageCircle className="w-4 h-4 text-blue-600" />
+            <p className="text-xs text-gray-600">
+              Pas de compte ? Laissez votre <strong>numéro WhatsApp</strong> : nous vous alertons dès qu&apos;un bien correspond.
+            </p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1.5">Numéro WhatsApp <span className="text-red-500">*</span></label>
+            <input type="tel" inputMode="tel" value={telephone} onChange={e => setTelephone(e.target.value)}
+              placeholder="Ex : 07 07 00 00 00" className={inputCls} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1.5">
+              Votre nom <span className="text-gray-400 font-normal">(optionnel)</span>
+            </label>
+            <input type="text" value={nom} onChange={e => setNom(e.target.value)}
+              placeholder="Ex : Awa K." className={inputCls} />
+          </div>
+        </div>
+      )}
 
       <button type="submit" disabled={pending}
         className="w-full flex items-center justify-center gap-2 bg-blue-700 hover:bg-blue-800 text-white py-3 rounded-xl text-sm font-semibold transition-colors disabled:opacity-60">

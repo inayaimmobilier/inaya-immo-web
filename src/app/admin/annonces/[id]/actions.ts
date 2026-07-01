@@ -82,6 +82,18 @@ export async function changeStatut(propertyId: string, statut: string) {
   const admin = createAdminClient()
   const { error } = await admin.from("properties").update({ statut } as never).eq("id", propertyId)
   if (error) return { error: error.message }
+
+  // Publication → matching §6.9 : alerte les chercheurs correspondants. Best-effort.
+  if (statut === "publie") {
+    try {
+      const { runMatchingForProperty } = await import("@/lib/matching")
+      const n = await runMatchingForProperty(propertyId)
+      if (n > 0) console.info(`INAYA-MATCH: ${n} chercheur(s) alerté(s) pour ${propertyId}`)
+    } catch (e) {
+      console.error("INAYA-MATCH-006", e)
+    }
+  }
+
   revalidatePath(`/admin/annonces/${propertyId}`)
   return { ok: true }
 }
