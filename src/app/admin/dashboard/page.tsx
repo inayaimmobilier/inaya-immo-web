@@ -1,6 +1,10 @@
 import { createClient } from "@/lib/supabase/server"
 import { Home, MessageSquare, Wallet, Clock, AlertCircle } from "lucide-react"
 import { formatPrix } from "@/lib/utils"
+import AutoRefresh from "@/components/shared/AutoRefresh"
+
+// Données temps réel (ingestion WhatsApp) : jamais de cache, toujours frais.
+export const dynamic = "force-dynamic"
 
 async function getDashboardStats() {
   const supabase = await createClient()
@@ -119,6 +123,7 @@ export default async function DashboardPage() {
 
   return (
     <div className="p-6 space-y-8">
+      <AutoRefresh intervalMs={45_000} />
       {/* En-tête */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>

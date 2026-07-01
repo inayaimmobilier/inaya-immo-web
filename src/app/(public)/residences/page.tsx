@@ -2,12 +2,16 @@ import Link from "next/link"
 import Navbar from "@/components/shared/Navbar"
 import PropertyCard from "@/components/properties/PropertyCard"
 import { createClient } from "@/lib/supabase/server"
+import AutoRefresh from "@/components/shared/AutoRefresh"
 import { Sofa, PlusCircle } from "lucide-react"
 
 export const metadata = {
   title: "Résidences meublées – Inaya Immo",
   description: "Appartements et studios meublés à Bouaké, vérifiés par Inaya Immo.",
 }
+
+// Données temps réel (ingestion WhatsApp) : jamais de cache, toujours frais.
+export const dynamic = "force-dynamic"
 
 type Property = Parameters<typeof PropertyCard>[0]["property"]
 
@@ -25,6 +29,7 @@ export default async function ResidencesPage() {
 
   return (
     <>
+      <AutoRefresh intervalMs={60_000} />
       <Navbar />
       <main className="min-h-screen bg-gray-50">
         {/* Header */}

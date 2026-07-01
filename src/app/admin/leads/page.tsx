@@ -2,6 +2,10 @@ import Link from "next/link"
 import { createClient } from "@/lib/supabase/server"
 import { formatRelativeDate, LEAD_STATUT_LABEL } from "@/lib/utils"
 import { MessageSquare, ChevronRight } from "lucide-react"
+import AutoRefresh from "@/components/shared/AutoRefresh"
+
+// Données temps réel (ingestion WhatsApp) : jamais de cache, toujours frais.
+export const dynamic = "force-dynamic"
 
 const PER_PAGE = 20
 
@@ -63,6 +67,7 @@ export default async function LeadsPage({ searchParams }: PageProps) {
 
   return (
     <div className="p-6 space-y-6">
+      <AutoRefresh intervalMs={20_000} />
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Leads</h1>
         <p className="text-sm text-gray-500 mt-0.5">{total} lead{total > 1 ? "s" : ""}</p>

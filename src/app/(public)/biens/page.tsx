@@ -5,7 +5,11 @@ import PropertyFilters from "@/components/properties/PropertyFilters"
 import Navbar from "@/components/shared/Navbar"
 import SaveSearchButton from "./SaveSearchButton"
 import SaveSearchLink from "./SaveSearchLink"
+import AutoRefresh from "@/components/shared/AutoRefresh"
 import { LayoutGrid, List } from "lucide-react"
+
+// Données temps réel (ingestion WhatsApp) : jamais de cache, toujours frais.
+export const dynamic = "force-dynamic"
 
 const PER_PAGE = 12
 
@@ -132,6 +136,7 @@ export default async function BiensPage({ searchParams }: PageProps) {
 
   return (
     <>
+      <AutoRefresh intervalMs={60_000} />
       <Navbar />
       <main className="min-h-screen bg-gray-50">
         {/* En-tête */}

@@ -3,8 +3,11 @@ import { createClient } from "@/lib/supabase/server"
 import { Bell, MessageSquare, Home, TrendingUp, Send, Clock } from "lucide-react"
 import { formatRelativeDate } from "@/lib/utils"
 import type { UserRole, NotifCanal } from "@/types/database"
+import AutoRefresh from "@/components/shared/AutoRefresh"
 
 export const metadata = { title: "Notifications · Inaya Immo" }
+// Données temps réel : jamais de cache, toujours frais.
+export const dynamic = "force-dynamic"
 
 interface NotifRow {
   id: string; canal: NotifCanal; type: string; titre: string | null
@@ -46,6 +49,7 @@ export default async function NotificationsPage() {
 
   return (
     <div className="p-6 space-y-6">
+      <AutoRefresh intervalMs={15_000} />
       <div>
         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
           <Bell className="w-6 h-6 text-blue-600" /> Notifications

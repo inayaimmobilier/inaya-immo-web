@@ -2,6 +2,10 @@ import { createClient } from "@/lib/supabase/server"
 import { formatPrix, formatRelativeDate, TYPE_OFFRE_LABEL } from "@/lib/utils"
 import { CheckCircle, XCircle, Eye, Plus, Clock, Globe, Archive, Copy } from "lucide-react"
 import Link from "next/link"
+import AutoRefresh from "@/components/shared/AutoRefresh"
+
+// Données temps réel (ingestion WhatsApp) : jamais de cache, toujours frais.
+export const dynamic = "force-dynamic"
 
 const PER_PAGE = 20
 
@@ -66,6 +70,7 @@ export default async function AnnoncesAdminPage({ searchParams }: PageProps) {
 
   return (
     <div className="p-6 space-y-6">
+      <AutoRefresh intervalMs={20_000} />
       {/* En-tête */}
       <div className="flex items-center justify-between">
         <div>

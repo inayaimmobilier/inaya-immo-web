@@ -5,7 +5,11 @@ import PropertyCard from "@/components/properties/PropertyCard"
 import Navbar from "@/components/shared/Navbar"
 import HomeSearch from "@/components/shared/HomeSearch"
 import ServiceBanners from "@/components/shared/ServiceBanners"
+import AutoRefresh from "@/components/shared/AutoRefresh"
 import { ArrowRight, Shield, Bell, Users, PlusCircle, Sofa } from "lucide-react"
+
+// Données temps réel (ingestion WhatsApp) : jamais de cache, toujours frais.
+export const dynamic = "force-dynamic"
 
 async function getStats() {
   const supabase = await createClient()
@@ -65,6 +69,7 @@ export default async function Home() {
 
   return (
     <>
+      <AutoRefresh intervalMs={60_000} />
       <Navbar />
       <main className="min-h-screen bg-white">
 
