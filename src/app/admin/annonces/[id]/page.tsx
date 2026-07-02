@@ -66,6 +66,10 @@ export default async function AdminBienDetail({ params }: PageProps) {
   const { data: meData } = await supabase.from("profiles").select("role").eq("id", user.id).single()
   const myRole = ((meData as { role: UserRole } | null)?.role ?? "client")
   if (!["super_admin", "admin", "moderateur", "agent"].includes(myRole)) redirect("/")
+  // Le numéro de l'annonceur/propriétaire est réservé aux administrateurs :
+  // agents et modérateurs ne le voient pas (protection de la commission Inaya —
+  // empêche un agent de contacter le propriétaire en direct).
+  const canSeeOwnerPhone = ["super_admin", "admin"].includes(myRole)
 
   const { data: propData } = await supabase
     .from("properties")
@@ -199,9 +203,15 @@ export default async function AdminBienDetail({ params }: PageProps) {
                         {badge.label(p.group_nom)}
                       </span>
                       {p.contact_phone && (
-                        <span className="inline-flex items-center gap-1 text-xs text-gray-500">
-                          <Phone className="w-3 h-3" /> {p.contact_phone}
-                        </span>
+                        canSeeOwnerPhone ? (
+                          <span className="inline-flex items-center gap-1 text-xs text-gray-500">
+                            <Phone className="w-3 h-3" /> {p.contact_phone}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-xs text-gray-400" title="Réservé aux administrateurs">
+                            <Phone className="w-3 h-3" /> •••• (réservé admin)
+                          </span>
+                        )
                       )}
                       <span className="text-xs text-gray-400">{formatDate(p.publie_le)}</span>
                     </div>

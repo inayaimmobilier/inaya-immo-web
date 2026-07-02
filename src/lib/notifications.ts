@@ -334,11 +334,13 @@ export async function notifyAgentAssignment(args: {
   if (creneau) lines.push(`🗓 Créneau souhaité : *${creneau}*`)
   lines.push("")
 
-  // Publieur / propriétaire
-  if (pub?.contact_nom || pub?.contact_phone) {
+  // Publieur / propriétaire — NE JAMAIS envoyer le téléphone à l'agent
+  // (réservé aux administrateurs, protection de la commission Inaya). On donne
+  // seulement le nom ; la coordination avec le propriétaire passe par l'admin.
+  if (pub?.contact_nom) {
     lines.push(`*🤝 Propriétaire / Publieur*`)
-    if (pub.contact_nom) lines.push(pub.contact_nom)
-    if (pub.contact_phone) lines.push(`📞 ${pub.contact_phone}`)
+    lines.push(pub.contact_nom)
+    lines.push(`_Coordonnées gérées par l'administration Inaya._`)
     lines.push("")
   }
 
