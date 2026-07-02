@@ -85,7 +85,7 @@ export default function ChatWidget() {
 
       {/* Panneau de chat */}
       {open && (
-        <div className="fixed bottom-5 right-5 z-40 w-[calc(100vw-2.5rem)] max-w-sm h-[32rem] max-h-[80vh] bg-white rounded-2xl shadow-2xl border border-gray-100 flex flex-col overflow-hidden">
+        <div className="fixed z-40 bg-white shadow-2xl border border-gray-100 flex flex-col overflow-hidden inset-2 rounded-2xl sm:inset-auto sm:bottom-5 sm:right-5 sm:w-96 sm:h-[32rem] sm:max-h-[80vh]">
           <div className="flex items-center justify-between px-4 py-3 bg-blue-700 text-white">
             <div className="flex items-center gap-2">
               <div className="w-7 h-7 rounded-lg bg-white/15 flex items-center justify-center">
