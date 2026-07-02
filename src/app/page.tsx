@@ -117,15 +117,15 @@ export default async function Home() {
         {/* ── STATS ────────────────────────────────────────────────────── */}
         <section className="border-b border-gray-100">
           <div className="max-w-5xl mx-auto px-4 sm:px-6">
-            <div className="flex items-center divide-x divide-gray-100 overflow-x-auto">
+            <div className="grid grid-cols-3 divide-x divide-gray-100">
               {[
                 { value: stats.totalBiens || "—", label: "annonces vérifiées" },
                 { value: "14", label: "quartiers couverts" },
                 { value: stats.totalTransactions || "—", label: "transactions conclues" },
               ].map(s => (
-                <div key={s.label} className="flex items-baseline gap-2 px-8 py-6 first:pl-0 last:pr-0 shrink-0">
-                  <span className="text-2xl font-bold text-slate-900">{s.value}</span>
-                  <span className="text-sm text-slate-400">{s.label}</span>
+                <div key={s.label} className="flex flex-col sm:flex-row sm:items-baseline gap-0.5 sm:gap-2 px-2 sm:px-8 py-5 sm:py-6 text-center sm:text-left">
+                  <span className="text-xl sm:text-2xl font-bold text-slate-900">{s.value}</span>
+                  <span className="text-xs sm:text-sm text-slate-400 leading-tight">{s.label}</span>
                 </div>
               ))}
             </div>
