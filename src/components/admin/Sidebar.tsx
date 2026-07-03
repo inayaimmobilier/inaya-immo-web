@@ -6,7 +6,7 @@ import { useState } from "react"
 import {
   LayoutDashboard, Home, Users, MessageSquare, Wallet,
   Settings, ChevronLeft, ChevronRight, LogOut,
-  Bell, Smartphone, TrendingUp, MapPin, Megaphone, Sofa, Building2, HandCoins
+  Bell, Smartphone, TrendingUp, MapPin, Megaphone, Sofa, Building2, HandCoins, Clock
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -14,6 +14,7 @@ const NAV = [
   { href: "/admin/dashboard",     icon: LayoutDashboard, label: "Dashboard",        roles: ["super_admin","admin","moderateur","agent"] },
   { href: "/admin/annonces",      icon: Home,            label: "Annonces",         roles: ["super_admin","admin","moderateur","agent"] },
   { href: "/admin/residences",    icon: Sofa,            label: "Résidences",       roles: ["super_admin","admin","moderateur","agent"] },
+  { href: "/admin/expiration",    icon: Clock,           label: "Durée des annonces", roles: ["super_admin","admin"] },
   { href: "/admin/leads",         icon: MessageSquare,   label: "Leads",            roles: ["super_admin","admin","agent"] },
   { href: "/admin/agents",        icon: TrendingUp,      label: "Agents",           roles: ["super_admin","admin"] },
   { href: "/admin/gestion",       icon: Building2,       label: "Gestion locative", roles: ["super_admin","admin","moderateur","comptable"] },

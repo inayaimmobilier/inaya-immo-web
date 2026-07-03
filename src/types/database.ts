@@ -4,6 +4,23 @@
 export type UserRole = "super_admin" | "admin" | "moderateur" | "agent" | "client" | "proprietaire" | "locataire" | "prestataire" | "apporteur" | "comptable"
 /** Sous-type propriétaire : diffuseur (ses propres biens) ou géré (gestion locative par Inaya). */
 export type ProprietaireType = "diffuseur" | "gere"
+
+/** Règle de durée de vie d'une annonce (moteur d'expiration configurable). */
+export interface ExpiryRule {
+  id: string
+  nom: string
+  actif: boolean
+  priorite: number
+  type_offre: PropertyType | null
+  categorie: PropertyCat | null
+  ville: string | null
+  quartiers: string[] | null
+  prix_min: number | null
+  prix_max: number | null
+  meuble: boolean | null
+  duree_jours: number
+  created_at: string
+}
 export type UserStatus = "actif" | "suspendu" | "banni"
 export type PropertyType = "location" | "vente" | "cession" | "residence_meublee"
 export type PropertyCat = "maison" | "appartement" | "studio" | "terrain" | "local_commercial" | "bureau" | "magasin" | "autre"
