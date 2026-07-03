@@ -4,12 +4,12 @@ import { useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Home, Loader2, Eye, EyeOff } from "lucide-react"
 import Link from "next/link"
-import { signInFlexible } from "@/lib/account-actions"
+import { signInFlexible, postLoginPath } from "@/lib/account-actions"
 
 export default function ConnexionForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const redirectTo = searchParams.get("redirect") ?? "/admin/dashboard"
+  const explicitRedirect = searchParams.get("redirect")
 
   const [identifier, setIdentifier] = useState("")
   const [password, setPassword] = useState("")
@@ -29,7 +29,9 @@ export default function ConnexionForm() {
       return
     }
 
-    router.push(redirectTo)
+    // Redirection explicite si fournie, sinon selon le rôle du compte.
+    const target = explicitRedirect || (await postLoginPath())
+    router.push(target)
     router.refresh()
   }
 

@@ -61,6 +61,7 @@ export async function createLocataire(f: FormData): Promise<Result> {
     property_id: str(f.get("property_id")),
     mandat_id: str(f.get("mandat_id")),
     proprietaire_id: str(f.get("proprietaire_id")),
+    user_id: str(f.get("user_id")),        // compte locataire lié (portail locataire)
     nom: str(f.get("nom")),
     telephone: str(f.get("telephone")),
     loyer_mensuel: num(f.get("loyer_mensuel")),

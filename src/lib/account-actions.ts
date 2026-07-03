@@ -108,3 +108,21 @@ export async function signInFlexible(identifier: string, password: string): Prom
   revalidatePath("/", "layout")
   return { ok: true }
 }
+
+/** Destination après connexion selon le rôle (si aucun `redirect` explicite). */
+export async function postLoginPath(): Promise<string> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return "/connexion"
+  const { data } = await supabase.from("profiles").select("role").eq("id", user.id).single()
+  const role = (data as { role: string } | null)?.role ?? "client"
+  switch (role) {
+    case "super_admin": case "admin": case "moderateur": case "agent": return "/admin/dashboard"
+    case "comptable":     return "/admin/gestion"
+    case "proprietaire":  return "/proprietaire"
+    case "locataire":     return "/locataire"
+    case "prestataire":   return "/prestataire"
+    case "apporteur":     return "/apporteur"
+    default:              return "/client/mes-requetes"
+  }
+}

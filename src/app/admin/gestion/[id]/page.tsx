@@ -24,12 +24,13 @@ export default async function MandatDetail({ params }: PageProps) {
   } | null
   if (!m) notFound()
 
-  const [{ data: locs }, { data: encs }, { data: trav }, { data: vers }, { data: prest }] = await Promise.all([
+  const [{ data: locs }, { data: encs }, { data: trav }, { data: vers }, { data: prest }, { data: tenants }] = await Promise.all([
     admin.from("locataires").select("id,nom,telephone,loyer_mensuel,date_entree,statut").eq("mandat_id", id).order("created_at", { ascending: false }),
     admin.from("encaissements").select("id,periode,montant,mode,statut,date_encaissement").eq("mandat_id", id).order("date_encaissement", { ascending: false }),
     admin.from("travaux").select("id,titre,cout,statut,date_demande").eq("mandat_id", id).order("date_demande", { ascending: false }),
     admin.from("versements").select("id,periode,montant_net,statut,date_versement").eq("mandat_id", id).order("created_at", { ascending: false }),
     admin.from("profiles").select("id,nom,prenom").eq("role", "prestataire"),
+    admin.from("profiles").select("id,nom,prenom").eq("role", "locataire"),
   ])
 
   const locataires = (locs ?? []) as { id: string; nom: string | null; telephone: string | null; loyer_mensuel: number | null; date_entree: string | null; statut: string }[]
@@ -37,6 +38,7 @@ export default async function MandatDetail({ params }: PageProps) {
   const travaux = (trav ?? []) as { id: string; titre: string; cout: number | null; statut: string; date_demande: string | null }[]
   const versements = (vers ?? []) as { id: string; periode: string | null; montant_net: number; statut: string; date_versement: string | null }[]
   const prestataires = (prest ?? []) as { id: string; nom: string | null; prenom: string | null }[]
+  const tenantAccounts = (tenants ?? []) as { id: string; nom: string | null; prenom: string | null }[]
 
   const owner = `${m.profiles?.prenom ?? ""} ${m.profiles?.nom ?? ""}`.trim() || "Propriétaire"
   const ctx = { mandatId: m.id, propertyId: m.property_id, proprietaireId: m.proprietaire_id }
@@ -59,7 +61,7 @@ export default async function MandatDetail({ params }: PageProps) {
           <Row key={l.id} main={l.nom ?? "Locataire"} sub={`${l.telephone ?? "—"}${l.date_entree ? ` · depuis ${l.date_entree}` : ""}`}
             right={l.loyer_mensuel ? `${formatPrix(l.loyer_mensuel)}/mois` : "—"} tag={l.statut} />
         ))}
-        <RecordForms kind="locataire" ctx={ctx} />
+        <RecordForms kind="locataire" ctx={ctx} tenantAccounts={tenantAccounts} />
       </Section>
 
       {/* ENCAISSEMENTS */}

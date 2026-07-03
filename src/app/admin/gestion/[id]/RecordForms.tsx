@@ -20,8 +20,8 @@ const LABEL: Record<Kind, string> = {
 
 const field = "w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm outline-none focus:border-blue-400"
 
-export default function RecordForms({ kind, ctx, locataires = [], prestataires = [] }: {
-  kind: Kind; ctx: Ctx; locataires?: Person[]; prestataires?: Person[]
+export default function RecordForms({ kind, ctx, locataires = [], prestataires = [], tenantAccounts = [] }: {
+  kind: Kind; ctx: Ctx; locataires?: Person[]; prestataires?: Person[]; tenantAccounts?: Person[]
 }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
@@ -61,7 +61,11 @@ export default function RecordForms({ kind, ctx, locataires = [], prestataires =
           <input name="telephone" placeholder="Téléphone" className={field} />
           <input name="loyer_mensuel" type="number" placeholder="Loyer mensuel (FCFA)" className={field} />
           <input name="caution" type="number" placeholder="Caution (FCFA)" className={field} />
-          <input name="date_entree" type="date" className={`${field} col-span-2`} />
+          <input name="date_entree" type="date" className={field} />
+          <select name="user_id" className={field} title="Lier un compte locataire (portail)">
+            <option value="">Compte locataire (facultatif)</option>
+            {tenantAccounts.map(t => <option key={t.id} value={t.id}>{`${t.prenom ?? ""} ${t.nom ?? ""}`.trim() || t.id.slice(0, 8)}</option>)}
+          </select>
         </div>
       )}
 
