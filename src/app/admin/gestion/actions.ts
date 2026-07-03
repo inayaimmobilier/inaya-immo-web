@@ -59,9 +59,9 @@ export async function createMandat(f: FormData): Promise<Result> {
 }
 
 export async function createLocataire(f: FormData): Promise<Result> {
+  // NB : la table locataires n'a pas de mandat_id → on relie via property_id.
   return insert("locataires", {
     property_id: str(f.get("property_id")),
-    mandat_id: str(f.get("mandat_id")),
     proprietaire_id: str(f.get("proprietaire_id")),
     user_id: str(f.get("user_id")),        // compte locataire lié (portail locataire)
     nom: str(f.get("nom")),

@@ -25,7 +25,7 @@ export default async function MandatDetail({ params }: PageProps) {
   if (!m) notFound()
 
   const [{ data: locs }, { data: encs }, { data: trav }, { data: vers }, { data: prest }, { data: tenants }] = await Promise.all([
-    admin.from("locataires").select("id,nom,telephone,loyer_mensuel,date_entree,statut").eq("mandat_id", id).order("created_at", { ascending: false }),
+    admin.from("locataires").select("id,nom,telephone,loyer_mensuel,date_entree,statut").eq("property_id", m.property_id ?? "").order("created_at", { ascending: false }),
     admin.from("encaissements").select("id,periode,montant,mode,statut,date_encaissement").eq("mandat_id", id).order("date_encaissement", { ascending: false }),
     admin.from("travaux").select("id,titre,cout,statut,date_demande").eq("mandat_id", id).order("date_demande", { ascending: false }),
     admin.from("versements").select("id,periode,montant_net,statut,date_versement").eq("mandat_id", id).order("created_at", { ascending: false }),
