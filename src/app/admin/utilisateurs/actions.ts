@@ -4,7 +4,10 @@ import { revalidatePath } from "next/cache"
 import { createClient, createAdminClient } from "@/lib/supabase/server"
 import type { UserRole, UserStatus } from "@/types/database"
 
-const ROLES: UserRole[] = ["super_admin", "admin", "moderateur", "agent", "client"]
+const ROLES: UserRole[] = [
+  "super_admin", "admin", "moderateur", "agent", "client",
+  "proprietaire", "locataire", "prestataire", "apporteur", "comptable",
+]
 const STATUSES: UserStatus[] = ["actif", "suspendu", "banni"]
 
 type ActionResult = { ok: true } | { ok: false; error: string }
@@ -32,6 +35,7 @@ async function currentProfile() {
 export async function createUser(input: {
   nom: string; prenom?: string; telephone?: string; email: string; password: string
   role: UserRole; agent_type?: "interne" | "externe"; agence?: string
+  proprietaire_type?: "diffuseur" | "gere"; metier?: string
 }): Promise<ActionResult> {
   const me = await currentProfile()
   if (!me) return { ok: false, error: "Non authentifié." }
@@ -71,10 +75,13 @@ export async function createUser(input: {
     role, nom, prenom, telephone: tel,
     agent_type: role === "agent" ? (input.agent_type === "externe" ? "externe" : "interne") : null,
     agence: isExtern ? (input.agence?.trim() || null) : null,
+    // Sous-type propriétaire (diffuseur/gere) ; métier pour un prestataire.
+    proprietaire_type: role === "proprietaire" ? (input.proprietaire_type === "gere" ? "gere" : "diffuseur") : null,
+    metier: role === "prestataire" ? (input.metier?.trim() || null) : null,
   }
   let { error: uErr } = await admin.from("profiles").update(patch as never).eq("id", created.user.id)
-  if (uErr?.code === "42703") { // colonnes agent_type/agence absentes (migration 024 non appliquée)
-    const { agent_type: _t, agence: _a, ...base } = patch
+  if (uErr?.code === "42703") { // colonnes récentes absentes (migrations 024/032 non appliquées) → réessai sans
+    const { agent_type: _t, agence: _a, proprietaire_type: _p, metier: _m, ...base } = patch
     const retry = await admin.from("profiles").update(base as never).eq("id", created.user.id)
     uErr = retry.error
   }

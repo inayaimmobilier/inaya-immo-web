@@ -1,7 +1,9 @@
 // Types générés depuis le schéma Supabase d'Inaya Immo
 // À régénérer avec : npx supabase gen types typescript --project-id fcnmqpsfqrrsczgfehei > src/types/database.ts
 
-export type UserRole = "super_admin" | "admin" | "moderateur" | "agent" | "client"
+export type UserRole = "super_admin" | "admin" | "moderateur" | "agent" | "client" | "proprietaire" | "locataire" | "prestataire" | "apporteur" | "comptable"
+/** Sous-type propriétaire : diffuseur (ses propres biens) ou géré (gestion locative par Inaya). */
+export type ProprietaireType = "diffuseur" | "gere"
 export type UserStatus = "actif" | "suspendu" | "banni"
 export type PropertyType = "location" | "vente" | "cession" | "residence_meublee"
 export type PropertyCat = "maison" | "appartement" | "studio" | "terrain" | "local_commercial" | "bureau" | "magasin" | "autre"

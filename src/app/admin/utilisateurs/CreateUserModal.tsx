@@ -8,7 +8,12 @@ import type { UserRole } from "@/types/database"
 
 const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
   { value: "client", label: "Client" },
+  { value: "proprietaire", label: "Propriétaire" },
   { value: "agent", label: "Agent immobilier" },
+  { value: "locataire", label: "Locataire" },
+  { value: "prestataire", label: "Prestataire / Technicien" },
+  { value: "apporteur", label: "Apporteur d'affaires" },
+  { value: "comptable", label: "Comptable / Finance" },
   { value: "moderateur", label: "Modérateur" },
   { value: "admin", label: "Administrateur" },
   { value: "super_admin", label: "Super admin" },
@@ -19,6 +24,7 @@ export default function CreateUserModal({ canCreateSuperAdmin }: { canCreateSupe
   const [open, setOpen] = useState(false)
   const [role, setRole] = useState<UserRole>("client")
   const [agentType, setAgentType] = useState<"interne" | "externe">("interne")
+  const [proprioType, setProprioType] = useState<"diffuseur" | "gere">("diffuseur")
   const [showPwd, setShowPwd] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [pending, start] = useTransition()
@@ -39,6 +45,8 @@ export default function CreateUserModal({ canCreateSuperAdmin }: { canCreateSupe
         role,
         agent_type: role === "agent" ? agentType : undefined,
         agence: role === "agent" && agentType === "externe" ? String(f.get("agence") || "") : undefined,
+        proprietaire_type: role === "proprietaire" ? proprioType : undefined,
+        metier: role === "prestataire" ? String(f.get("metier") || "") : undefined,
       })
       if (!res.ok) { setErr(res.error); return }
       setOpen(false)
@@ -80,6 +88,25 @@ export default function CreateUserModal({ canCreateSuperAdmin }: { canCreateSupe
                     </button>
                   ))}
                 </div>
+              )}
+
+              {role === "proprietaire" && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Type de propriétaire</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {([{ v: "diffuseur", t: "Diffuseur", d: "Publie ses propres biens" }, { v: "gere", t: "Géré", d: "Nous gérons ses biens" }] as const).map(o => (
+                      <button key={o.v} type="button" onClick={() => setProprioType(o.v)}
+                        className={`border-2 rounded-xl px-2 py-2 text-left transition-colors ${proprioType === o.v ? "border-blue-600 bg-blue-50" : "border-gray-200"}`}>
+                        <span className={`block text-sm font-medium ${proprioType === o.v ? "text-blue-700" : "text-gray-700"}`}>{o.t}</span>
+                        <span className="block text-[11px] text-gray-500">{o.d}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {role === "prestataire" && (
+                <input name="metier" placeholder="Métier / spécialité (plomberie, électricité…)" className={field} />
               )}
 
               <div className="grid grid-cols-2 gap-3">

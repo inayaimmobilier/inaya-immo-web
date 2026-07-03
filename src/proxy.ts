@@ -2,7 +2,7 @@ import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
 
 // Routes qui nécessitent une connexion
-const PROTECTED_ROUTES = ["/client", "/admin"]
+const PROTECTED_ROUTES = ["/client", "/admin", "/proprietaire"]
 // Routes réservées aux admins/staff
 const ADMIN_ROUTES = ["/admin"]
 

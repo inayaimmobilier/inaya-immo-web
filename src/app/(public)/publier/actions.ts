@@ -1,6 +1,6 @@
 "use server"
 
-import { createAdminClient } from "@/lib/supabase/server"
+import { createAdminClient, createClient } from "@/lib/supabase/server"
 import { moderateProperty } from "@/lib/moderation"
 import { revalidatePath } from "next/cache"
 
@@ -12,6 +12,8 @@ export interface PublierResult {
 
 export async function publierAnnonce(fd: FormData): Promise<PublierResult> {
   const admin = createAdminClient()
+  // Rattache le bien au compte connecté (propriétaire diffuseur) → « Mes biens ».
+  const { data: { user } } = await (await createClient()).auth.getUser()
 
   // ── Champs requis ──────────────────────────────────────────────────────────
   const type_offre = fd.get("type_offre") as string
@@ -101,14 +103,21 @@ export async function publierAnnonce(fd: FormData): Promise<PublierResult> {
   const propertyId = (prop as { id: string }).id
 
   // ── Enregistrement du publieur ─────────────────────────────────────────────
-  await admin.from("property_publishers").insert({
+  const pubRow: Record<string, unknown> = {
     property_id: propertyId,
+    publisher_id: user?.id ?? null,
     contact_nom,
     contact_phone,
-    canal: "web" as never,
-    source: "proprietaire" as never,
+    canal: "web",
+    source: "proprietaire",
     publie_le: new Date().toISOString(),
-  } as never)
+  }
+  let { error: pubErr } = await admin.from("property_publishers").insert(pubRow as never)
+  if (pubErr?.code === "42703") { // publisher_id absent → réessai sans
+    const { publisher_id: _p, ...base } = pubRow
+    pubErr = (await admin.from("property_publishers").insert(base as never)).error
+  }
+  if (pubErr) console.error("INAYA-STORE-031", pubErr.message)
 
   // Modération IA asynchrone (best-effort — n'empêche pas la confirmation à l'utilisateur)
   void moderateProperty(propertyId, {
