@@ -2,7 +2,7 @@ import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
 
 // Routes qui nécessitent une connexion
-const PROTECTED_ROUTES = ["/client", "/admin", "/proprietaire"]
+const PROTECTED_ROUTES = ["/client", "/admin", "/proprietaire", "/locataire", "/prestataire", "/apporteur"]
 // Routes réservées aux admins/staff
 const ADMIN_ROUTES = ["/admin"]
 
@@ -54,7 +54,7 @@ export async function proxy(request: NextRequest) {
       .eq("id", user.id)
       .single()
 
-    const adminRoles = ["super_admin", "admin", "moderateur", "agent"]
+    const adminRoles = ["super_admin", "admin", "moderateur", "agent", "comptable"]
     if (!profile || !adminRoles.includes(profile.role)) {
       return NextResponse.redirect(new URL("/", request.url))
     }
