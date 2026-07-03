@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache"
 import { createClient, createAdminClient } from "@/lib/supabase/server"
+import { notifyUser } from "@/lib/notifications"
+import { formatPrix } from "@/lib/utils"
 import type { UserRole } from "@/types/database"
 
 type Result = { ok: true; id?: string } | { ok: false; error: string }
@@ -72,49 +74,83 @@ export async function createLocataire(f: FormData): Promise<Result> {
 }
 
 export async function createEncaissement(f: FormData): Promise<Result> {
-  return insert("encaissements", {
+  const proprietaire_id = str(f.get("proprietaire_id"))
+  const montant = num(f.get("montant")) ?? 0
+  const periode = str(f.get("periode"))
+  const res = await insert("encaissements", {
     property_id: str(f.get("property_id")),
     locataire_id: str(f.get("locataire_id")),
     mandat_id: str(f.get("mandat_id")),
-    proprietaire_id: str(f.get("proprietaire_id")),
-    periode: str(f.get("periode")),
-    montant: num(f.get("montant")) ?? 0,
+    proprietaire_id,
+    periode,
+    montant,
     date_encaissement: str(f.get("date_encaissement")),
     mode: str(f.get("mode")),
     statut: str(f.get("statut")) ?? "encaisse",
   }, `/admin/gestion/${str(f.get("mandat_id")) ?? ""}`)
+  if (res.ok) {
+    try {
+      await notifyUser(proprietaire_id, {
+        type: "encaissement", titre: "Loyer encaissé",
+        contenu: `Un loyer de ${formatPrix(montant)} a été encaissé${periode ? ` pour ${periode}` : ""} sur votre bien géré par Inaya.`,
+      })
+    } catch { /* best-effort */ }
+  }
+  return res
 }
 
 export async function createTravaux(f: FormData): Promise<Result> {
   const titre = str(f.get("titre"))
   if (!titre) return { ok: false, error: "Titre requis." }
-  return insert("travaux", {
+  const prestataire_id = str(f.get("prestataire_id"))
+  const res = await insert("travaux", {
     property_id: str(f.get("property_id")),
     mandat_id: str(f.get("mandat_id")),
     proprietaire_id: str(f.get("proprietaire_id")),
-    prestataire_id: str(f.get("prestataire_id")),
+    prestataire_id,
     titre,
     description: str(f.get("description")),
     cout: num(f.get("cout")),
     statut: str(f.get("statut")) ?? "demande",
   }, `/admin/gestion/${str(f.get("mandat_id")) ?? ""}`)
+  if (res.ok && prestataire_id) {
+    try {
+      await notifyUser(prestataire_id, {
+        type: "travaux_assigne", titre: "Nouvelle intervention",
+        contenu: `Une intervention vous a été assignée : « ${titre} ». Consultez votre espace prestataire.`,
+      })
+    } catch { /* best-effort */ }
+  }
+  return res
 }
 
 export async function createVersement(f: FormData): Promise<Result> {
   const brut = num(f.get("montant_brut")) ?? 0
   const commission = num(f.get("commission")) ?? 0
   const frais = num(f.get("frais_travaux")) ?? 0
-  return insert("versements", {
-    proprietaire_id: str(f.get("proprietaire_id")),
+  const net = Math.max(0, brut - commission - frais)
+  const proprietaire_id = str(f.get("proprietaire_id"))
+  const statut = str(f.get("statut")) ?? "planifie"
+  const res = await insert("versements", {
+    proprietaire_id,
     mandat_id: str(f.get("mandat_id")),
     property_id: str(f.get("property_id")),
     periode: str(f.get("periode")),
     montant_brut: brut,
     commission,
     frais_travaux: frais,
-    montant_net: Math.max(0, brut - commission - frais),
+    montant_net: net,
     date_versement: str(f.get("date_versement")),
     mode: str(f.get("mode")),
-    statut: str(f.get("statut")) ?? "planifie",
+    statut,
   }, `/admin/gestion/${str(f.get("mandat_id")) ?? ""}`)
+  if (res.ok) {
+    try {
+      await notifyUser(proprietaire_id, {
+        type: "versement", titre: statut === "verse" ? "Versement effectué" : "Versement planifié",
+        contenu: `${statut === "verse" ? "Un versement de" : "Un versement de"} ${formatPrix(net)} ${statut === "verse" ? "vous a été effectué" : "est planifié"} par Inaya.`,
+      })
+    } catch { /* best-effort */ }
+  }
+  return res
 }

@@ -84,6 +84,29 @@ export async function notifyStaff(
 }
 
 /**
+ * Notifie un utilisateur précis (propriétaire, locataire, prestataire,
+ * apporteur…) : notification push in-app + WhatsApp sur le numéro de son profil.
+ * Best-effort : n'échoue jamais l'action appelante.
+ */
+export async function notifyUser(
+  userId: string | null | undefined,
+  notif: NotifPayload,
+  opts: { whatsapp?: boolean } = { whatsapp: true },
+): Promise<void> {
+  if (!userId) return
+  const db = createAdminClient()
+  const base = { type: notif.type, titre: notif.titre, contenu: notif.contenu, payload: notif.payload ?? {}, lu: false, envoye: false }
+  const rows: Record<string, unknown>[] = [{ ...base, user_id: userId, canal: "push" as NotifCanal }]
+  if (opts.whatsapp !== false) {
+    const { data } = await db.from("profiles").select("telephone").eq("id", userId).single()
+    const tel = (data as { telephone: string | null } | null)?.telephone?.trim()
+    if (tel) rows.push({ ...base, user_id: userId, contact_telephone: tel, canal: "whatsapp" as NotifCanal })
+  }
+  const { error } = await db.from("notifications").insert(rows as never)
+  if (error) console.error("INAYA-NOTIF-005", error.message)
+}
+
+/**
  * Alerte un chercheur qu'un bien correspond à sa requête (§6.9).
  * Connecté → notification push (in-app). Anonyme (WhatsApp) → canal whatsapp
  * sur son numéro. L'identité/contact du propriétaire n'est jamais inclus.

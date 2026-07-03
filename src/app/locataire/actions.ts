@@ -1,6 +1,7 @@
 "use server"
 
 import { createClient, createAdminClient } from "@/lib/supabase/server"
+import { notifyStaff, notifyUser } from "@/lib/notifications"
 
 type Result = { ok: true } | { ok: false; error: string }
 
@@ -27,5 +28,18 @@ export async function requestRepair(input: { propertyId: string | null; propriet
     console.error("INAYA-GEST-020", error.message)
     return { ok: false, error: "Échec de l'envoi. Réessayez." }
   }
+
+  // Alerte le staff (gestionnaires) et le propriétaire concerné.
+  try {
+    await notifyStaff({
+      type: "travaux_demande", titre: "Demande de réparation",
+      contenu: `Un locataire signale : « ${titre} ». À traiter dans la gestion locative.`,
+    })
+    await notifyUser(input.proprietaireId, {
+      type: "travaux_demande", titre: "Réparation signalée",
+      contenu: `Votre locataire a signalé : « ${titre} ». Inaya s'en occupe.`,
+    })
+  } catch { /* best-effort */ }
+
   return { ok: true }
 }

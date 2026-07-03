@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache"
 import { createClient, createAdminClient } from "@/lib/supabase/server"
+import { notifyUser } from "@/lib/notifications"
+import { formatPrix } from "@/lib/utils"
 import type { UserRole } from "@/types/database"
 
 type Result = { ok: true } | { ok: false; error: string }
@@ -45,8 +47,20 @@ export async function updateApportStatut(id: string, statut: string): Promise<Re
   const guard = await requireAdmin(); if (!guard.ok) return guard
   if (!["en_attente", "valide", "paye", "rejete"].includes(statut)) return { ok: false, error: "Statut invalide." }
   const admin = createAdminClient()
-  const { error } = await admin.from("apports").update({ statut } as never).eq("id", id)
+  const { data: updated, error } = await admin.from("apports")
+    .update({ statut } as never).eq("id", id).select("apporteur_id, montant").single()
   if (error) { console.error("INAYA-APPORT-002", error.message); return { ok: false, error: "Échec." } }
+
+  // Prévient l'apporteur des décisions importantes.
+  if (statut === "valide" || statut === "paye" || statut === "rejete") {
+    const row = updated as { apporteur_id: string | null; montant: number | null } | null
+    const mt = row?.montant ? ` de ${formatPrix(row.montant)}` : ""
+    const msg = statut === "paye" ? `Votre commission d'apport${mt} a été payée.`
+      : statut === "valide" ? `Votre commission d'apport${mt} a été validée.`
+      : `Votre apport${mt} n'a pas été retenu.`
+    try { await notifyUser(row?.apporteur_id, { type: "apport", titre: "Commission d'apport", contenu: msg }) } catch { /* best-effort */ }
+  }
+
   revalidatePath("/admin/apports")
   return { ok: true }
 }
