@@ -1,7 +1,8 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { Loader2, Check } from "lucide-react"
+import Link from "next/link"
+import { Loader2, Check, Settings2 } from "lucide-react"
 import { updateUserRole, updateUserStatus } from "./actions"
 import { ROLE_LABEL, ROLE_COLOR, USER_STATUS_LABEL, USER_STATUS_COLOR, formatRelativeDate } from "@/lib/utils"
 import type { UserRole, UserStatus } from "@/types/database"
@@ -147,13 +148,20 @@ export default function UserRow({ user, myRole, isSelf, botUsername }: Props) {
         {formatRelativeDate(user.created_at)}
       </td>
 
-      {/* État de l'action */}
-      <td className="px-4 py-3 w-10">
-        {pending && <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />}
-        {!pending && saved && <Check className="w-4 h-4 text-green-500" />}
-        {!pending && error && (
-          <span title={error} className="text-xs text-red-500 cursor-help">⚠</span>
-        )}
+      {/* État de l'action + gérer */}
+      <td className="px-4 py-3 w-24">
+        <div className="flex items-center justify-end gap-2">
+          {pending && <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />}
+          {!pending && saved && <Check className="w-4 h-4 text-green-500" />}
+          {!pending && error && (
+            <span title={error} className="text-xs text-red-500 cursor-help">⚠</span>
+          )}
+          <Link href={`/admin/utilisateurs/${user.id}`}
+            className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-blue-700 border border-gray-200 hover:border-blue-300 rounded-lg px-2 py-1"
+            title="Gérer l'utilisateur et ses données">
+            <Settings2 className="w-3.5 h-3.5" /> Gérer
+          </Link>
+        </div>
       </td>
     </tr>
   )

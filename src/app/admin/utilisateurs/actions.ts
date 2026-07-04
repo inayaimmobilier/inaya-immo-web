@@ -125,6 +125,115 @@ export async function updateUserRole(targetId: string, role: UserRole): Promise<
   return { ok: true }
 }
 
+/** Modifie les données d'identité d'un utilisateur (nom, prénom, téléphone, commune, e-mail). */
+export async function updateUserProfile(targetId: string, input: {
+  nom?: string; prenom?: string; telephone?: string; commune?: string; email?: string
+}): Promise<ActionResult> {
+  const me = await currentProfile()
+  if (!me) return { ok: false, error: "Non authentifié." }
+  if (me.role !== "super_admin" && me.role !== "admin")
+    return { ok: false, error: "Action réservée aux administrateurs." }
+
+  const admin = createAdminClient()
+  const { data: targetData } = await admin.from("profiles").select("role").eq("id", targetId).single()
+  const target = targetData as { role: UserRole } | null
+  if (!target) return { ok: false, error: "Utilisateur introuvable." }
+  if (target.role === "super_admin" && me.role !== "super_admin" && me.id !== targetId)
+    return { ok: false, error: "Seul un super admin peut modifier un super admin." }
+
+  const nom = input.nom?.trim()
+  const tel = input.telephone !== undefined ? (input.telephone.replace(/[^\d+]/g, "") || null) : undefined
+  const email = input.email?.trim().toLowerCase()
+
+  // Anti-doublon téléphone (hors utilisateur courant).
+  if (tel) {
+    const { data: dup } = await admin.from("profiles").select("id").eq("telephone", tel).neq("id", targetId).maybeSingle()
+    if (dup) return { ok: false, error: "Un autre compte utilise déjà ce numéro." }
+  }
+  if (email !== undefined && email && !email.includes("@")) return { ok: false, error: "E-mail invalide." }
+
+  // 1. Champs du profil (jeu complet puis repli si une colonne manque : 42703).
+  const patch: Record<string, unknown> = {}
+  if (nom !== undefined) patch.nom = nom
+  if (input.prenom !== undefined) patch.prenom = input.prenom.trim() || null
+  if (tel !== undefined) patch.telephone = tel
+  if (input.commune !== undefined) patch.commune = input.commune.trim() || null
+
+  if (Object.keys(patch).length) {
+    let { error: uErr } = await admin.from("profiles").update(patch as never).eq("id", targetId)
+    if (uErr?.code === "42703") {
+      const { commune: _c, ...base } = patch
+      const retry = await admin.from("profiles").update(base as never).eq("id", targetId)
+      uErr = retry.error
+    }
+    if (uErr) { console.error("INAYA-USER-020", uErr); return { ok: false, error: "Échec de la mise à jour du profil." } }
+  }
+
+  // 2. E-mail d'authentification (auth.users) si fourni et modifié.
+  if (email) {
+    const { error: eErr } = await admin.auth.admin.updateUserById(targetId, { email, email_confirm: true })
+    if (eErr) {
+      console.error("INAYA-USER-021", eErr)
+      if (eErr.message?.toLowerCase().includes("already")) return { ok: false, error: "Cet e-mail est déjà utilisé." }
+      return { ok: false, error: "Profil mis à jour, mais l'e-mail n'a pas pu être changé." }
+    }
+  }
+
+  revalidatePath("/admin/utilisateurs")
+  revalidatePath(`/admin/utilisateurs/${targetId}`)
+  return { ok: true }
+}
+
+/**
+ * Supprime définitivement un utilisateur et ses données.
+ * La suppression du compte auth déclenche la cascade sur profiles (et les tables
+ * liées via ON DELETE CASCADE). On supprime aussi le profil en filet de sécurité.
+ */
+export async function deleteUser(targetId: string): Promise<ActionResult> {
+  const me = await currentProfile()
+  if (!me) return { ok: false, error: "Non authentifié." }
+  if (me.role !== "super_admin" && me.role !== "admin")
+    return { ok: false, error: "Action réservée aux administrateurs." }
+  if (me.id === targetId) return { ok: false, error: "Vous ne pouvez pas supprimer votre propre compte." }
+
+  const admin = createAdminClient()
+  const { data: targetData } = await admin.from("profiles").select("role").eq("id", targetId).single()
+  const target = targetData as { role: UserRole } | null
+  if (target?.role === "super_admin" && me.role !== "super_admin")
+    return { ok: false, error: "Seul un super admin peut supprimer un super admin." }
+
+  // Détache les références SANS ON DELETE CASCADE (sinon la suppression échoue par
+  // violation de clé étrangère). Best-effort : on ignore table/colonne absente.
+  const detach = async (table: string, col: string) => {
+    try { await admin.from(table).update({ [col]: null } as never).eq(col, targetId) } catch { /* ignore */ }
+  }
+  const purge = async (table: string, col: string) => {
+    try { await admin.from(table).delete().eq(col, targetId) } catch { /* ignore */ }
+  }
+  // Contenu conservé mais désassocié (on garde l'annonce, on retire l'auteur).
+  await detach("properties", "created_by")
+  await detach("properties", "validated_by")
+  await detach("leads", "client_id")
+  await detach("leads", "agent_id")
+  await detach("transactions", "agent_id")
+  await detach("transactions", "created_by")
+  // Données strictement personnelles → supprimées.
+  await purge("search_requests", "user_id")
+  await purge("notifications", "user_id")
+  await purge("otp_codes", "user_id")
+
+  const { error: delErr } = await admin.auth.admin.deleteUser(targetId)
+  if (delErr) {
+    console.error("INAYA-USER-030", delErr)
+    return { ok: false, error: "Échec de la suppression du compte." }
+  }
+  // Filet de sécurité si la cascade n'a pas retiré le profil.
+  await admin.from("profiles").delete().eq("id", targetId)
+
+  revalidatePath("/admin/utilisateurs")
+  return { ok: true }
+}
+
 /** Modifie le statut d'un utilisateur (actif / suspendu / banni). */
 export async function updateUserStatus(targetId: string, status: UserStatus): Promise<ActionResult> {
   if (!STATUSES.includes(status)) return { ok: false, error: "Statut invalide." }
