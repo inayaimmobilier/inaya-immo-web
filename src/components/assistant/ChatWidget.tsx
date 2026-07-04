@@ -20,14 +20,17 @@ const SUGGESTIONS = [
 ]
 
 // Rend un texte avec liens markdown [libellé](url) cliquables (liens internes uniquement).
-function renderText(text: string) {
+// onLinkClick : appelé au clic sur une annonce → ferme l'assistant pour laisser
+// place à la page du bien.
+function renderText(text: string, onLinkClick?: () => void) {
   const parts: React.ReactNode[] = []
   const re = /\[([^\]]+)\]\((\/[^)]+)\)/g
   let last = 0, m: RegExpExecArray | null, key = 0
   while ((m = re.exec(text)) !== null) {
     if (m.index > last) parts.push(text.slice(last, m.index))
     parts.push(
-      <Link key={key++} href={m[2]} className="text-blue-700 font-medium underline underline-offset-2 hover:text-blue-800">
+      <Link key={key++} href={m[2]} onClick={onLinkClick}
+        className="text-blue-700 font-medium underline underline-offset-2 hover:text-blue-800">
         {m[1]}
       </Link>,
     )
@@ -114,7 +117,7 @@ export default function ChatWidget() {
                 <div className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm whitespace-pre-line leading-relaxed ${
                   m.role === "user" ? "bg-blue-700 text-white rounded-br-sm" : "bg-white border border-gray-100 text-gray-800 rounded-bl-sm"
                 }`}>
-                  {m.role === "assistant" ? renderText(m.text) : m.text}
+                  {m.role === "assistant" ? renderText(m.text, () => setOpen(false)) : m.text}
                 </div>
               </div>
             ))}
