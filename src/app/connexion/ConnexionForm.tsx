@@ -22,17 +22,23 @@ export default function ConnexionForm() {
     setLoading(true)
     setError(null)
 
-    const res = await signInFlexible(identifier, password)
-    if (!res.ok) {
-      setError(res.error)
-      setLoading(false)
-      return
-    }
+    try {
+      const res = await signInFlexible(identifier, password)
+      if (!res.ok) {
+        setError(res.error)
+        setLoading(false)
+        return
+      }
 
-    // Redirection explicite si fournie, sinon selon le rôle du compte.
-    const target = explicitRedirect || (await postLoginPath())
-    router.push(target)
-    router.refresh()
+      // Redirection explicite si fournie, sinon selon le rôle du compte.
+      const target = explicitRedirect || (await postLoginPath())
+      router.push(target)
+      router.refresh()
+    } catch {
+      // Ex. domaine apex injoignable / requête interrompue : on évite le spinner bloqué à vie.
+      setError("Connexion impossible. Vérifiez votre réseau et utilisez l'adresse https://www.inaya.ci")
+      setLoading(false)
+    }
   }
 
   return (
