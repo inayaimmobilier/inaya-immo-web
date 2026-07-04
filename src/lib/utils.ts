@@ -122,7 +122,12 @@ export const ROLE_LABEL: Record<string, string> = {
   admin: "Administrateur",
   moderateur: "Modérateur",
   agent: "Agent immobilier",
-  client: "Client",
+  comptable: "Comptable",
+  proprietaire: "Propriétaire",
+  locataire: "Locataire",
+  prestataire: "Prestataire",
+  apporteur: "Apporteur",
+  client: "Chercheur",
 }
 
 export const ROLE_COLOR: Record<string, string> = {
@@ -130,6 +135,11 @@ export const ROLE_COLOR: Record<string, string> = {
   admin: "bg-blue-100 text-blue-800",
   moderateur: "bg-indigo-100 text-indigo-800",
   agent: "bg-amber-100 text-amber-800",
+  comptable: "bg-cyan-100 text-cyan-800",
+  proprietaire: "bg-emerald-100 text-emerald-800",
+  locataire: "bg-teal-100 text-teal-800",
+  prestataire: "bg-orange-100 text-orange-800",
+  apporteur: "bg-pink-100 text-pink-800",
   client: "bg-gray-100 text-gray-600",
 }
 

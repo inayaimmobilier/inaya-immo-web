@@ -80,11 +80,16 @@ export default async function UtilisateursPage({ searchParams }: PageProps) {
 
   const FILTERS: { value: string; label: string }[] = [
     { value: "", label: "Tous" },
-    { value: "super_admin", label: "Super admins" },
-    { value: "admin", label: "Admins" },
-    { value: "moderateur", label: "Modérateurs" },
+    { value: "client", label: "Chercheurs" },
+    { value: "proprietaire", label: "Propriétaires" },
+    { value: "locataire", label: "Locataires" },
+    { value: "prestataire", label: "Prestataires" },
+    { value: "apporteur", label: "Apporteurs" },
     { value: "agent", label: "Agents" },
-    { value: "client", label: "Clients" },
+    { value: "comptable", label: "Comptables" },
+    { value: "moderateur", label: "Modérateurs" },
+    { value: "admin", label: "Admins" },
+    { value: "super_admin", label: "Super admins" },
   ]
 
   return (

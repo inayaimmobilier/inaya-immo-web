@@ -28,7 +28,7 @@ interface Props {
   botUsername?: string
 }
 
-const ROLES: UserRole[] = ["client", "agent", "moderateur", "admin", "super_admin"]
+const ROLES: UserRole[] = ["client", "proprietaire", "locataire", "prestataire", "apporteur", "agent", "comptable", "moderateur", "admin", "super_admin"]
 const STATUSES: UserStatus[] = ["actif", "suspendu", "banni"]
 
 const STAFF_ROLES: UserRole[] = ["agent", "moderateur", "admin", "super_admin"]

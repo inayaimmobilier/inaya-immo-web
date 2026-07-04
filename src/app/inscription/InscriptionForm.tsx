@@ -2,108 +2,262 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { createBrowserClient } from "@supabase/ssr"
-import { Loader2, Eye, EyeOff, CheckCircle2 } from "lucide-react"
+import { Loader2, Eye, EyeOff, Search, Home, Wrench, Handshake, ShieldCheck, ArrowLeft } from "lucide-react"
 import Link from "next/link"
+import {
+  registerAccount, verificationOptions, sendVerificationCode, confirmVerificationCode,
+  type AccountType,
+} from "./actions"
+import { postLoginPath } from "@/lib/account-actions"
+import type { OtpCanal } from "@/lib/otp"
+
+const TYPES: { value: AccountType; label: string; desc: string; Icon: typeof Home }[] = [
+  { value: "chercheur",    label: "Je cherche un bien", desc: "Louer ou acheter",          Icon: Search },
+  { value: "proprietaire", label: "Je suis propriétaire", desc: "Diffuser ou confier mes biens", Icon: Home },
+  { value: "prestataire",  label: "Je suis prestataire", desc: "Plomberie, électricité…",  Icon: Wrench },
+  { value: "apporteur",    label: "Je suis apporteur",   desc: "Apporter des affaires",     Icon: Handshake },
+]
+
+const CANAL_META: Record<OtpCanal, { label: string; hint: (d: string | null) => string }> = {
+  whatsapp: { label: "WhatsApp", hint: d => `Sur ${d ?? "votre numéro"}` },
+  sms:      { label: "SMS",      hint: d => `Sur ${d ?? "votre numéro"}` },
+  email:    { label: "E-mail",   hint: d => `Sur ${d ?? "votre adresse"}` },
+}
+
+const field = "w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
 
 export default function InscriptionForm() {
   const router = useRouter()
+
+  // Étape courante
+  const [step, setStep] = useState<"form" | "verify">("form")
+
+  // Champs du formulaire
+  const [type, setType] = useState<AccountType>("chercheur")
+  const [proprietaireType, setProprietaireType] = useState<"diffuseur" | "gere">("diffuseur")
+  const [metier, setMetier] = useState("")
   const [nom, setNom] = useState("")
   const [telephone, setTelephone] = useState("")
   const [commune, setCommune] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [showPwd, setShowPwd] = useState(false)
+
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [done, setDone] = useState(false)
 
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  )
+  // Vérification
+  const [canaux, setCanaux] = useState<OtpCanal[]>([])
+  const [phoneMasked, setPhoneMasked] = useState<string | null>(null)
+  const [emailMasked, setEmailMasked] = useState<string | null>(null)
+  const [chosenCanal, setChosenCanal] = useState<OtpCanal | null>(null)
+  const [sent, setSent] = useState(false)
+  const [code, setCode] = useState("")
+  const [info, setInfo] = useState<string | null>(null)
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleRegister(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true); setError(null)
+    if (password.length < 6) { setError("Le mot de passe doit comporter au moins 6 caractères."); setLoading(false); return }
 
-    if (password.length < 6) {
-      setError("Le mot de passe doit comporter au moins 6 caractères.")
-      setLoading(false); return
+    try {
+      const res = await registerAccount({
+        type, nom, telephone, commune, password,
+        email: email.trim() || null,
+        proprietaireType: type === "proprietaire" ? proprietaireType : null,
+        metier: type === "prestataire" ? metier : null,
+      })
+      if (!res.ok) { setError(res.error); setLoading(false); return }
+
+      const opts = await verificationOptions()
+      setCanaux(opts.canaux)
+      setPhoneMasked(opts.phoneMasked)
+      setEmailMasked(opts.emailMasked)
+      setChosenCanal(opts.canaux[0] ?? null)
+      setStep("verify")
+      setLoading(false)
+    } catch {
+      setError("Inscription impossible. Vérifiez votre réseau et réessayez.")
+      setLoading(false)
     }
+  }
 
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { nom, telephone, commune } },
-    })
+  function destFor(canal: OtpCanal | null): string | null {
+    if (!canal) return null
+    return canal === "email" ? emailMasked : phoneMasked
+  }
 
-    if (error) {
-      setError(error.message.includes("already") ? "Un compte existe déjà avec cet email." : "Échec de l'inscription. Réessayez.")
-      setLoading(false); return
+  async function handleSend() {
+    if (!chosenCanal) return
+    setLoading(true); setError(null); setInfo(null)
+    try {
+      const res = await sendVerificationCode(chosenCanal)
+      if (!res.ok) { setError(res.error); setLoading(false); return }
+      setSent(true)
+      setInfo(`Code envoyé par ${CANAL_META[chosenCanal].label}. Saisissez-le ci-dessous.`)
+      setLoading(false)
+    } catch {
+      setError("Envoi impossible. Réessayez."); setLoading(false)
     }
+  }
 
-    // Si confirmation email désactivée, une session est créée directement.
-    if (data.session) {
-      router.push("/client/mes-requetes")
+  async function handleVerify(e: React.FormEvent) {
+    e.preventDefault()
+    setLoading(true); setError(null)
+    try {
+      const res = await confirmVerificationCode(code)
+      if (!res.ok) { setError(res.error); setLoading(false); return }
+      const target = await postLoginPath()
+      router.push(target)
       router.refresh()
-    } else {
-      setDone(true); setLoading(false)
+    } catch {
+      setError("Vérification impossible. Réessayez."); setLoading(false)
     }
   }
-
-  if (done) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
-        <div className="w-full max-w-sm bg-white rounded-2xl border border-gray-100 p-6 text-center">
-          <CheckCircle2 className="w-10 h-10 text-green-500 mx-auto mb-3" />
-          <h1 className="text-lg font-bold text-gray-900">Compte créé</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Vérifiez votre boîte mail pour confirmer votre adresse, puis connectez-vous.
-          </p>
-          <Link href="/connexion" className="inline-block mt-4 text-sm text-blue-700 font-medium hover:text-blue-800">
-            Aller à la connexion →
-          </Link>
-        </div>
-      </div>
-    )
-  }
-
-  const field = "w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
       <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
+        <div className="text-center mb-6">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo-mark.svg" alt="Inaya Immo" className="inline-block w-12 h-12 rounded-2xl mb-3" />
           <h1 className="text-xl font-bold">
             <span className="text-blue-700">Inaya</span><span className="text-amber-500"> Immo</span>
           </h1>
-          <p className="text-sm text-gray-500 mt-1">Créez votre compte</p>
+          <p className="text-sm text-gray-500 mt-1">
+            {step === "form" ? "Créez votre compte" : "Vérifiez votre compte"}
+          </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-4">
-          {error && <div className="bg-red-50 border border-red-100 text-red-700 text-sm rounded-xl px-4 py-3">{error}</div>}
+        {step === "form" ? (
+          <form onSubmit={handleRegister} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-4">
+            {error && <div className="bg-red-50 border border-red-100 text-red-700 text-sm rounded-xl px-4 py-3">{error}</div>}
 
-          <input value={nom} onChange={e => setNom(e.target.value)} required placeholder="Nom complet" className={field} />
-          <input value={telephone} onChange={e => setTelephone(e.target.value)} type="tel" required placeholder="Téléphone (WhatsApp)" className={field} />
-          <input value={commune} onChange={e => setCommune(e.target.value)} required placeholder="Commune / ville" className={field} />
-          <input value={email} onChange={e => setEmail(e.target.value)} type="email" autoComplete="email" required placeholder="Adresse email" className={field} />
-          <div className="relative">
-            <input value={password} onChange={e => setPassword(e.target.value)} type={showPwd ? "text" : "password"}
-              autoComplete="new-password" required placeholder="Mot de passe" className={`${field} pr-10`} />
-            <button type="button" onClick={() => setShowPwd(!showPwd)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-              {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            {/* Type de compte */}
+            <div>
+              <label className="text-xs font-medium text-gray-700 mb-2 block">Vous êtes…</label>
+              <div className="grid grid-cols-2 gap-2">
+                {TYPES.map(({ value, label, desc, Icon }) => {
+                  const active = type === value
+                  return (
+                    <button type="button" key={value} onClick={() => setType(value)}
+                      className={`text-left p-3 rounded-xl border transition-colors ${
+                        active ? "border-blue-500 bg-blue-50 ring-1 ring-blue-100" : "border-gray-200 hover:border-blue-300 bg-white"
+                      }`}>
+                      <Icon className={`w-5 h-5 mb-1 ${active ? "text-blue-600" : "text-gray-400"}`} />
+                      <span className="block text-xs font-semibold text-gray-800 leading-tight">{label}</span>
+                      <span className="block text-[11px] text-gray-400 mt-0.5">{desc}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Propriétaire : diffuseur / géré */}
+            {type === "proprietaire" && (
+              <div className="grid grid-cols-2 gap-2">
+                {([["diffuseur", "Je diffuse moi-même"], ["gere", "Inaya gère mes biens"]] as const).map(([v, l]) => (
+                  <button type="button" key={v} onClick={() => setProprietaireType(v)}
+                    className={`p-2.5 rounded-xl border text-xs font-medium transition-colors ${
+                      proprietaireType === v ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-600 hover:border-blue-300"
+                    }`}>{l}</button>
+                ))}
+              </div>
+            )}
+
+            {/* Prestataire : métier */}
+            {type === "prestataire" && (
+              <input value={metier} onChange={e => setMetier(e.target.value)} required
+                placeholder="Votre métier (plomberie, électricité, peinture…)" className={field} />
+            )}
+
+            <input value={nom} onChange={e => setNom(e.target.value)} required placeholder="Nom complet" className={field} />
+            <input value={telephone} onChange={e => setTelephone(e.target.value)} type="tel" required
+              placeholder="Téléphone (WhatsApp)" className={field} />
+            <input value={commune} onChange={e => setCommune(e.target.value)} required placeholder="Commune / ville" className={field} />
+            <input value={email} onChange={e => setEmail(e.target.value)} type="email" autoComplete="email"
+              placeholder="Adresse email (facultatif)" className={field} />
+            <div className="relative">
+              <input value={password} onChange={e => setPassword(e.target.value)} type={showPwd ? "text" : "password"}
+                autoComplete="new-password" required placeholder="Mot de passe" className={`${field} pr-10`} />
+              <button type="button" onClick={() => setShowPwd(!showPwd)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+
+            <button type="submit" disabled={loading}
+              className="w-full flex items-center justify-center gap-2 bg-blue-700 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-blue-600 transition-colors disabled:opacity-60">
+              {loading ? <><Loader2 className="w-4 h-4 animate-spin" /> Création…</> : "Créer mon compte"}
+            </button>
+          </form>
+        ) : (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-4">
+            <div className="flex items-center gap-2 text-green-600">
+              <ShieldCheck className="w-5 h-5" />
+              <p className="text-sm font-semibold text-gray-800">Compte créé — vérifions que c'est bien vous.</p>
+            </div>
+
+            {error && <div className="bg-red-50 border border-red-100 text-red-700 text-sm rounded-xl px-4 py-3">{error}</div>}
+            {info && <div className="bg-green-50 border border-green-100 text-green-700 text-sm rounded-xl px-4 py-3">{info}</div>}
+
+            {canaux.length === 0 ? (
+              <p className="text-sm text-gray-500">
+                Aucun canal de vérification n'est disponible pour le moment. Vous pouvez continuer et vérifier plus tard.
+                <button onClick={async () => { const t = await postLoginPath(); router.push(t); router.refresh() }}
+                  className="block mt-3 text-blue-700 font-medium">Continuer →</button>
+              </p>
+            ) : (
+              <>
+                {/* Choix du canal */}
+                <div>
+                  <label className="text-xs font-medium text-gray-700 mb-2 block">Recevoir le code par :</label>
+                  <div className="space-y-2">
+                    {canaux.map(c => {
+                      const active = chosenCanal === c
+                      return (
+                        <button type="button" key={c} onClick={() => { setChosenCanal(c); setSent(false); setInfo(null) }}
+                          className={`w-full flex items-center justify-between p-3 rounded-xl border text-left transition-colors ${
+                            active ? "border-blue-500 bg-blue-50 ring-1 ring-blue-100" : "border-gray-200 hover:border-blue-300"
+                          }`}>
+                          <span>
+                            <span className="block text-sm font-semibold text-gray-800">{CANAL_META[c].label}</span>
+                            <span className="block text-[11px] text-gray-400">{CANAL_META[c].hint(destFor(c))}</span>
+                          </span>
+                          <span className={`w-4 h-4 rounded-full border-2 ${active ? "border-blue-500 bg-blue-500" : "border-gray-300"}`} />
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {!sent ? (
+                  <button onClick={handleSend} disabled={loading || !chosenCanal}
+                    className="w-full flex items-center justify-center gap-2 bg-blue-700 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-blue-600 transition-colors disabled:opacity-60">
+                    {loading ? <><Loader2 className="w-4 h-4 animate-spin" /> Envoi…</> : "Envoyer le code"}
+                  </button>
+                ) : (
+                  <form onSubmit={handleVerify} className="space-y-3">
+                    <input value={code} onChange={e => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      inputMode="numeric" autoFocus placeholder="Code à 6 chiffres"
+                      className={`${field} text-center tracking-[0.5em] text-lg font-semibold`} />
+                    <button type="submit" disabled={loading || code.length !== 6}
+                      className="w-full flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-green-700 transition-colors disabled:opacity-60">
+                      {loading ? <><Loader2 className="w-4 h-4 animate-spin" /> Vérification…</> : "Vérifier"}
+                    </button>
+                    <button type="button" onClick={handleSend} disabled={loading}
+                      className="w-full text-xs text-gray-500 hover:text-blue-700">Renvoyer le code</button>
+                  </form>
+                )}
+              </>
+            )}
+
+            <button onClick={() => { setStep("form"); setError(null); setInfo(null); setSent(false) }}
+              className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600">
+              <ArrowLeft className="w-3 h-3" /> Modifier mes informations
             </button>
           </div>
-
-          <button type="submit" disabled={loading}
-            className="w-full flex items-center justify-center gap-2 bg-blue-700 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-blue-600 transition-colors disabled:opacity-60">
-            {loading ? <><Loader2 className="w-4 h-4 animate-spin" /> Création…</> : "Créer mon compte"}
-          </button>
-        </form>
+        )}
 
         <p className="text-center text-xs text-gray-400 mt-4">
           Déjà un compte ? <Link href="/connexion" className="text-blue-700 hover:text-blue-800 font-medium">Se connecter</Link>
