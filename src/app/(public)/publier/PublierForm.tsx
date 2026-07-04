@@ -395,10 +395,10 @@ export default function PublierForm({ villes, residence = false }: { villes: Zon
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label htmlFor="ville_select" className="block text-xs text-gray-500 mb-1">Ville *</label>
+            <label htmlFor="ville_select" className="block text-xs text-gray-500 mb-1">Commune *</label>
             <select id="ville_select" value={villeId} onChange={handleVilleChange}
               required className={inputCls}>
-              <option value="" disabled>Choisir une ville…</option>
+              <option value="" disabled>Choisir une commune…</option>
               {villes.map(v => <option key={v.id} value={v.id}>{v.nom}</option>)}
             </select>
           </div>

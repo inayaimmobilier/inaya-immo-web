@@ -53,7 +53,7 @@ export default function HomeSearch({ villes }: { villes: Zone[] }) {
           {/* Ville */}
           <select name="ville_id" value={villeId} onChange={e => setVilleId(e.target.value)}
             className={selectCls}>
-            <option value="">Toutes les villes</option>
+            <option value="">Toutes les communes</option>
             {villes.map(v => <option key={v.id} value={v.id}>{v.nom}</option>)}
           </select>
 

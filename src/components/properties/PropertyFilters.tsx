@@ -41,37 +41,52 @@ export default function PropertyFilters() {
   const router = useRouter()
   const params = useSearchParams()
 
+  const [communes, setCommunes] = useState<Zone[]>([])
   const [quartiers, setQuartiers] = useState<Zone[]>([])
 
-  // Charge les quartiers depuis l'API publique (toutes les villes confondues pour simplifier)
+  // Charge les communes (villes).
   useEffect(() => {
-    fetch("/api/zones/quartiers")
-      .then(r => r.json())
-      .then(d => setQuartiers(d as Zone[]))
-      .catch(() => {})
+    fetch("/api/zones/villes").then(r => r.json()).then(d => setCommunes(d as Zone[])).catch(() => {})
   }, [])
+
+  // Commune sélectionnée : nom depuis "ville" ou résolu depuis "ville_id" (UUID→nom).
+  const communeValue = params.get("ville") || communes.find(v => v.id === params.get("ville_id"))?.nom || ""
+  const selectedVilleId = params.get("ville_id") || communes.find(v => v.nom === communeValue)?.id || ""
+
+  // Charge les quartiers de la commune sélectionnée (ou tous si aucune commune).
+  useEffect(() => {
+    const url = selectedVilleId ? `/api/zones/quartiers?ville_id=${selectedVilleId}` : "/api/zones/quartiers"
+    fetch(url).then(r => r.json()).then(d => setQuartiers(d as Zone[])).catch(() => {})
+  }, [selectedVilleId])
 
   const update = useCallback(
     (key: string, value: string) => {
       const p = new URLSearchParams(params.toString())
-      // Conserve le quartier venu de l'accueil : on convertit le quartier_id (UUID)
-      // en nom AVANT de modifier un autre critère, sinon le filtre serait perdu.
+      // Convertit les UUID venus de l'accueil en noms AVANT toute modification,
+      // sinon les filtres commune/quartier seraient perdus.
       const qid = p.get("quartier_id")
       if (qid && !p.get("quartier")) {
         const nom = quartiers.find(q => q.id === qid)?.nom
         if (nom) p.set("quartier", nom)
       }
       p.delete("quartier_id")
-      // On GARDE ville_id : le serveur le résout → la commune reste appliquée.
+      const vid = p.get("ville_id")
+      if (vid && !p.get("ville")) {
+        const nom = communes.find(v => v.id === vid)?.nom
+        if (nom) p.set("ville", nom)
+      }
+      p.delete("ville_id")
+
       if (value) p.set(key, value)
       else p.delete(key)
+      // Changer de commune réinitialise le quartier (il appartenait à l'ancienne).
+      if (key === "ville") p.delete("quartier")
       p.delete("page")
       router.push(`/biens?${p.toString()}`)
     },
-    [params, router, quartiers]
+    [params, router, quartiers, communes]
   )
 
-  // Quartier affiché : depuis "quartier" (nom) ou résolu depuis "quartier_id" (UUID→nom).
   const quartierValue = params.get("quartier") || quartiers.find(q => q.id === params.get("quartier_id"))?.nom || ""
 
   return (
@@ -81,7 +96,7 @@ export default function PropertyFilters() {
         <span className="text-sm font-semibold text-gray-900">Filtres</span>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
         {/* Type opération */}
         <select value={params.get("type") || ""} onChange={e => update("type", e.target.value)} className={cls}>
           <option value="">Tous types</option>
@@ -93,6 +108,12 @@ export default function PropertyFilters() {
         {/* Catégorie */}
         <select value={params.get("categorie") || ""} onChange={e => update("categorie", e.target.value)} className={cls}>
           {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+        </select>
+
+        {/* Commune */}
+        <select value={communeValue} onChange={e => update("ville", e.target.value)} className={cls}>
+          <option value="">Toutes les communes</option>
+          {communes.map(v => <option key={v.id} value={v.nom}>{v.nom}</option>)}
         </select>
 
         {/* Quartier */}
