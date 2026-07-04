@@ -54,18 +54,25 @@ export default function PropertyFilters() {
   const update = useCallback(
     (key: string, value: string) => {
       const p = new URLSearchParams(params.toString())
-      // Purge les anciens params HomeSearch (UUID) quand on utilise les filtres texte
-      p.delete("ville_id"); p.delete("quartier_id")
+      // Conserve le quartier venu de l'accueil : on convertit le quartier_id (UUID)
+      // en nom AVANT de modifier un autre critère, sinon le filtre serait perdu.
+      const qid = p.get("quartier_id")
+      if (qid && !p.get("quartier")) {
+        const nom = quartiers.find(q => q.id === qid)?.nom
+        if (nom) p.set("quartier", nom)
+      }
+      p.delete("quartier_id")
+      // On GARDE ville_id : le serveur le résout → la commune reste appliquée.
       if (value) p.set(key, value)
       else p.delete(key)
       p.delete("page")
       router.push(`/biens?${p.toString()}`)
     },
-    [params, router]
+    [params, router, quartiers]
   )
 
-  // Résout le quartier affiché : soit depuis "quartier" (nom), soit depuis "quartier_id" (UUID→nom)
-  const quartierValue = params.get("quartier") || ""
+  // Quartier affiché : depuis "quartier" (nom) ou résolu depuis "quartier_id" (UUID→nom).
+  const quartierValue = params.get("quartier") || quartiers.find(q => q.id === params.get("quartier_id"))?.nom || ""
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">

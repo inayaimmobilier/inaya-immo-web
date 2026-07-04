@@ -1,5 +1,5 @@
 import { Suspense } from "react"
-import { createClient } from "@/lib/supabase/server"
+import { createClient, createAdminClient } from "@/lib/supabase/server"
 import PropertyCard from "@/components/properties/PropertyCard"
 import PropertyFilters from "@/components/properties/PropertyFilters"
 import Navbar from "@/components/shared/Navbar"
@@ -19,6 +19,8 @@ interface PageProps {
     categorie?: string
     quartier?: string
     quartier_id?: string   // depuis HomeSearch (UUID → résolu en nom)
+    ville?: string
+    ville_id?: string      // depuis HomeSearch (UUID → résolu en nom)
     prix_min?: string
     prix_max?: string
     pieces_min?: string
@@ -39,12 +41,22 @@ async function PropertiesList({ searchParams }: PageProps) {
   const from = (page - 1) * PER_PAGE
   const to = from + PER_PAGE - 1
 
-  // Résolution quartier_id (UUID de HomeSearch) → nom texte
+  // Résolution ville_id / quartier_id (UUID de HomeSearch) → nom texte.
+  // IMPORTANT : via le client ADMIN — les tables de référence quartiers/villes
+  // ne sont pas lisibles par le client anonyme (RLS), sinon la résolution
+  // renverrait null et le filtre commune/quartier serait silencieusement ignoré.
+  const refDb = createAdminClient()
   let quartierNom = params.quartier || null
   if (!quartierNom && params.quartier_id) {
-    const { data: qRow } = await supabase
+    const { data: qRow } = await refDb
       .from("quartiers").select("nom").eq("id", params.quartier_id).single()
     quartierNom = (qRow as { nom: string } | null)?.nom ?? null
+  }
+  let villeNom = params.ville || null
+  if (!villeNom && params.ville_id) {
+    const { data: vRow } = await refDb
+      .from("villes").select("nom").eq("id", params.ville_id).single()
+    villeNom = (vRow as { nom: string } | null)?.nom ?? null
   }
 
   // Les résidences meublées ont leur propre catalogue (/residences) → exclues d'ici.
@@ -59,6 +71,7 @@ async function PropertiesList({ searchParams }: PageProps) {
 
   if (params.type)         { countQ = countQ.eq("type_offre", params.type as never);   dataQ = dataQ.eq("type_offre", params.type as never) }
   if (params.categorie)    { countQ = countQ.eq("categorie", params.categorie as never); dataQ = dataQ.eq("categorie", params.categorie as never) }
+  if (villeNom)            { countQ = countQ.ilike("ville", `%${villeNom}%`);            dataQ = dataQ.ilike("ville", `%${villeNom}%`) }
   if (quartierNom)         { countQ = countQ.ilike("quartier", `%${quartierNom}%`);     dataQ = dataQ.ilike("quartier", `%${quartierNom}%`) }
   if (params.prix_min)     { countQ = countQ.gte("prix", Number(params.prix_min));      dataQ = dataQ.gte("prix", Number(params.prix_min)) }
   if (params.prix_max)     { countQ = countQ.lte("prix", Number(params.prix_max));      dataQ = dataQ.lte("prix", Number(params.prix_max)) }
