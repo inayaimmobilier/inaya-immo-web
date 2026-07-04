@@ -9,8 +9,15 @@ interface Msg { role: "user" | "assistant"; text: string }
 
 const WELCOME: Msg = {
   role: "assistant",
-  text: "Bonjour 👋 Je suis l'assistant Inaya. Dites-moi ce que vous cherchez (ex : « studio à louer à Belleville moins de 80 000 ») et je vous propose des annonces.",
+  text: "Bonjour 👋 Je suis l'assistant Inaya. Dites-moi ce que vous cherchez et je vous propose des annonces adaptées.",
 }
+
+const SUGGESTIONS = [
+  "Louer à Bouaké",
+  "Acheter une maison",
+  "Studio meublé (court séjour)",
+  "Terrain à vendre",
+]
 
 // Rend un texte avec liens markdown [libellé](url) cliquables (liens internes uniquement).
 function renderText(text: string) {
@@ -47,8 +54,8 @@ export default function ChatWidget() {
     return null
   }
 
-  async function send() {
-    const text = input.trim()
+  async function send(preset?: string) {
+    const text = (preset ?? input).trim()
     if (!text || loading) return
     const next = [...messages, { role: "user" as const, text }]
     setMessages(next)
@@ -83,19 +90,20 @@ export default function ChatWidget() {
         </button>
       )}
 
-      {/* Panneau de chat */}
+      {/* Panneau de chat — z au-dessus de la navbar (z-50) pour rester fermable en plein écran mobile */}
       {open && (
-        <div className="fixed z-40 bg-white shadow-2xl border border-gray-100 flex flex-col overflow-hidden inset-2 rounded-2xl sm:inset-auto sm:bottom-5 sm:right-5 sm:w-96 sm:h-[32rem] sm:max-h-[80vh]">
-          <div className="flex items-center justify-between px-4 py-3 bg-blue-700 text-white">
-            <div className="flex items-center gap-2">
+        <div className="fixed z-[60] bg-white shadow-2xl border border-gray-100 flex flex-col overflow-hidden inset-2 rounded-2xl sm:inset-auto sm:bottom-5 sm:right-5 sm:w-96 sm:h-[32rem] sm:max-h-[80vh]">
+          <div className="flex items-center justify-between px-4 py-3 bg-blue-700 text-white shrink-0">
+            <div className="flex items-center gap-2 min-w-0">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/logo-mark.svg" alt="" className="w-7 h-7 rounded-lg ring-1 ring-white/25" />
-              <div>
-                <p className="text-sm font-semibold leading-tight">Assistant Inaya</p>
-                <p className="text-[11px] text-blue-100 leading-tight">Trouvez votre bien en discutant</p>
+              <img src="/logo-mark.svg" alt="" className="w-7 h-7 rounded-lg ring-1 ring-white/25 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-sm font-semibold leading-tight truncate">Assistant Inaya</p>
+                <p className="text-[11px] text-blue-100 leading-tight truncate">Trouvez votre bien en discutant</p>
               </div>
             </div>
-            <button onClick={() => setOpen(false)} aria-label="Fermer" className="text-blue-100 hover:text-white">
+            <button onClick={() => setOpen(false)} aria-label="Fermer l'assistant"
+              className="shrink-0 -mr-1 p-2 rounded-lg text-blue-100 hover:text-white hover:bg-white/10 transition-colors">
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -117,6 +125,18 @@ export default function ChatWidget() {
                 </div>
               </div>
             )}
+
+            {/* Suggestions de démarrage (uniquement au début de la conversation) */}
+            {messages.length === 1 && !loading && (
+              <div className="flex flex-wrap gap-2 pt-1">
+                {SUGGESTIONS.map(s => (
+                  <button key={s} onClick={() => send(s)}
+                    className="text-xs font-medium text-blue-700 bg-white border border-blue-200 rounded-full px-3 py-1.5 hover:bg-blue-50 transition-colors">
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="border-t border-gray-100 p-2.5 flex items-end gap-2 bg-white">
@@ -129,7 +149,7 @@ export default function ChatWidget() {
               className="flex-1 resize-none max-h-24 px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:border-blue-400"
             />
             <button
-              onClick={send}
+              onClick={() => send()}
               disabled={loading || !input.trim()}
               className="flex-shrink-0 w-9 h-9 flex items-center justify-center bg-blue-700 text-white rounded-xl hover:bg-blue-600 transition-colors disabled:opacity-50"
               aria-label="Envoyer"
