@@ -1,8 +1,8 @@
 import { createClient, createAdminClient } from "@/lib/supabase/server"
-import { formatPrix, formatRelativeDate, TYPE_OFFRE_LABEL } from "@/lib/utils"
-import { CheckCircle, XCircle, Eye, Plus, Clock, Globe, Archive, Copy, Flag } from "lucide-react"
+import { XCircle, Plus, Clock, Globe, Archive, Copy, Flag } from "lucide-react"
 import Link from "next/link"
 import AutoRefresh from "@/components/shared/AutoRefresh"
+import ModerationTable, { type AnnonceRow } from "./ModerationTable"
 
 // Données temps réel (ingestion WhatsApp) : jamais de cache, toujours frais.
 export const dynamic = "force-dynamic"
@@ -20,16 +20,6 @@ const STATUTS = [
   { value: "rejete",               label: "Rejetées",   icon: XCircle },
   { value: "suspendu",             label: "Suspendues", icon: Archive },
 ]
-
-const STATUT_PILL: Record<string, string> = {
-  publie:               "bg-green-50 text-green-700 border-green-100",
-  en_attente_validation: "bg-amber-50 text-amber-700 border-amber-100",
-  rejete:               "bg-red-50 text-red-700 border-red-100",
-  suspendu:             "bg-gray-100 text-gray-500 border-gray-200",
-  brouillon:            "bg-gray-50 text-gray-400 border-gray-100",
-  reserve:              "bg-indigo-50 text-indigo-700 border-indigo-100",
-  conclu:               "bg-purple-50 text-purple-700 border-purple-100",
-}
 
 export default async function AnnoncesAdminPage({ searchParams }: PageProps) {
   const params = await searchParams
@@ -78,6 +68,19 @@ export default async function AnnoncesAdminPage({ searchParams }: PageProps) {
   const properties = (data ?? []) as PropRow[]
   const total = count ?? 0
   const totalPages = Math.ceil(total / PER_PAGE)
+
+  // Données sérialisables pour le tableau interactif (sélection + modération groupée).
+  const rows: AnnonceRow[] = properties.map(p => {
+    const media = p.property_media ?? []
+    const thumb = media.filter(m => m.type === "image").sort((a, b) => a.ordre - b.ordre)[0]?.url
+      ?? media.filter(m => m.type === "video" && m.thumbnail_url).sort((a, b) => a.ordre - b.ordre)[0]?.thumbnail_url
+      ?? null
+    return {
+      id: p.id, titre: p.titre, type_offre: p.type_offre, categorie: p.categorie, statut: p.statut,
+      prix: p.prix, quartier: p.quartier, source: p.source, created_at: p.created_at,
+      thumb, reported: reportCount.get(p.id) ?? 0,
+    }
+  })
 
   const buildUrl = (overrides: Record<string, string>) => {
     const p = new URLSearchParams({ ...params, ...overrides })
@@ -167,120 +170,15 @@ export default async function AnnoncesAdminPage({ searchParams }: PageProps) {
         </form>
       </div>
 
-      {/* Table */}
-      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-        {(!properties || properties.length === 0) ? (
-          <div className="text-center py-16">
-            <div className="text-4xl mb-3">🏠</div>
-            <p className="text-gray-500 text-sm">Aucune annonce pour ce filtre.</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-100 bg-gray-50/60">
-                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Annonce</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden md:table-cell">Type</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden lg:table-cell">Prix</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden lg:table-cell">Source</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Statut</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden md:table-cell">Date</th>
-                  <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {properties.map((p) => {
-                  const media = p.property_media ?? []
-                  const thumb = media.filter(m => m.type === "image").sort((a, b) => a.ordre - b.ordre)[0]?.url
-                    ?? media.filter(m => m.type === "video" && m.thumbnail_url).sort((a, b) => a.ordre - b.ordre)[0]?.thumbnail_url
-                  const reported = reportCount.get(p.id) ?? 0
-
-                  return (
-                    <tr key={p.id} className={`transition-colors ${reported > 0 ? "bg-red-50/70 hover:bg-red-50 border-l-4 border-l-red-500" : "hover:bg-gray-50/60"}`}>
-                      <td className="px-5 py-3">
-                        <Link href={`/admin/annonces/${p.id}`} className="flex items-center gap-3 group">
-                          {thumb ? (
-                            <img src={thumb} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
-                          ) : (
-                            <div className="w-10 h-10 rounded-lg bg-gray-100 flex-shrink-0" />
-                          )}
-                          <div className="min-w-0">
-                            <p className={`font-medium truncate max-w-[200px] ${reported > 0 ? "text-red-700 group-hover:text-red-800" : "text-gray-900 group-hover:text-blue-700"}`}>{p.titre}</p>
-                            {reported > 0 ? (
-                              <span className="inline-flex items-center gap-1 mt-0.5 text-[11px] font-semibold text-red-600 bg-red-100 px-1.5 py-0.5 rounded-full">
-                                <Flag className="w-3 h-3" /> {reported} signalement{reported > 1 ? "s" : ""}
-                              </span>
-                            ) : (
-                              <p className="text-xs text-gray-400">{p.quartier}</p>
-                            )}
-                          </div>
-                        </Link>
-                      </td>
-                      <td className="px-4 py-3 hidden md:table-cell">
-                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                          p.type_offre === "location" ? "bg-blue-50 text-blue-700"
-                          : p.type_offre === "residence_meublee" ? "bg-teal-50 text-teal-700"
-                          : p.type_offre === "cession" ? "bg-amber-50 text-amber-700"
-                          : "bg-purple-50 text-purple-700"
-                        }`}>
-                          {TYPE_OFFRE_LABEL[p.type_offre] ?? p.type_offre}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-gray-700 hidden lg:table-cell whitespace-nowrap">
-                        {p.prix ? formatPrix(p.prix) : <span className="text-gray-400">—</span>}
-                      </td>
-                      <td className="px-4 py-3 hidden lg:table-cell">
-                        <span className="text-xs text-gray-500 capitalize">{p.source ?? "web"}</span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`text-xs font-medium px-2.5 py-1 rounded-full border ${STATUT_PILL[p.statut] ?? "bg-gray-100 text-gray-500 border-gray-200"}`}>
-                          {p.statut.replace("_", " ")}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-gray-400 hidden md:table-cell whitespace-nowrap">
-                        {formatRelativeDate(p.created_at)}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1">
-                          <Link
-                            href={`/admin/annonces/${p.id}`}
-                            className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                            title="Voir / Modérer"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </Link>
-                          {p.statut === "en_attente_validation" && (
-                            <>
-                              <form method="post" action={`/api/admin/annonces/${p.id}/approuver`}>
-                                <button
-                                  type="submit"
-                                  className="p-1.5 rounded-lg text-gray-400 hover:text-green-600 hover:bg-green-50 transition-colors"
-                                  title="Approuver"
-                                >
-                                  <CheckCircle className="w-4 h-4" />
-                                </button>
-                              </form>
-                              <form method="post" action={`/api/admin/annonces/${p.id}/rejeter`}>
-                                <button
-                                  type="submit"
-                                  className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                                  title="Rejeter"
-                                >
-                                  <XCircle className="w-4 h-4" />
-                                </button>
-                              </form>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      {/* Table interactive : sélection + modération groupée (publier / rejeter) */}
+      {rows.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-gray-100 text-center py-16">
+          <div className="text-4xl mb-3">🏠</div>
+          <p className="text-gray-500 text-sm">Aucune annonce pour ce filtre.</p>
+        </div>
+      ) : (
+        <ModerationTable rows={rows} />
+      )}
 
       {/* Pagination */}
       {totalPages > 1 && (
