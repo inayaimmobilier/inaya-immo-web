@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react"
 import { usePathname } from "next/navigation"
 import Link from "next/link"
-import { MessageCircle, X, Send, Loader2, Home } from "lucide-react"
+import { MessageCircle, X, Send, Loader2 } from "lucide-react"
 
 interface Msg { role: "user" | "assistant"; text: string }
 
@@ -88,9 +88,8 @@ export default function ChatWidget() {
         <div className="fixed z-40 bg-white shadow-2xl border border-gray-100 flex flex-col overflow-hidden inset-2 rounded-2xl sm:inset-auto sm:bottom-5 sm:right-5 sm:w-96 sm:h-[32rem] sm:max-h-[80vh]">
           <div className="flex items-center justify-between px-4 py-3 bg-blue-700 text-white">
             <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-white/15 flex items-center justify-center">
-                <Home className="w-4 h-4" />
-              </div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/logo-mark.svg" alt="" className="w-7 h-7 rounded-lg ring-1 ring-white/25" />
               <div>
                 <p className="text-sm font-semibold leading-tight">Assistant Inaya</p>
                 <p className="text-[11px] text-blue-100 leading-tight">Trouvez votre bien en discutant</p>

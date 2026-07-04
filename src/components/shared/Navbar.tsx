@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { useState } from "react"
-import { Menu, X, Home, Search, PlusCircle } from "lucide-react"
+import { Menu, X, Search, PlusCircle } from "lucide-react"
 
 export default function Navbar() {
   const [open, setOpen] = useState(false)
@@ -13,9 +13,8 @@ export default function Navbar() {
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2.5">
-            <div className="w-9 h-9 bg-blue-700 rounded-xl flex items-center justify-center shadow-sm">
-              <Home className="w-5 h-5 text-white" />
-            </div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo-mark.svg" alt="Inaya Immo" className="w-9 h-9 shadow-sm rounded-xl" />
             <div className="leading-tight">
               <span className="font-bold text-lg text-blue-700">Inaya</span>
               <span className="font-bold text-lg text-amber-500"> Immo</span>

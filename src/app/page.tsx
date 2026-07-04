@@ -261,9 +261,8 @@ export default async function Home() {
           <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 bg-blue-700 rounded-lg flex items-center justify-center">
-                  <span className="text-white text-xs font-extrabold">I</span>
-                </div>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/logo-mark.svg" alt="" className="w-8 h-8 rounded-lg" />
                 <span className="text-white font-bold text-sm">Inaya Immo</span>
                 <span className="text-slate-600 text-sm hidden sm:inline">· Bouaké, Côte d&apos;Ivoire</span>
               </div>

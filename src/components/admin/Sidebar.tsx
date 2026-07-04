@@ -50,9 +50,8 @@ export default function AdminSidebar({ role, nom, residenceAlerts = 0, userId, t
     )}>
       {/* Logo */}
       <div className="flex items-center gap-2.5 px-4 h-16 border-b border-gray-800">
-        <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
-          <Home className="w-4 h-4 text-white" />
-        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo-mark.svg" alt="Inaya Immo" className="w-8 h-8 rounded-lg flex-shrink-0" />
         {!collapsed && (
           <span className="font-bold text-sm leading-tight">
             <span className="text-blue-400">Inaya</span>
