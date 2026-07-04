@@ -37,8 +37,8 @@ export default function HomeSearch({ villes }: { villes: Zone[] }) {
       <div className="flex border-b border-gray-100">
         {(["", "location", "vente"] as TypeOffre[]).map((t, i) => (
           <button key={t} type="button" onClick={() => setType(t)}
-            className={`flex-1 py-3.5 text-sm font-semibold transition-colors border-b-2 ${
-              type === t ? "border-blue-700 text-blue-700" : "border-transparent text-gray-400 hover:text-gray-600"
+            className={`flex-1 py-3.5 text-sm font-bold transition-colors border-b-2 ${
+              type === t ? "border-blue-700 text-blue-700 bg-blue-50/60" : "border-transparent text-gray-700 hover:text-blue-700 hover:bg-gray-50"
             }`}>
             {["Tout", "Location", "Vente"][i]}
           </button>
@@ -78,16 +78,11 @@ export default function HomeSearch({ villes }: { villes: Zone[] }) {
           </select>
         </div>
 
-        {/* Budget */}
+        {/* Budget (maximum uniquement) */}
         <div className="flex flex-col sm:flex-row items-stretch">
           <div className="flex flex-1 border-r border-gray-100">
-            <span className="px-4 py-3.5 text-xs text-gray-400 flex items-center whitespace-nowrap">Budget min</span>
-            <input type="number" name="prix_min" min={0} placeholder="0 FCFA"
-              className="flex-1 py-3.5 pr-4 text-sm text-gray-700 outline-none bg-white placeholder:text-gray-300" />
-          </div>
-          <div className="flex flex-1 border-r border-gray-100">
             <span className="px-4 py-3.5 text-xs text-gray-400 flex items-center whitespace-nowrap">Budget max</span>
-            <input type="number" name="prix_max" min={0} placeholder="Illimité"
+            <input type="number" name="prix_max" min={0} placeholder="Votre budget (FCFA)"
               className="flex-1 py-3.5 pr-4 text-sm text-gray-700 outline-none bg-white placeholder:text-gray-300" />
           </div>
           <button type="submit"
