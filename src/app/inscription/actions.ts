@@ -70,11 +70,77 @@ export async function registerAccount(input: {
 
   const email = realEmail ?? synthEmail(telephone)
   const admin = createAdminClient()
+  const supabase = await createClient()
+  const roleVal = ROLE_FOR[input.type]
 
-  // Anti-doublon sur le téléphone (unique en base).
-  const { data: existing } = await admin.from("profiles").select("id").eq("telephone", telephone).maybeSingle()
-  if (existing) return { ok: false, error: "Un compte existe déjà avec ce numéro. Connectez-vous." }
+  // Champs de profil communs (création comme mise à jour), avec repli 42703.
+  const fields: Record<string, unknown> = { nom, commune, telephone, role: roleVal }
+  if (input.type === "proprietaire") fields.proprietaire_type = input.proprietaireType ?? "diffuseur"
+  if (input.type === "prestataire")  fields.metier = (input.metier ?? "").trim()
+  const applyFields = async (uid: string) => {
+    let { error } = await admin.from("profiles").update(fields as never).eq("id", uid)
+    if (error?.code === "42703") {
+      const r2 = await admin.from("profiles").update({ nom, commune, telephone, role: roleVal } as never).eq("id", uid)
+      error = r2.error
+      if (error?.code === "42703") { await admin.from("profiles").update({ nom, telephone } as never).eq("id", uid); error = null }
+    }
+    if (error) console.error("INAYA-AUTH-061", error)
+  }
 
+  // Applique e-mail (si réel) + mot de passe sur un compte auth existant.
+  const applyAuth = async (uid: string): Promise<{ ok: true } | { ok: false; error: string }> => {
+    const patch: Record<string, unknown> = { password }
+    if (realEmail) { patch.email = realEmail; patch.email_confirm = true }
+    const { error } = await admin.auth.admin.updateUserById(uid, patch as never)
+    if (error) {
+      if (error.message?.toLowerCase().includes("already")) return { ok: false, error: "Cet e-mail est déjà utilisé par un autre compte." }
+      console.error("INAYA-AUTH-063", error)
+      return { ok: false, error: "Échec de la mise à jour du compte. Réessayez." }
+    }
+    return { ok: true }
+  }
+
+  // Profil déjà rattaché à ce numéro ?
+  const { data: existProf } = await admin.from("profiles").select("id, verifie").eq("telephone", telephone).maybeSingle()
+  const existing = existProf as { id: string; verifie?: boolean } | null
+
+  // Session en cours (issue d'un premier essai non finalisé) ?
+  const { data: { user: sessionUser } } = await supabase.auth.getUser()
+  let sessionUnverified = false
+  if (sessionUser) {
+    const { data: sp } = await admin.from("profiles").select("verifie").eq("id", sessionUser.id).maybeSingle()
+    sessionUnverified = !(sp as { verifie?: boolean } | null)?.verifie
+  }
+
+  // ── Cas A : correction d'une inscription en attente (déjà connecté, non vérifié).
+  // On met à jour le compte au lieu d'en recréer un → plus d'erreur « numéro déjà utilisé ».
+  if (sessionUser && sessionUnverified) {
+    if (existing && existing.id !== sessionUser.id)
+      return { ok: false, error: "Un autre compte utilise déjà ce numéro." }
+    await applyFields(sessionUser.id)
+    const a = await applyAuth(sessionUser.id)
+    if (!a.ok) return a
+    revalidatePath("/", "layout")
+    return { ok: true } // la session reste valide, l'utilisateur passe à la vérification
+  }
+
+  // ── Cas B : un compte existe déjà pour ce numéro (hors session courante).
+  if (existing) {
+    if (existing.verifie)
+      return { ok: false, error: "Un compte existe déjà avec ce numéro. Connectez-vous." }
+    // Compte NON vérifié abandonné → on le reprend (l'OTP prouvera la possession du numéro).
+    await applyFields(existing.id)
+    const a = await applyAuth(existing.id)
+    if (!a.ok) return a
+    const { data: u } = await admin.auth.admin.getUserById(existing.id)
+    const loginEmail = u?.user?.email ?? email
+    const { error: signErr } = await supabase.auth.signInWithPassword({ email: loginEmail, password })
+    if (signErr) { console.error("INAYA-AUTH-065", signErr); return { ok: false, error: "Compte prêt, mais connexion échouée. Connectez-vous." } }
+    revalidatePath("/", "layout")
+    return { ok: true }
+  }
+
+  // ── Cas C : création d'un nouveau compte.
   const { data: created, error: createErr } = await admin.auth.admin.createUser({
     email, password, email_confirm: true,
     user_metadata: { nom, telephone, commune },
@@ -85,26 +151,8 @@ export async function registerAccount(input: {
     console.error("INAYA-AUTH-060", createErr)
     return { ok: false, error: "Échec de la création du compte. Réessayez." }
   }
-  const uid = created.user.id
+  await applyFields(created.user.id)
 
-  // Rôle + champs spécifiques, avec repli si des colonnes manquent (42703).
-  const full: Record<string, unknown> = { commune, role: ROLE_FOR[input.type] }
-  if (input.type === "proprietaire") full.proprietaire_type = input.proprietaireType ?? "diffuseur"
-  if (input.type === "prestataire")  full.metier = (input.metier ?? "").trim()
-
-  let { error: updErr } = await admin.from("profiles").update(full as never).eq("id", uid)
-  if (updErr?.code === "42703") {
-    const r2 = await admin.from("profiles").update({ commune, role: ROLE_FOR[input.type] } as never).eq("id", uid)
-    updErr = r2.error
-    if (updErr?.code === "42703") {
-      await admin.from("profiles").update({ commune } as never).eq("id", uid)
-      updErr = null
-    }
-  }
-  if (updErr) console.error("INAYA-AUTH-061", updErr)
-
-  // Connexion immédiate (pose les cookies de session).
-  const supabase = await createClient()
   const { error: signErr } = await supabase.auth.signInWithPassword({ email, password })
   if (signErr) {
     console.error("INAYA-AUTH-062", signErr)
