@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation"
 import { createClient, createAdminClient } from "@/lib/supabase/server"
-import { Users } from "lucide-react"
-import UserRow, { type UserRowData } from "./UserRow"
+import { Users, ShieldAlert } from "lucide-react"
+import { type UserRowData } from "./UserRow"
+import UsersTable from "./UsersTable"
 import CreateUserModal from "./CreateUserModal"
 import type { UserRole } from "@/types/database"
 
@@ -10,22 +11,22 @@ export const metadata = { title: "Utilisateurs · Inaya Immo" }
 const PER_PAGE = 50
 
 interface PageProps {
-  searchParams: Promise<{ role?: string; q?: string }>
+  searchParams: Promise<{ role?: string; q?: string; verifie?: string }>
 }
 
-async function getUsers(filterRole?: string, search?: string) {
+async function getUsers(filterRole?: string, search?: string, onlyUnverified?: boolean) {
   const admin = createAdminClient()
 
   let query = admin
     .from("profiles")
-    .select("id, nom, prenom, telephone, telegram_chat_id, role, status, created_at")
+    .select("id, nom, prenom, telephone, telegram_chat_id, role, status, verifie, created_at")
     .order("created_at", { ascending: false })
     .limit(PER_PAGE)
 
   if (filterRole) query = query.eq("role", filterRole as never)
 
   let { data: profilesData, error } = await query
-  // 42703 = colonne telegram_chat_id absente (migration 030 non encore appliquée)
+  // 42703 = colonne absente (verifie → migration 034, telegram_chat_id → migration 030).
   if (error?.code === "42703") {
     const fallback = await admin
       .from("profiles")
@@ -33,14 +34,14 @@ async function getUsers(filterRole?: string, search?: string) {
       .order("created_at", { ascending: false })
       .limit(PER_PAGE)
       .then(r => r)
-    profilesData = (fallback.data ?? []).map((p: Record<string, unknown>) => ({ ...p, telegram_chat_id: null })) as never
+    profilesData = (fallback.data ?? []).map((p: Record<string, unknown>) => ({ ...p, telegram_chat_id: null, verifie: false })) as never
     error = null
   }
   if (error) {
     console.error("INAYA-DB-012", error)
     return []
   }
-  const profiles = (profilesData ?? []) as Omit<UserRowData, "email">[]
+  const profiles = (profilesData ?? []).map((p: Record<string, unknown>) => ({ verifie: false, ...p })) as Omit<UserRowData, "email">[]
 
   // Emails depuis auth.users (non stockés dans profiles)
   const { data: authData } = await admin.auth.admin.listUsers({ perPage: 1000 })
@@ -50,6 +51,8 @@ async function getUsers(filterRole?: string, search?: string) {
     ...p,
     email: emailById.get(p.id) ?? null,
   }))
+
+  if (onlyUnverified) rows = rows.filter(r => !r.verifie)
 
   if (search) {
     const s = search.toLowerCase()
@@ -75,7 +78,8 @@ export default async function UtilisateursPage({ searchParams }: PageProps) {
   const myRole = (me?.role ?? "client") as UserRole
   if (myRole !== "super_admin" && myRole !== "admin") redirect("/admin/dashboard")
 
-  const users = await getUsers(params.role, params.q)
+  const onlyUnverified = params.verifie === "non"
+  const users = await getUsers(onlyUnverified ? undefined : params.role, params.q, onlyUnverified)
   const tgBotUsername = process.env.TELEGRAM_BOT_USERNAME ?? ""
 
   const FILTERS: { value: string; label: string }[] = [
@@ -124,13 +128,12 @@ export default async function UtilisateursPage({ searchParams }: PageProps) {
         </div>
       </div>
 
-      {/* Filtres par rôle */}
+      {/* Filtres par rôle + non vérifiés */}
       <div className="flex gap-2 flex-wrap">
         {FILTERS.map(f => {
-          const active = (params.role || "") === f.value
-          const href = f.value
-            ? `/admin/utilisateurs?role=${f.value}${params.q ? `&q=${encodeURIComponent(params.q)}` : ""}`
-            : `/admin/utilisateurs${params.q ? `?q=${encodeURIComponent(params.q)}` : ""}`
+          const active = !onlyUnverified && (params.role || "") === f.value
+          const qs = params.q ? `${f.value ? "&" : "?"}q=${encodeURIComponent(params.q)}` : ""
+          const href = f.value ? `/admin/utilisateurs?role=${f.value}${qs}` : `/admin/utilisateurs${qs}`
           return (
             <a
               key={f.value || "all"}
@@ -143,34 +146,25 @@ export default async function UtilisateursPage({ searchParams }: PageProps) {
             </a>
           )
         })}
+        {/* Non vérifiés — pour repérer et purger les comptes de test */}
+        <a
+          href={`/admin/utilisateurs?verifie=non${params.q ? `&q=${encodeURIComponent(params.q)}` : ""}`}
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors border ${
+            onlyUnverified ? "bg-amber-500 text-white border-amber-500" : "bg-amber-50 text-amber-700 border-amber-200 hover:border-amber-400"
+          }`}
+        >
+          <ShieldAlert className="w-3.5 h-3.5" /> Non vérifiés
+        </a>
       </div>
 
-      {/* Tableau */}
-      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-        {users.length === 0 ? (
-          <p className="text-sm text-gray-400 px-5 py-10 text-center">Aucun utilisateur trouvé.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="text-left text-xs font-semibold text-gray-400 uppercase tracking-wide bg-gray-50/60">
-                  <th className="px-4 py-3">Utilisateur</th>
-                  <th className="px-4 py-3">Téléphone</th>
-                  <th className="px-4 py-3">Rôle</th>
-                  <th className="px-4 py-3">Statut</th>
-                  <th className="px-4 py-3">Inscrit</th>
-                  <th className="px-4 py-3"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {users.map(u => (
-                  <UserRow key={u.id} user={u} myRole={myRole} isSelf={u.id === user.id} botUsername={tgBotUsername || undefined} />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      {/* Tableau (sélection + suppression groupée en vue « Non vérifiés ») */}
+      <UsersTable
+        users={users}
+        myRole={myRole}
+        selfId={user.id}
+        botUsername={tgBotUsername || undefined}
+        selectionMode={onlyUnverified}
+      />
 
       <p className="text-xs text-gray-400">
         Note : seul un <strong>super admin</strong> peut attribuer ou retirer le rôle super admin.

@@ -16,6 +16,7 @@ export interface UserRowData {
   telegram_chat_id: string | null
   role: UserRole
   status: UserStatus
+  verifie: boolean
   created_at: string
 }
 
@@ -27,6 +28,10 @@ interface Props {
   isSelf: boolean
   /** Username du bot Telegram (sans @) pour générer le deep link. */
   botUsername?: string
+  /** Affiche une case à cocher de sélection (pour la suppression groupée). */
+  selectable?: boolean
+  checked?: boolean
+  onToggle?: (id: string) => void
 }
 
 const ROLES: UserRole[] = ["client", "proprietaire", "locataire", "prestataire", "apporteur", "agent", "comptable", "moderateur", "admin", "super_admin"]
@@ -34,7 +39,7 @@ const STATUSES: UserStatus[] = ["actif", "suspendu", "banni"]
 
 const STAFF_ROLES: UserRole[] = ["agent", "moderateur", "admin", "super_admin"]
 
-export default function UserRow({ user, myRole, isSelf, botUsername }: Props) {
+export default function UserRow({ user, myRole, isSelf, botUsername, selectable, checked, onToggle }: Props) {
   const [role, setRole] = useState<UserRole>(user.role)
   const [status, setStatus] = useState<UserStatus>(user.status)
   const [pending, startTransition] = useTransition()
@@ -72,7 +77,17 @@ export default function UserRow({ user, myRole, isSelf, botUsername }: Props) {
   const roleOptions = myRole === "super_admin" ? ROLES : ROLES.filter(r => r !== "super_admin")
 
   return (
-    <tr className="border-t border-gray-50 hover:bg-gray-50/60 transition-colors">
+    <tr className={`border-t border-gray-50 transition-colors ${checked ? "bg-blue-50/50" : "hover:bg-gray-50/60"}`}>
+      {/* Case de sélection */}
+      {selectable && (
+        <td className="px-3 py-3 w-8">
+          {!isSelf && (
+            <input type="checkbox" checked={!!checked} onChange={() => onToggle?.(user.id)}
+              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+          )}
+        </td>
+      )}
+
       {/* Identité */}
       <td className="px-4 py-3">
         <div className="flex items-center gap-2">
@@ -80,6 +95,9 @@ export default function UserRow({ user, myRole, isSelf, botUsername }: Props) {
             <p className="text-sm font-medium text-gray-900">
               {nomComplet}
               {isSelf && <span className="ml-1.5 text-xs text-blue-600 font-normal">(vous)</span>}
+              {!user.verifie && !isSelf && (
+                <span className="ml-1.5 text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-100 px-1.5 py-0.5 rounded-full align-middle">Non vérifié</span>
+              )}
             </p>
             <p className="text-xs text-gray-400">{user.email || "—"}</p>
           </div>

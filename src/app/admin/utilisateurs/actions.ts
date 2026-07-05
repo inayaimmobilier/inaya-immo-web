@@ -262,6 +262,23 @@ export async function deleteUser(targetId: string): Promise<ActionResult> {
   return { ok: true }
 }
 
+/** Supprime plusieurs comptes d'un coup (réutilise deleteUser : mêmes protections). */
+export async function bulkDeleteUsers(ids: string[]): Promise<{ ok: true; deleted: number; failed: number } | { ok: false; error: string }> {
+  const me = await currentProfile()
+  if (!me) return { ok: false, error: "Non authentifié." }
+  if (me.role !== "super_admin" && me.role !== "admin")
+    return { ok: false, error: "Action réservée aux administrateurs." }
+  if (!ids?.length) return { ok: false, error: "Aucun compte sélectionné." }
+
+  let deleted = 0, failed = 0
+  for (const id of ids) {
+    const r = await deleteUser(id)
+    if (r.ok) deleted++; else failed++
+  }
+  revalidatePath("/admin/utilisateurs")
+  return { ok: true, deleted, failed }
+}
+
 /** Modifie le statut d'un utilisateur (actif / suspendu / banni). */
 export async function updateUserStatus(targetId: string, status: UserStatus): Promise<ActionResult> {
   if (!STATUSES.includes(status)) return { ok: false, error: "Statut invalide." }
