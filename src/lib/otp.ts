@@ -81,15 +81,43 @@ export async function issueOtp(userId: string, canal: OtpCanal, destination: str
     const sent = await sendEmail(dest, "Votre code de vérification Inaya Immo", html)
     if (!sent) return { ok: false, error: "Envoi de l'e-mail impossible. Choisissez WhatsApp." }
   } else {
-    // WhatsApp → file d'attente notifications, envoyée par whatsapp-service.
-    const { error: notifErr } = await admin.from("notifications").insert({
-      contact_telephone: dest, canal: "whatsapp", type: "otp_verification",
-      titre: "Code de vérification Inaya", contenu: texte, payload: {}, lu: false, envoye: false,
-    } as never)
-    if (notifErr) {
-      console.error("INAYA-OTP-002", notifErr.message)
-      return { ok: false, error: "Envoi WhatsApp impossible. Réessayez." }
+    // WhatsApp : envoi DIRECT et synchrone via le service (compte notificateur en
+    // priorité), avec repli sur la file d'attente si le service est injoignable.
+    const enqueue = async (): Promise<boolean> => {
+      const { error } = await admin.from("notifications").insert({
+        contact_telephone: dest, canal: "whatsapp", type: "otp_verification",
+        titre: "Code de vérification Inaya", contenu: texte, payload: {}, lu: false, envoye: false,
+      } as never)
+      if (error) console.error("INAYA-OTP-002", error.message)
+      return !error
     }
+
+    const waUrl = process.env.WA_SERVICE_URL
+    if (waUrl) {
+      try {
+        const r = await fetch(`${waUrl}/send-direct`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(process.env.WA_HTTP_SECRET ? { "x-inaya-secret": process.env.WA_HTTP_SECRET } : {}),
+          },
+          body: JSON.stringify({ to: dest, text: texte }),
+          signal: AbortSignal.timeout(9000),
+        })
+        if (r.ok) return { ok: true }
+        // Service joignable mais envoi refusé : aucun compte connecté (503) ou
+        // numéro absent de WhatsApp (400). On surface la vraie raison à l'utilisateur.
+        const data = (await r.json().catch(() => ({}))) as { error?: string }
+        await enqueue() // trace pour un retry auto quand le notificateur reviendra
+        return { ok: false, error: data.error || "Envoi WhatsApp impossible pour le moment." }
+      } catch {
+        // Service injoignable → file d'attente, le dispatcher réessaiera.
+        if (!(await enqueue())) return { ok: false, error: "Envoi WhatsApp impossible. Réessayez." }
+        return { ok: true }
+      }
+    }
+    // Pas d'URL de service configurée → file d'attente classique.
+    if (!(await enqueue())) return { ok: false, error: "Envoi WhatsApp impossible. Réessayez." }
   }
 
   return { ok: true }
