@@ -125,19 +125,10 @@ export async function registerAccount(input: {
   }
 
   // ── Cas B : un compte existe déjà pour ce numéro (hors session courante).
+  // On NE reprend PAS automatiquement : un compte non vérifié peut être un compte
+  // légitime pré-existant (agent, admin créé avant l'OTP). Il faut se connecter.
   if (existing) {
-    if (existing.verifie)
-      return { ok: false, error: "Un compte existe déjà avec ce numéro. Connectez-vous." }
-    // Compte NON vérifié abandonné → on le reprend (l'OTP prouvera la possession du numéro).
-    await applyFields(existing.id)
-    const a = await applyAuth(existing.id)
-    if (!a.ok) return a
-    const { data: u } = await admin.auth.admin.getUserById(existing.id)
-    const loginEmail = u?.user?.email ?? email
-    const { error: signErr } = await supabase.auth.signInWithPassword({ email: loginEmail, password })
-    if (signErr) { console.error("INAYA-AUTH-065", signErr); return { ok: false, error: "Compte prêt, mais connexion échouée. Connectez-vous." } }
-    revalidatePath("/", "layout")
-    return { ok: true }
+    return { ok: false, error: "Un compte existe déjà avec ce numéro. Connectez-vous." }
   }
 
   // ── Cas C : création d'un nouveau compte.
