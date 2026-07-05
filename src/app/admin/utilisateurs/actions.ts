@@ -185,6 +185,34 @@ export async function updateUserProfile(targetId: string, input: {
 }
 
 /**
+ * Définit un NOUVEAU mot de passe pour un utilisateur (réinitialisation admin).
+ * Le mot de passe existant ne peut jamais être lu (haché à sens unique) : on ne
+ * peut que le remplacer. Le nouveau mot de passe est renvoyé à l'appelant pour
+ * qu'il le communique à l'utilisateur, puis n'est plus jamais récupérable.
+ */
+export async function setUserPassword(targetId: string, newPassword: string): Promise<ActionResult> {
+  const me = await currentProfile()
+  if (!me) return { ok: false, error: "Non authentifié." }
+  if (me.role !== "super_admin" && me.role !== "admin")
+    return { ok: false, error: "Action réservée aux administrateurs." }
+  if ((newPassword || "").length < 6) return { ok: false, error: "Le mot de passe doit comporter au moins 6 caractères." }
+
+  const admin = createAdminClient()
+  const { data: targetData } = await admin.from("profiles").select("role").eq("id", targetId).single()
+  const target = targetData as { role: UserRole } | null
+  if (!target) return { ok: false, error: "Utilisateur introuvable." }
+  if (target.role === "super_admin" && me.role !== "super_admin" && me.id !== targetId)
+    return { ok: false, error: "Seul un super admin peut réinitialiser le mot de passe d'un super admin." }
+
+  const { error } = await admin.auth.admin.updateUserById(targetId, { password: newPassword })
+  if (error) {
+    console.error("INAYA-USER-040", error)
+    return { ok: false, error: "Échec de la réinitialisation du mot de passe." }
+  }
+  return { ok: true }
+}
+
+/**
  * Supprime définitivement un utilisateur et ses données.
  * La suppression du compte auth déclenche la cascade sur profiles (et les tables
  * liées via ON DELETE CASCADE). On supprime aussi le profil en filet de sécurité.

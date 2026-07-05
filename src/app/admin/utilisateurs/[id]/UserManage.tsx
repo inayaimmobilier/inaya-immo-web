@@ -2,8 +2,8 @@
 
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { Loader2, Save, Trash2, ShieldCheck, ShieldAlert } from "lucide-react"
-import { updateUserProfile, deleteUser, updateUserRole, updateUserStatus } from "../actions"
+import { Loader2, Save, Trash2, ShieldCheck, ShieldAlert, KeyRound, Eye, EyeOff, RefreshCw, Copy } from "lucide-react"
+import { updateUserProfile, deleteUser, updateUserRole, updateUserStatus, setUserPassword } from "../actions"
 import { ROLE_LABEL, USER_STATUS_LABEL } from "@/lib/utils"
 import type { UserRole, UserStatus } from "@/types/database"
 
@@ -44,6 +44,11 @@ export default function UserManage({ user, roleOptions, canManageRole, isSelf }:
   const [confirmDel, setConfirmDel] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
+  // Mot de passe (réinitialisation admin — le mot de passe actuel n'est jamais lisible).
+  const [newPwd, setNewPwd] = useState("")
+  const [showPwd, setShowPwd] = useState(false)
+  const [pwdSet, setPwdSet] = useState<string | null>(null)
+
   const isSynthEmail = email.endsWith("@auto.inaya-immo.ci")
 
   function save(e: React.FormEvent) {
@@ -74,6 +79,27 @@ export default function UserManage({ user, roleOptions, canManageRole, isSelf }:
       const res = await updateUserStatus(user.id, next)
       if (!res.ok) { setStatus(prev); setMsg({ ok: false, text: res.error }) }
       else { setMsg({ ok: true, text: "Statut mis à jour." }); router.refresh() }
+    })
+  }
+
+  function generatePwd() {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789"
+    let out = ""
+    const rnd = new Uint32Array(10)
+    crypto.getRandomValues(rnd)
+    for (let i = 0; i < 10; i++) out += chars[rnd[i] % chars.length]
+    setNewPwd(out); setShowPwd(true)
+  }
+
+  function savePwd() {
+    if (newPwd.length < 6) { setMsg({ ok: false, text: "Le mot de passe doit comporter au moins 6 caractères." }); return }
+    setMsg(null); setPwdSet(null)
+    start(async () => {
+      const res = await setUserPassword(user.id, newPwd)
+      if (!res.ok) { setMsg({ ok: false, text: res.error }); return }
+      setPwdSet(newPwd)     // affiché une fois pour communication à l'utilisateur
+      setNewPwd("")
+      setMsg({ ok: true, text: "Nouveau mot de passe défini." })
     })
   }
 
@@ -152,6 +178,49 @@ export default function UserManage({ user, roleOptions, canManageRole, isSelf }:
           </div>
         </div>
         {isSelf && <p className="text-xs text-gray-400">Vous ne pouvez pas modifier votre propre rôle ni votre statut.</p>}
+      </div>
+
+      {/* Mot de passe */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3">
+        <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+          <KeyRound className="w-4 h-4 text-gray-500" /> Mot de passe
+        </h2>
+        <p className="text-xs text-gray-500">
+          Le mot de passe actuel n&apos;est pas affichable : il est chiffré (haché) et ne peut pas être récupéré,
+          même par un administrateur. Vous pouvez en définir un nouveau et le communiquer à l&apos;utilisateur.
+        </p>
+
+        {pwdSet && (
+          <div className="bg-green-50 border border-green-100 rounded-xl px-4 py-3">
+            <p className="text-xs text-green-700 mb-1">Nouveau mot de passe défini — communiquez-le maintenant, il ne sera plus affiché :</p>
+            <div className="flex items-center gap-2">
+              <code className="text-sm font-mono font-semibold text-gray-900 bg-white border border-green-200 rounded-lg px-3 py-1.5">{pwdSet}</code>
+              <button type="button" onClick={() => navigator.clipboard?.writeText(pwdSet)}
+                className="inline-flex items-center gap-1 text-xs text-green-700 hover:text-green-900">
+                <Copy className="w-3.5 h-3.5" /> Copier
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-stretch gap-2 flex-wrap">
+          <div className="relative flex-1 min-w-[200px]">
+            <input value={newPwd} onChange={e => setNewPwd(e.target.value)} type={showPwd ? "text" : "password"}
+              autoComplete="new-password" placeholder="Nouveau mot de passe" className={`${input} pr-10`} />
+            <button type="button" onClick={() => setShowPwd(!showPwd)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+              {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
+          <button type="button" onClick={generatePwd}
+            className="inline-flex items-center gap-1.5 border border-gray-200 text-gray-600 hover:border-blue-300 hover:text-blue-700 px-3 rounded-xl text-sm font-medium">
+            <RefreshCw className="w-4 h-4" /> Générer
+          </button>
+          <button type="button" onClick={savePwd} disabled={pending || newPwd.length < 6}
+            className="inline-flex items-center gap-2 bg-gray-900 text-white px-4 rounded-xl text-sm font-semibold hover:bg-gray-800 disabled:opacity-60">
+            {pending ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />} Définir
+          </button>
+        </div>
       </div>
 
       {/* Zone de danger */}
