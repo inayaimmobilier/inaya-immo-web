@@ -1,7 +1,6 @@
 import { Suspense } from "react"
 import { createClient, createAdminClient } from "@/lib/supabase/server"
 import PropertyCard from "@/components/properties/PropertyCard"
-import PropertyCardSkeleton from "@/components/properties/PropertyCardSkeleton"
 import PropertyFilters from "@/components/properties/PropertyFilters"
 import Navbar from "@/components/shared/Navbar"
 import SaveSearchButton from "./SaveSearchButton"
@@ -139,7 +138,7 @@ async function PropertiesList({ searchParams }: PageProps) {
         <span className="font-semibold text-gray-900">{total}</span> annonce{total > 1 ? "s" : ""} trouvée{total > 1 ? "s" : ""}
       </p>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 stagger-children">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
         {(properties as { id: string }[]).map((p) => (
           <PropertyCard key={p.id} property={p as never} />
         ))}
@@ -204,7 +203,15 @@ export default async function BiensPage({ searchParams }: PageProps) {
           </div>
 
           {/* Liste */}
-          <Suspense fallback={<PropertyCardSkeleton count={6} />}>
+          <Suspense
+            fallback={
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className="bg-white rounded-2xl h-72 animate-pulse border border-gray-100" />
+                ))}
+              </div>
+            }
+          >
             <PropertiesList searchParams={Promise.resolve(params)} />
           </Suspense>
         </div>

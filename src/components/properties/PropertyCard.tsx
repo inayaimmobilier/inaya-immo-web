@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import Image from "next/image"
-import { MapPin, BedDouble, Bath, Maximize2, CheckCircle2, Sparkles } from "lucide-react"
+import { MapPin, BedDouble, Bath, Maximize2, CheckCircle2 } from "lucide-react"
 import { formatPrix, formatDateTime, CATEGORIE_LABEL, TYPE_OFFRE_LABEL } from "@/lib/utils"
 import PropertyPlaceholder from "./PropertyPlaceholder"
 import type { Database } from "@/types/database"
@@ -12,21 +12,14 @@ type Property = Database["public"]["Tables"]["properties"]["Row"] & {
   zones?: { nom: string } | null
 }
 
-/** Annonce de moins de 7 jours = badge "Nouveau" */
-const IS_NEW_DAYS = 7
-
 export default function PropertyCard({ property }: { property: Property }) {
   const media = property.property_media ?? []
   const photo = media.filter((m) => m.type === "image").sort((a, b) => a.ordre - b.ordre)[0]
+  // Pas de photo : on retombe sur la miniature de la 1re vidéo (annonces vidéo-only)
   const videoThumb = !photo
     ? media.filter((m) => m.type === "video" && m.thumbnail_url).sort((a, b) => a.ordre - b.ordre)[0]
     : undefined
   const cover = photo?.url ?? videoThumb?.thumbnail_url ?? null
-
-  const isNew =
-    property.validated_at
-      ? (Date.now() - new Date(property.validated_at).getTime()) < IS_NEW_DAYS * 86400000
-      : false
 
   const isLocation = property.type_offre === "location"
   const isCession  = property.type_offre === "cession"
@@ -38,7 +31,7 @@ export default function PropertyCard({ property }: { property: Property }) {
 
   return (
     <Link href={`/biens/${property.id}`} className="group block">
-      <article className="bg-white rounded-2xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden border border-gray-100 hover:border-blue-200 group/card animate-fade-in opacity-0 [animation-fill-mode:forwards]">
+      <article className="bg-white rounded-2xl shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden border border-gray-100 hover:border-blue-200">
         {/* Photo */}
         <div className="relative h-48 bg-gray-100 overflow-hidden">
           {cover ? (
@@ -46,8 +39,7 @@ export default function PropertyCard({ property }: { property: Property }) {
               src={cover}
               alt={property.titre}
               fill
-              sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-              className="object-cover group-hover/card:scale-105 transition-transform duration-500"
+              className="object-cover group-hover:scale-105 transition-transform duration-300"
             />
           ) : (
             <PropertyPlaceholder categorie={property.categorie} />
@@ -86,20 +78,11 @@ export default function PropertyCard({ property }: { property: Property }) {
               </span>
             )}
           </div>
-
-          {/* Badge "Nouveau" (coins bas-gauche) */}
-          {isNew && !isResidence && (
-            <div className="absolute bottom-3 left-3">
-              <span className="flex items-center gap-1 text-xs bg-white/95 text-blue-700 px-2 py-1 rounded-full shadow-sm font-semibold">
-                <Sparkles className="w-3 h-3" /> Nouveau
-              </span>
-            </div>
-          )}
         </div>
 
         {/* Infos */}
         <div className="p-4">
-          <h3 className="font-semibold text-gray-900 text-sm leading-snug mb-1.5 line-clamp-2 group-hover/card:text-blue-700 transition-colors duration-200">
+          <h3 className="font-semibold text-gray-900 text-sm leading-snug mb-1.5 line-clamp-2 group-hover:text-blue-700 transition-colors">
             {property.titre}
           </h3>
 
@@ -174,11 +157,8 @@ export default function PropertyCard({ property }: { property: Property }) {
               )}
             </div>
             <button
-              onClick={(e) => {
-                e.preventDefault()
-                // Scroll au formulaire de contact sur la page détail
-              }}
-              className="text-xs bg-blue-50 hover:bg-blue-600 hover:text-white text-blue-700 px-3 py-1.5 rounded-lg font-medium transition-all duration-200 active:scale-95"
+              onClick={(e) => { e.preventDefault() }}
+              className="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg font-medium transition-colors"
             >
               Contacter
             </button>
