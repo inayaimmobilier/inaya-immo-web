@@ -59,28 +59,27 @@ async function PropertiesList({ searchParams }: PageProps) {
     villeNom = (vRow as { nom: string } | null)?.nom ?? null
   }
 
+  // Filtres STRUCTURÉS en base (type, catégorie, prix, pièces). La commune/quartier
+  // et la recherche texte sont appariés ensuite en JS avec normalisation (accents +
+  // casse + multi-champs), car les annonces ingérées par l'IA utilisent des libellés
+  // libres (« Bouake » sans accent, quartier dans le titre plutôt que la colonne…).
   // Les résidences meublées ont leur propre catalogue (/residences) → exclues d'ici.
-  let countQ = supabase.from("properties").select("*", { count: "exact", head: true })
-    .eq("statut", "publie").neq("type_offre", "residence_meublee")
-  let dataQ  = supabase.from("properties")
-    .select("id,titre,description,type_offre,categorie,prix,quartier,statut,surface,nb_pieces,nb_chambres,nb_sdb,meuble,created_at,validated_at,property_media(url,type,ordre,thumbnail_url),zones(nom)")
+  let dataQ = supabase.from("properties")
+    .select("id,titre,description,type_offre,categorie,prix,quartier,ville,statut,surface,nb_pieces,nb_chambres,nb_sdb,meuble,created_at,validated_at,property_media(url,type,ordre,thumbnail_url),zones(nom)")
     .eq("statut", "publie")
     .neq("type_offre", "residence_meublee")
     .order("created_at", { ascending: false })
-    .range(from, to)
+    .limit(1000)
 
-  if (params.type)         { countQ = countQ.eq("type_offre", params.type as never);   dataQ = dataQ.eq("type_offre", params.type as never) }
-  if (params.categorie)    { countQ = countQ.eq("categorie", params.categorie as never); dataQ = dataQ.eq("categorie", params.categorie as never) }
-  if (villeNom)            { countQ = countQ.ilike("ville", `%${villeNom}%`);            dataQ = dataQ.ilike("ville", `%${villeNom}%`) }
-  if (quartierNom)         { countQ = countQ.ilike("quartier", `%${quartierNom}%`);     dataQ = dataQ.ilike("quartier", `%${quartierNom}%`) }
-  if (params.prix_min)     { countQ = countQ.gte("prix", Number(params.prix_min));      dataQ = dataQ.gte("prix", Number(params.prix_min)) }
-  if (params.prix_max)     { countQ = countQ.lte("prix", Number(params.prix_max));      dataQ = dataQ.lte("prix", Number(params.prix_max)) }
-  if (params.pieces_min)   { countQ = countQ.gte("nb_pieces", Number(params.pieces_min)); dataQ = dataQ.gte("nb_pieces", Number(params.pieces_min)) }
+  if (params.type)       dataQ = dataQ.eq("type_offre", params.type as never)
+  if (params.categorie)  dataQ = dataQ.eq("categorie", params.categorie as never)
+  if (params.prix_min)   dataQ = dataQ.gte("prix", Number(params.prix_min))
+  if (params.prix_max)   dataQ = dataQ.lte("prix", Number(params.prix_max))
+  if (params.pieces_min) dataQ = dataQ.gte("nb_pieces", Number(params.pieces_min))
 
-  const [{ count, error: cErr }, { data, error }] = await Promise.all([countQ, dataQ])
-
-  if (error || cErr) {
-    console.error("INAYA-DB-001", error ?? cErr)
+  const { data, error } = await dataQ
+  if (error) {
+    console.error("INAYA-DB-001", error)
     return (
       <div className="text-center py-16 text-gray-500">
         <p className="text-lg mb-2">Impossible de charger les annonces.</p>
@@ -89,9 +88,33 @@ async function PropertiesList({ searchParams }: PageProps) {
     )
   }
 
-  const properties = (data ?? []) as unknown[]
-  const total = count || 0
+  // Normalisation : minuscules + suppression des accents. « Bouaké » → « bouake ».
+  const norm = (s: unknown) => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
+  type Row = { quartier?: string | null; ville?: string | null; titre?: string | null; description?: string | null; zones?: { nom?: string | null } | null }
+  // Concatène tous les champs de localisation pertinents d'une annonce.
+  const hay = (r: Row) => [r.quartier, r.ville, r.titre, r.description, r.zones?.nom].map(norm).join(" · ")
+
+  let rows = (data ?? []) as (Row & { id: string })[]
+
+  if (quartierNom) {
+    // Quartier prioritaire : on cherche le libellé dans tous les champs (recall élevé,
+    // pour ne pas rater une annonce où le quartier n'est que dans le titre/description).
+    const t = norm(quartierNom)
+    rows = rows.filter(r => hay(r).includes(t))
+  } else if (villeNom) {
+    // Commune seule : match sur la commune ; on garde aussi les annonces sans commune
+    // renseignée pour éviter les faux négatifs (dataset quasi mono-ville).
+    const t = norm(villeNom)
+    rows = rows.filter(r => hay(r).includes(t) || !norm(r.ville))
+  }
+  if (params.q) {
+    const t = norm(params.q)
+    if (t) rows = rows.filter(r => hay(r).includes(t))
+  }
+
+  const total = rows.length
   const totalPages = Math.ceil(total / PER_PAGE)
+  const properties = rows.slice(from, to + 1) as unknown[]
 
   if (!properties || properties.length === 0) {
     return (

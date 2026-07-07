@@ -15,15 +15,6 @@ const CATEGORIES = [
   { value: "magasin", label: "Magasin" },
 ]
 
-const PRIX_MAX = [
-  { value: "", label: "Budget libre" },
-  { value: "50000",   label: "≤ 50 000 FCFA" },
-  { value: "100000",  label: "≤ 100 000 FCFA" },
-  { value: "200000",  label: "≤ 200 000 FCFA" },
-  { value: "500000",  label: "≤ 500 000 FCFA" },
-  { value: "1000000", label: "≤ 1 000 000 FCFA" },
-]
-
 const PIECES_MIN = [
   { value: "", label: "Toutes pièces" },
   { value: "1", label: "1 pièce min" },
@@ -127,10 +118,16 @@ export default function PropertyFilters() {
           {PIECES_MIN.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
         </select>
 
-        {/* Budget max */}
-        <select value={params.get("prix_max") || ""} onChange={e => update("prix_max", e.target.value)} className={cls}>
-          {PRIX_MAX.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
-        </select>
+        {/* Budget max — montant libre (cohérent avec la recherche d'accueil) */}
+        <input
+          key={params.get("prix_max") || "budget"}
+          type="number" min={0} inputMode="numeric"
+          placeholder="Budget max (FCFA)"
+          defaultValue={params.get("prix_max") || ""}
+          onKeyDown={e => { if (e.key === "Enter") update("prix_max", (e.target as HTMLInputElement).value.trim()) }}
+          onBlur={e => { const v = e.target.value.trim(); if (v !== (params.get("prix_max") || "")) update("prix_max", v) }}
+          className={cls}
+        />
 
         {/* Recherche texte */}
         <div className="relative">
