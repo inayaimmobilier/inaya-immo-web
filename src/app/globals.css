@@ -5,14 +5,20 @@
   --foreground: #0f172a;
 
   /* Inaya Immo — Palette principale */
-  --primary: #1d4ed8;         /* Bleu professionnel */
+  --primary: #1d4ed8;
   --primary-foreground: #fff;
-  --accent: #f59e0b;          /* Ambre — chaleur / CI */
+  --primary-light: #eff6ff;
+  --accent: #f59e0b;
   --accent-foreground: #0f172a;
   --muted: #f1f5f9;
   --muted-foreground: #64748b;
   --border: #e2e8f0;
-  --radius: 0.5rem;
+  --radius: 0.75rem;
+
+  /* Feedback */
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
 }
 
 @theme inline {
@@ -33,9 +39,96 @@ body {
   color: var(--foreground);
   font-family: system-ui, -apple-system, sans-serif;
   line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Scrollbar légère */
-::-webkit-scrollbar { width: 6px; }
+/* ── Animations ────────────────────────────────── */
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shimmer-slide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Utility animations ─────────────────────────── */
+
+.animate-fade-in {
+  animation: fade-in 0.4s ease-out;
+}
+
+.animate-scale-in {
+  animation: scale-in 0.25s ease-out;
+}
+
+.animate-slide-up {
+  animation: slide-up 0.35s ease-out;
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.4) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: shimmer-slide 1.5s infinite;
+}
+
+/* ── Stagger children (grid/flex containers) ────── */
+
+.stagger-children > * {
+  opacity: 0;
+  animation: fade-in 0.4s ease-out forwards;
+}
+
+.stagger-children > *:nth-child(1)  { animation-delay: 0ms; }
+.stagger-children > *:nth-child(2)  { animation-delay: 60ms; }
+.stagger-children > *:nth-child(3)  { animation-delay: 120ms; }
+.stagger-children > *:nth-child(4)  { animation-delay: 180ms; }
+.stagger-children > *:nth-child(5)  { animation-delay: 240ms; }
+.stagger-children > *:nth-child(6)  { animation-delay: 300ms; }
+.stagger-children > *:nth-child(7)  { animation-delay: 360ms; }
+.stagger-children > *:nth-child(8)  { animation-delay: 420ms; }
+.stagger-children > *:nth-child(9)  { animation-delay: 480ms; }
+.stagger-children > *:nth-child(10) { animation-delay: 540ms; }
+.stagger-children > *:nth-child(11) { animation-delay: 600ms; }
+.stagger-children > *:nth-child(12) { animation-delay: 660ms; }
+
+/* ── Scrollbar légère ───────────────────────────── */
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: var(--muted); }
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* ── Focus visible (accessibilité) ──────────────── */
+
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ── Selection ──────────────────────────────────── */
+
+::selection {
+  background: var(--primary);
+  color: white;
+}
+
+/* ── Smooth page transitions ────────────────────── */
+
+main {
+  animation: fade-in 0.3s ease-out;
+}
