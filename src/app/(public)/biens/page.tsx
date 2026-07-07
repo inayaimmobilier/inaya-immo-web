@@ -115,13 +115,7 @@ async function PropertiesList({ searchParams }: PageProps) {
 
   const total = rows.length
   const totalPages = Math.ceil(total / PER_PAGE)
-  // eslint-disable-next-line react-hooks/purity -- composant serveur, Date.now() y est déterministe par requête
-  const now = Date.now()
-  const SEVEN_DAYS = 7 * 86400000
-  const properties = rows.slice(from, to + 1).map((r: Record<string, unknown>) => ({
-    ...r,
-    _isNew: r.validated_at ? (now - new Date(r.validated_at as string).getTime()) < SEVEN_DAYS : false,
-  }))
+  const properties = rows.slice(from, to + 1) as unknown[]
 
   if (!properties || properties.length === 0) {
     return (

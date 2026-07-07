@@ -10,8 +10,10 @@ import type { Database } from "@/types/database"
 type Property = Database["public"]["Tables"]["properties"]["Row"] & {
   property_media?: Array<{ url: string; type: string; ordre: number; thumbnail_url?: string | null }>
   zones?: { nom: string } | null
-  _isNew?: boolean  // pré-calculé côté serveur (< 7 jours depuis validation)
 }
+
+/** Annonce de moins de 7 jours = badge "Nouveau" */
+const IS_NEW_DAYS = 7
 
 export default function PropertyCard({ property }: { property: Property }) {
   const media = property.property_media ?? []
@@ -20,6 +22,11 @@ export default function PropertyCard({ property }: { property: Property }) {
     ? media.filter((m) => m.type === "video" && m.thumbnail_url).sort((a, b) => a.ordre - b.ordre)[0]
     : undefined
   const cover = photo?.url ?? videoThumb?.thumbnail_url ?? null
+
+  const isNew =
+    property.validated_at
+      ? (Date.now() - new Date(property.validated_at).getTime()) < IS_NEW_DAYS * 86400000
+      : false
 
   const isLocation = property.type_offre === "location"
   const isCession  = property.type_offre === "cession"
@@ -81,7 +88,7 @@ export default function PropertyCard({ property }: { property: Property }) {
           </div>
 
           {/* Badge "Nouveau" (coins bas-gauche) */}
-          {property._isNew && !isResidence && (
+          {isNew && !isResidence && (
             <div className="absolute bottom-3 left-3">
               <span className="flex items-center gap-1 text-xs bg-white/95 text-blue-700 px-2 py-1 rounded-full shadow-sm font-semibold">
                 <Sparkles className="w-3 h-3" /> Nouveau
