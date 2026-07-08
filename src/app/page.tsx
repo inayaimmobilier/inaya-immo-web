@@ -6,7 +6,8 @@ import Navbar from "@/components/shared/Navbar"
 import HomeSearch from "@/components/shared/HomeSearch"
 import ServiceBanners from "@/components/shared/ServiceBanners"
 import AutoRefresh from "@/components/shared/AutoRefresh"
-import { ArrowRight, Shield, Bell, Users, PlusCircle, Sofa } from "lucide-react"
+import { getPublishedTestimonials } from "@/lib/testimonials"
+import { ArrowRight, Shield, Bell, Users, PlusCircle, Sofa, Star } from "lucide-react"
 
 // Données temps réel (ingestion WhatsApp) : jamais de cache, toujours frais.
 export const dynamic = "force-dynamic"
@@ -63,8 +64,8 @@ async function getServiceBanners() {
 }
 
 export default async function Home() {
-  const [stats, recentProperties, residences, villes, serviceBanners] = await Promise.all([
-    getStats(), getRecentProperties(), getResidences(), getVilles(), getServiceBanners(),
+  const [stats, recentProperties, residences, villes, serviceBanners, testimonials] = await Promise.all([
+    getStats(), getRecentProperties(), getResidences(), getVilles(), getServiceBanners(), getPublishedTestimonials(6),
   ])
 
   return (
@@ -256,6 +257,51 @@ export default async function Home() {
           </div>
         </section>
 
+        {/* ── AVIS / TÉMOIGNAGES ───────────────────────────────────────── */}
+        <section className="bg-white border-t border-gray-100">
+          <div className="max-w-5xl mx-auto px-4 sm:px-6 py-14">
+            <div className="flex items-end justify-between mb-8 gap-4 flex-wrap">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">Ils nous font confiance</h2>
+                <div className="flex items-center gap-2 mt-1">
+                  {testimonials.count > 0 ? (
+                    <>
+                      <span className="inline-flex">
+                        {[1, 2, 3, 4, 5].map(n => (
+                          <Star key={n} className={`w-4 h-4 ${n <= Math.round(testimonials.average) ? "fill-amber-400 text-amber-400" : "text-gray-300"}`} />
+                        ))}
+                      </span>
+                      <span className="text-sm text-slate-500"><strong className="text-slate-900">{testimonials.average}</strong>/5 · {testimonials.count} avis</span>
+                    </>
+                  ) : (
+                    <p className="text-sm text-slate-400">Soyez le premier à donner votre avis.</p>
+                  )}
+                </div>
+              </div>
+              <Link href="/temoignages"
+                className="flex items-center gap-1.5 text-sm font-semibold text-blue-700 hover:text-blue-800 shrink-0">
+                Donner mon avis <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+
+            {testimonials.items.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                {testimonials.items.slice(0, 3).map(t => (
+                  <div key={t.id} className="bg-slate-50 rounded-2xl border border-gray-100 p-5">
+                    <span className="inline-flex mb-2">
+                      {[1, 2, 3, 4, 5].map(n => (
+                        <Star key={n} className={`w-4 h-4 ${n <= t.note ? "fill-amber-400 text-amber-400" : "text-gray-300"}`} />
+                      ))}
+                    </span>
+                    <p className="text-sm text-slate-700 line-clamp-4">{t.message}</p>
+                    <p className="text-sm font-semibold text-slate-900 mt-3">— {t.nom}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+
         {/* ── FOOTER ───────────────────────────────────────────────────── */}
         <footer className="bg-slate-950">
           <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10">
@@ -269,6 +315,7 @@ export default async function Home() {
               <div className="flex items-center gap-6 text-xs text-slate-500">
                 <Link href="/biens" className="hover:text-slate-300 transition-colors">Annonces</Link>
                 <Link href="/publier" className="hover:text-slate-300 transition-colors">Publier</Link>
+                <Link href="/temoignages" className="hover:text-slate-300 transition-colors">Avis</Link>
                 <Link href="/connexion" className="hover:text-slate-300 transition-colors">Connexion</Link>
                 <span>© {new Date().getFullYear()}</span>
               </div>
