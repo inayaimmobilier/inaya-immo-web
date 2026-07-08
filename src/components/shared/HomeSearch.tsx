@@ -4,17 +4,11 @@ import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Search } from "lucide-react"
 import MultiSelect from "@/components/shared/MultiSelect"
+import { DEFAULT_PROPERTY_TYPES } from "@/lib/property-types"
 
 interface Zone { id: string; nom: string }
 
-const CATEGORIES = [
-  { value: "maison", label: "Maison" },
-  { value: "appartement", label: "Appartement" },
-  { value: "studio", label: "Studio" },
-  { value: "terrain", label: "Terrain" },
-  { value: "local_commercial", label: "Local commercial" },
-  { value: "bureau", label: "Bureau" },
-]
+const DEFAULT_CATS = DEFAULT_PROPERTY_TYPES.map(t => ({ value: t.code, label: t.label }))
 
 type TypeOffre = "" | "location" | "vente"
 
@@ -27,8 +21,21 @@ export default function HomeSearch({ villes }: { villes: Zone[] }) {
   const [quartiers, setQuartiers] = useState<Zone[]>([])
   const [selQuartiers, setSelQuartiers] = useState<string[]>([])
   const [selCats, setSelCats] = useState<string[]>([])
+  const [cats, setCats] = useState(DEFAULT_CATS)
   const [piecesMin, setPiecesMin] = useState("")
   const [prixMax, setPrixMax] = useState("")
+
+  // Liste des types de biens gérée par l'admin (repli sur DEFAULT_CATS si indispo).
+  useEffect(() => {
+    let cancelled = false
+    fetch("/api/property-types")
+      .then(r => r.json())
+      .then((d: { code: string; label: string }[]) => {
+        if (!cancelled && Array.isArray(d) && d.length) setCats(d.map(t => ({ value: t.code, label: t.label })))
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
 
   // Charge les quartiers de la commune choisie (la sélection est réinitialisée dans
   // le onChange de la commune). Tout setState se fait de façon asynchrone.
@@ -96,7 +103,7 @@ export default function HomeSearch({ villes }: { villes: Zone[] }) {
           {/* Types de biens (plusieurs) */}
           <MultiSelect
             placeholder="Type de bien"
-            options={CATEGORIES}
+            options={cats}
             selected={selCats}
             onChange={setSelCats}
             className="flex-1 min-w-0 border-r border-gray-100"

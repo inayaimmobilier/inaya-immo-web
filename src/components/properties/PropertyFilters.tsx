@@ -4,19 +4,11 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { useCallback, useEffect, useState } from "react"
 import { Search, SlidersHorizontal } from "lucide-react"
 import MultiSelect from "@/components/shared/MultiSelect"
+import { DEFAULT_PROPERTY_TYPES } from "@/lib/property-types"
 
 const csv = (s: string | null) => (s ? s.split(",").map(x => x.trim()).filter(Boolean) : [])
 
-const CATEGORIES = [
-  { value: "", label: "Tous types" },
-  { value: "maison", label: "Maison" },
-  { value: "appartement", label: "Appartement" },
-  { value: "studio", label: "Studio" },
-  { value: "terrain", label: "Terrain" },
-  { value: "local_commercial", label: "Local commercial" },
-  { value: "bureau", label: "Bureau" },
-  { value: "magasin", label: "Magasin" },
-]
+const DEFAULT_CATS = DEFAULT_PROPERTY_TYPES.map(t => ({ value: t.code, label: t.label }))
 
 const PIECES_MIN = [
   { value: "", label: "Toutes pièces" },
@@ -37,10 +29,17 @@ export default function PropertyFilters() {
 
   const [communes, setCommunes] = useState<Zone[]>([])
   const [quartiers, setQuartiers] = useState<Zone[]>([])
+  const [cats, setCats] = useState(DEFAULT_CATS)
 
-  // Charge les communes (villes).
+  // Charge les communes (villes) + les types de biens gérés par l'admin.
   useEffect(() => {
     fetch("/api/zones/villes").then(r => r.json()).then(d => setCommunes(d as Zone[])).catch(() => {})
+    fetch("/api/property-types")
+      .then(r => r.json())
+      .then((d: { code: string; label: string }[]) => {
+        if (Array.isArray(d) && d.length) setCats(d.map(t => ({ value: t.code, label: t.label })))
+      })
+      .catch(() => {})
   }, [])
 
   // Commune sélectionnée : nom depuis "ville" ou résolu depuis "ville_id" (UUID→nom).
@@ -100,7 +99,7 @@ export default function PropertyFilters() {
         {/* Types de biens (plusieurs possibles) */}
         <MultiSelect
           placeholder="Type de bien"
-          options={CATEGORIES.filter(c => c.value)}
+          options={cats}
           selected={csv(params.get("categorie"))}
           onChange={vals => update("categorie", vals.join(","))}
         />

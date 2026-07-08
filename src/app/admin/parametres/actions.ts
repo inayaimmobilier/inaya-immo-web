@@ -8,6 +8,49 @@ import { PROVIDER_LIST } from "@/lib/llm"
 
 type ActionResult = { ok: true } | { ok: false; error: string }
 
+/** Slug de code : minuscules, sans accents, séparateurs → underscore. */
+function slugCode(raw: string): string {
+  return raw.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "")
+}
+
+/** Enregistre la liste des types de biens gérée par l'admin (app_settings). */
+export async function savePropertyTypes(
+  types: { code: string; label: string; actif: boolean }[],
+): Promise<ActionResult> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { ok: false, error: "Non authentifié." }
+  const { data } = await supabase.from("profiles").select("role").eq("id", user.id).single()
+  const role = (data as { role: UserRole } | null)?.role
+  if (role !== "super_admin" && role !== "admin")
+    return { ok: false, error: "Action réservée aux administrateurs." }
+
+  // Nettoyage + déduplication par code.
+  const seen = new Set<string>()
+  const clean: { code: string; label: string; actif: boolean }[] = []
+  for (const t of types ?? []) {
+    const code = slugCode(String(t.code || t.label || ""))
+    const label = String(t.label || "").trim()
+    if (!code || !label || seen.has(code)) continue
+    seen.add(code)
+    clean.push({ code, label, actif: t.actif !== false })
+  }
+  if (!clean.length) return { ok: false, error: "Ajoutez au moins un type de bien." }
+
+  const { error } = await supabase
+    .from("app_settings")
+    .upsert({ key: "property_types", value: clean, updated_by: user.id } as never, { onConflict: "key" })
+  if (error) {
+    console.error("INAYA-SET-020", error)
+    return { ok: false, error: "Échec de l'enregistrement des types de biens." }
+  }
+
+  revalidatePath("/", "layout")
+  revalidatePath("/admin/parametres")
+  return { ok: true }
+}
+
 export async function saveSettings(form: FormData): Promise<ActionResult> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

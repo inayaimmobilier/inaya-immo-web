@@ -5,6 +5,8 @@ import type { UserRole } from "@/types/database"
 import { saveSettings } from "./actions"
 import { MODEL_CATALOG, PROVIDER_LIST } from "@/lib/llm"
 import { configuredSecretNames } from "@/lib/secrets"
+import { getPropertyTypes } from "@/lib/property-types-server"
+import PropertyTypesManager from "./PropertyTypesManager"
 
 export const metadata = { title: "Paramètres · Inaya Immo" }
 
@@ -33,6 +35,7 @@ export default async function ParametresPage({ searchParams }: PageProps) {
   const myRole = ((meData as { role: UserRole } | null)?.role ?? "client")
   if (myRole !== "super_admin" && myRole !== "admin") redirect("/admin/dashboard")
 
+  const propertyTypes = await getPropertyTypes()
   const { data: settingsData } = await supabase.from("app_settings").select("key,value")
   const settings = new Map((settingsData ?? []).map(s => [(s as { key: string }).key, (s as { value: unknown }).value]))
   // Quels fournisseurs ont déjà une clé en base (statut affiché, jamais la valeur).
@@ -62,6 +65,11 @@ export default async function ParametresPage({ searchParams }: PageProps) {
           Paramètres enregistrés.
         </div>
       )}
+
+      {/* Types de biens gérés par l'admin (recherche accueil + filtres) */}
+      <div className="max-w-2xl">
+        <PropertyTypesManager initial={propertyTypes} />
+      </div>
 
       <form action={save} className="space-y-5 max-w-2xl">
         <section className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
