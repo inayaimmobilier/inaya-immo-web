@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import Image from "next/image"
+import { useRouter } from "next/navigation"
 import { MapPin, BedDouble, Bath, Maximize2, CheckCircle2 } from "lucide-react"
 import { formatPrix, formatDateTime, CATEGORIE_LABEL, TYPE_OFFRE_LABEL } from "@/lib/utils"
 import PropertyPlaceholder from "./PropertyPlaceholder"
@@ -13,6 +14,7 @@ type Property = Database["public"]["Tables"]["properties"]["Row"] & {
 }
 
 export default function PropertyCard({ property }: { property: Property }) {
+  const router = useRouter()
   const media = property.property_media ?? []
   const photo = media.filter((m) => m.type === "image").sort((a, b) => a.ordre - b.ordre)[0]
   // Pas de photo : on retombe sur la miniature de la 1re vidéo (annonces vidéo-only)
@@ -157,7 +159,7 @@ export default function PropertyCard({ property }: { property: Property }) {
               )}
             </div>
             <button
-              onClick={(e) => { e.preventDefault() }}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); router.push(`/biens/${property.id}/contacter`) }}
               className="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg font-medium transition-colors"
             >
               Contacter

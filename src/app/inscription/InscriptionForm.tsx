@@ -119,11 +119,13 @@ export default function InscriptionForm() {
     <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-6">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo-mark.svg" alt="Inaya Immo" className="inline-block w-12 h-12 rounded-2xl mb-3" />
-          <h1 className="text-xl font-bold">
-            <span className="text-blue-700">Inaya</span><span className="text-amber-500"> Immo</span>
-          </h1>
+          <Link href="/" className="inline-block group" aria-label="Retour à l'accueil">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo-mark.svg" alt="Inaya Immo" className="inline-block w-12 h-12 rounded-2xl mb-3 transition-transform group-hover:scale-105" />
+            <h1 className="text-xl font-bold">
+              <span className="text-blue-700">Inaya</span><span className="text-amber-500"> Immo</span>
+            </h1>
+          </Link>
           <p className="text-sm text-gray-500 mt-1">
             {step === "form" ? "Créez votre compte" : "Vérifiez votre compte"}
           </p>
@@ -195,7 +197,7 @@ export default function InscriptionForm() {
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-4">
             <div className="flex items-center gap-2 text-green-600">
               <ShieldCheck className="w-5 h-5" />
-              <p className="text-sm font-semibold text-gray-800">Compte créé — vérifions que c'est bien vous.</p>
+              <p className="text-sm font-semibold text-gray-800">Compte créé — vérifions que c&apos;est bien vous.</p>
             </div>
 
             {error && <div className="bg-red-50 border border-red-100 text-red-700 text-sm rounded-xl px-4 py-3">{error}</div>}
@@ -203,7 +205,7 @@ export default function InscriptionForm() {
 
             {canaux.length === 0 ? (
               <p className="text-sm text-gray-500">
-                Aucun canal de vérification n'est disponible pour le moment. Vous pouvez continuer et vérifier plus tard.
+                Aucun canal de vérification n&apos;est disponible pour le moment. Vous pouvez continuer et vérifier plus tard.
                 <button onClick={async () => { const t = await postLoginPath(); router.push(t); router.refresh() }}
                   className="block mt-3 text-blue-700 font-medium">Continuer →</button>
               </p>

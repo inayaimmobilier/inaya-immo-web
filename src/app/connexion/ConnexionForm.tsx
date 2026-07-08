@@ -43,14 +43,16 @@ export default function ConnexionForm() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
       <div className="w-full max-w-sm">
-        {/* Logo */}
+        {/* Logo — cliquable pour revenir à l'accueil */}
         <div className="text-center mb-8">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo-mark.svg" alt="Inaya Immo" className="inline-block w-12 h-12 rounded-2xl mb-3" />
-          <h1 className="text-xl font-bold">
-            <span className="text-blue-700">Inaya</span>
-            <span className="text-amber-500"> Immo</span>
-          </h1>
+          <Link href="/" className="inline-block group" aria-label="Retour à l'accueil">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo-mark.svg" alt="Inaya Immo" className="inline-block w-12 h-12 rounded-2xl mb-3 transition-transform group-hover:scale-105" />
+            <h1 className="text-xl font-bold">
+              <span className="text-blue-700">Inaya</span>
+              <span className="text-amber-500"> Immo</span>
+            </h1>
+          </Link>
           <p className="text-sm text-gray-500 mt-1">Connectez-vous à votre espace</p>
         </div>
 
