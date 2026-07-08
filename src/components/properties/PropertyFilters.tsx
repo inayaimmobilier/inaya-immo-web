@@ -1,7 +1,7 @@
 "use client"
 
 import { useRouter, useSearchParams } from "next/navigation"
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Search, SlidersHorizontal } from "lucide-react"
 import MultiSelect from "@/components/shared/MultiSelect"
 import { DEFAULT_PROPERTY_TYPES } from "@/lib/property-types"
@@ -80,6 +80,8 @@ export default function PropertyFilters() {
     [params, router, quartiers, communes]
   )
 
+  const qRef = useRef<HTMLInputElement>(null)
+
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
       <div className="flex items-center gap-2 mb-4">
@@ -87,7 +89,7 @@ export default function PropertyFilters() {
         <span className="text-sm font-semibold text-gray-900">Filtres</span>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         {/* Type opération */}
         <select value={params.get("type") || ""} onChange={e => update("type", e.target.value)} className={cls}>
           <option value="">Tous types</option>
@@ -134,19 +136,28 @@ export default function PropertyFilters() {
           className={cls}
         />
 
-        {/* Recherche texte */}
-        <div className="relative">
+      </div>
+
+      {/* Recherche par mot-clé + bouton Rechercher (bien visible) */}
+      <div className="flex gap-2 mt-3">
+        <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
+            ref={qRef}
             type="text"
-            placeholder="Rechercher…"
+            placeholder="Mot-clé (quartier, résidence, description…)"
             defaultValue={params.get("q") || ""}
-            onKeyDown={e => {
-              if (e.key === "Enter") update("q", (e.target as HTMLInputElement).value)
-            }}
+            onKeyDown={e => { if (e.key === "Enter") update("q", (e.target as HTMLInputElement).value) }}
             className={`w-full pl-9 pr-3 ${cls}`}
           />
         </div>
+        <button
+          type="button"
+          onClick={() => update("q", qRef.current?.value ?? "")}
+          className="shrink-0 inline-flex items-center gap-2 bg-blue-700 hover:bg-blue-600 text-white px-5 rounded-xl text-sm font-semibold transition-colors"
+        >
+          <Search className="w-4 h-4" /> Rechercher
+        </button>
       </div>
     </div>
   )

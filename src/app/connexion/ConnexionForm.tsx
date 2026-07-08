@@ -1,13 +1,12 @@
 "use client"
 
 import { useState } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useSearchParams } from "next/navigation"
 import { Loader2, Eye, EyeOff } from "lucide-react"
 import Link from "next/link"
 import { signInFlexible } from "@/lib/account-actions"
 
 export default function ConnexionForm() {
-  const router = useRouter()
   const searchParams = useSearchParams()
   const explicitRedirect = searchParams.get("redirect")
 
@@ -30,10 +29,10 @@ export default function ConnexionForm() {
         return
       }
 
-      // Destination renvoyée par le même appel (pas de 2e appel → pas de course).
-      const target = explicitRedirect || res.redirect
-      router.push(target)
-      router.refresh()
+      // Navigation « dure » (rechargement complet) : garantit que le cookie de
+      // session posé par l'action est envoyé et que la destination est rendue
+      // côté serveur avec la session — plus fiable qu'une navigation client.
+      window.location.assign(explicitRedirect || res.redirect)
     } catch {
       // Ex. domaine apex injoignable / requête interrompue : on évite le spinner bloqué à vie.
       setError("Connexion impossible. Vérifiez votre réseau et utilisez l'adresse https://www.inaya.ci")

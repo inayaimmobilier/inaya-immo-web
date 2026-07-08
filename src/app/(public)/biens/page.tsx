@@ -108,13 +108,25 @@ async function PropertiesList({ searchParams }: PageProps) {
   // restent exactes, avec repli sur le titre si la colonne catégorie est vide.
   const RESIDENTIEL = ["maison", "appartement", "studio", "villa", "immeuble", "duplex", "chambre", "residence", "logement"]
   const reResid = new RegExp(RESIDENTIEL.join("|"))
-  // Vrai si l'annonce correspond à UNE catégorie recherchée (« maison » = générique).
+  // « Local / espace commercial » est GÉNÉRIQUE : toute forme d'espace commercial
+  // (magasin, boutique, restaurant, salon, quincaillerie, blanchisserie, point
+  // mobile money, kiosque, entrepôt, fonds de commerce à céder…).
+  const COMMERCE_CATS = ["local_commercial", "magasin", "boutique", "bureau", "commerce", "entrepot"]
+  // Mots-clés commerciaux SPÉCIFIQUES (on évite « salon »/« bar » trop ambigus :
+  // « chambre salon » = séjour d'un logement). « coiffure » couvre le salon de coiffure.
+  const reCommerce = /local commercial|magasin|boutique|commerce|restaurant|maquis|coiffure|quincaillerie|blanchisserie|pressing|mobile money|kiosque|superette|supermarche|pharmacie|atelier|entrepot|fonds de commerce|pas de porte/
+  // Vrai si l'annonce correspond à UNE catégorie recherchée (générique pour maison/commerce).
   const catMatch = (r: Row, c: string) => {
     if (c === "maison") {
       const cat = norm(r.categorie)
       if (RESIDENTIEL.includes(cat)) return true
       if (!cat) return reResid.test(norm(r.titre))
       return false
+    }
+    if (c === "local_commercial") {
+      const cat = norm(r.categorie)
+      if (COMMERCE_CATS.includes(cat)) return true
+      return reCommerce.test(hay(r))
     }
     return norm(r.categorie) === c || (!norm(r.categorie) && hay(r).includes(c))
   }
