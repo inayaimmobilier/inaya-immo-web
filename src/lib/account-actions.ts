@@ -82,11 +82,29 @@ export async function quickSignup(input: {
   return { ok: true }
 }
 
+/** Destination selon le rôle. */
+function pathForRole(role: string | null | undefined): string {
+  switch (role) {
+    case "super_admin": case "admin": case "moderateur": case "agent": return "/admin/dashboard"
+    case "comptable":     return "/admin/gestion"
+    case "proprietaire":  return "/proprietaire"
+    case "locataire":     return "/locataire"
+    case "prestataire":   return "/prestataire"
+    case "apporteur":     return "/apporteur"
+    default:              return "/client/mes-requetes"
+  }
+}
+
+type SignInResult = { ok: true; redirect: string } | { ok: false; error: string }
+
 /**
  * Connexion souple : l'identifiant peut être un e-mail OU un numéro de téléphone.
- * Si c'est un téléphone, on résout l'e-mail (réel ou synthétique) via le profil.
+ * Renvoie DIRECTEMENT la destination selon le rôle — dans le même appel qui vient
+ * de poser la session. On évite ainsi un 2e appel serveur (postLoginPath) qui,
+ * ne voyant pas toujours le cookie fraîchement posé, renvoyait « /connexion » et
+ * laissait l'utilisateur bloqué sur la page de connexion.
  */
-export async function signInFlexible(identifier: string, password: string): Promise<Res> {
+export async function signInFlexible(identifier: string, password: string): Promise<SignInResult> {
   const id = identifier.trim()
   let email = id
 
@@ -102,27 +120,26 @@ export async function signInFlexible(identifier: string, password: string): Prom
   }
 
   const supabase = await createClient()
-  const { error } = await supabase.auth.signInWithPassword({ email, password })
+  const { data: signIn, error } = await supabase.auth.signInWithPassword({ email, password })
   if (error) return { ok: false, error: "Identifiant ou mot de passe incorrect." }
 
+  // Rôle lu via le client ADMIN (bypasse la RLS → fiable) pour choisir la destination.
+  let redirect = "/client/mes-requetes"
+  const uid = signIn.user?.id
+  if (uid) {
+    const { data } = await createAdminClient().from("profiles").select("role").eq("id", uid).single()
+    redirect = pathForRole((data as { role: string } | null)?.role)
+  }
+
   revalidatePath("/", "layout")
-  return { ok: true }
+  return { ok: true, redirect }
 }
 
-/** Destination après connexion selon le rôle (si aucun `redirect` explicite). */
+/** Destination après connexion selon le rôle (utilisé après vérification OTP). */
 export async function postLoginPath(): Promise<string> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return "/connexion"
-  const { data } = await supabase.from("profiles").select("role").eq("id", user.id).single()
-  const role = (data as { role: string } | null)?.role ?? "client"
-  switch (role) {
-    case "super_admin": case "admin": case "moderateur": case "agent": return "/admin/dashboard"
-    case "comptable":     return "/admin/gestion"
-    case "proprietaire":  return "/proprietaire"
-    case "locataire":     return "/locataire"
-    case "prestataire":   return "/prestataire"
-    case "apporteur":     return "/apporteur"
-    default:              return "/client/mes-requetes"
-  }
+  const { data } = await createAdminClient().from("profiles").select("role").eq("id", user.id).single()
+  return pathForRole((data as { role: string } | null)?.role)
 }

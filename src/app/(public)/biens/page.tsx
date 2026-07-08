@@ -144,8 +144,27 @@ async function PropertiesList({ searchParams }: PageProps) {
   // loyer ou le nombre de pièces ; on n'exclut donc pas une annonce dont la donnée est
   // inconnue (null) — sinon on génère de faux « aucune annonce ».
   if (params.prix_min)   { const n = Number(params.prix_min);   rows = rows.filter(r => r.prix == null || Number(r.prix) >= n) }
-  if (params.prix_max)   { const n = Number(params.prix_max);   rows = rows.filter(r => r.prix == null || Number(r.prix) <= n) }
   if (params.pieces_min) { const n = Number(params.pieces_min); rows = rows.filter(r => r.nb_pieces == null || Number(r.nb_pieces) >= n) }
+
+  // Budget : si AUCUNE annonce n'entre exactement dans le budget, on propose des
+  // biens légèrement au-dessus (jusqu'à +25 %) au lieu d'un « aucune annonce ».
+  let budgetSuggestion: { budget: number; plafond: number } | null = null
+  const maxN = params.prix_max ? Number(params.prix_max) : null
+  if (maxN != null && !Number.isNaN(maxN)) {
+    const within = rows.filter(r => r.prix == null || Number(r.prix) <= maxN)
+    if (within.length > 0) {
+      rows = within
+    } else if (rows.length > 0) {
+      const plafond = Math.round(maxN * 1.25)
+      const above = rows
+        .filter(r => r.prix != null && Number(r.prix) <= plafond)
+        .sort((a, b) => Number(a.prix) - Number(b.prix))
+      if (above.length > 0) { rows = above; budgetSuggestion = { budget: maxN, plafond } }
+      else rows = within // rien même à +25 % → aucune annonce
+    } else {
+      rows = within
+    }
+  }
 
   const total = rows.length
   const totalPages = Math.ceil(total / PER_PAGE)
@@ -167,11 +186,20 @@ async function PropertiesList({ searchParams }: PageProps) {
     )
   }
 
+  const fcfa = (n: number) => `${n.toLocaleString("fr-FR")} FCFA`
+
   return (
     <>
-      <p className="text-sm text-gray-500 mb-4">
-        <span className="font-semibold text-gray-900">{total}</span> annonce{total > 1 ? "s" : ""} trouvée{total > 1 ? "s" : ""}
-      </p>
+      {budgetSuggestion ? (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Aucune annonce exactement dans votre budget de <strong>{fcfa(budgetSuggestion.budget)}</strong>.
+          Voici <strong>{total}</strong> bien{total > 1 ? "s" : ""} légèrement au-dessus (jusqu&apos;à <strong>{fcfa(budgetSuggestion.plafond)}</strong>, +25 %).
+        </div>
+      ) : (
+        <p className="text-sm text-gray-500 mb-4">
+          <span className="font-semibold text-gray-900">{total}</span> annonce{total > 1 ? "s" : ""} trouvée{total > 1 ? "s" : ""}
+        </p>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
         {(properties as { id: string }[]).map((p) => (

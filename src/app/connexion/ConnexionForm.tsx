@@ -4,7 +4,7 @@ import { useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Loader2, Eye, EyeOff } from "lucide-react"
 import Link from "next/link"
-import { signInFlexible, postLoginPath } from "@/lib/account-actions"
+import { signInFlexible } from "@/lib/account-actions"
 
 export default function ConnexionForm() {
   const router = useRouter()
@@ -30,8 +30,8 @@ export default function ConnexionForm() {
         return
       }
 
-      // Redirection explicite si fournie, sinon selon le rôle du compte.
-      const target = explicitRedirect || (await postLoginPath())
+      // Destination renvoyée par le même appel (pas de 2e appel → pas de course).
+      const target = explicitRedirect || res.redirect
       router.push(target)
       router.refresh()
     } catch {
