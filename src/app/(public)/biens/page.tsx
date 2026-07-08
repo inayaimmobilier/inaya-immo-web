@@ -71,11 +71,7 @@ async function PropertiesList({ searchParams }: PageProps) {
     .order("created_at", { ascending: false })
     .limit(1000)
 
-  if (params.type)       dataQ = dataQ.eq("type_offre", params.type as never)
-  if (params.categorie)  dataQ = dataQ.eq("categorie", params.categorie as never)
-  if (params.prix_min)   dataQ = dataQ.gte("prix", Number(params.prix_min))
-  if (params.prix_max)   dataQ = dataQ.lte("prix", Number(params.prix_max))
-  if (params.pieces_min) dataQ = dataQ.gte("nb_pieces", Number(params.pieces_min))
+  if (params.type) dataQ = dataQ.eq("type_offre", params.type as never)
 
   const { data, error } = await dataQ
   if (error) {
@@ -90,11 +86,33 @@ async function PropertiesList({ searchParams }: PageProps) {
 
   // Normalisation : minuscules + suppression des accents. « Bouaké » → « bouake ».
   const norm = (s: unknown) => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
-  type Row = { quartier?: string | null; ville?: string | null; titre?: string | null; description?: string | null; zones?: { nom?: string | null } | null }
-  // Concatène tous les champs de localisation pertinents d'une annonce.
-  const hay = (r: Row) => [r.quartier, r.ville, r.titre, r.description, r.zones?.nom].map(norm).join(" · ")
+  type Row = {
+    quartier?: string | null; ville?: string | null; titre?: string | null; description?: string | null
+    categorie?: string | null; prix?: number | null; nb_pieces?: number | null; zones?: { nom?: string | null } | null
+  }
+  // Concatène tous les champs texte pertinents d'une annonce.
+  const hay = (r: Row) => [r.quartier, r.ville, r.titre, r.description, r.zones?.nom, r.categorie].map(norm).join(" · ")
 
   let rows = (data ?? []) as (Row & { id: string })[]
+
+  // Catégorie : « maison » est un terme GÉNÉRIQUE = toute habitation
+  // (appartement, studio, villa, immeuble, duplex, chambre…). Les autres catégories
+  // restent exactes, avec repli sur le titre si la colonne catégorie est vide.
+  const RESIDENTIEL = ["maison", "appartement", "studio", "villa", "immeuble", "duplex", "chambre", "residence", "logement"]
+  if (params.categorie) {
+    const c = norm(params.categorie)
+    if (c === "maison") {
+      const re = new RegExp(RESIDENTIEL.join("|"))
+      rows = rows.filter(r => {
+        const cat = norm(r.categorie)
+        if (RESIDENTIEL.includes(cat)) return true          // catégorie résidentielle explicite
+        if (!cat) return re.test(norm(r.titre))             // catégorie inconnue → repli sur le titre
+        return false                                        // magasin, terrain, bureau… exclus
+      })
+    } else {
+      rows = rows.filter(r => norm(r.categorie) === c || (!norm(r.categorie) && hay(r).includes(c)))
+    }
+  }
 
   if (quartierNom) {
     // Quartier prioritaire : on cherche le libellé dans tous les champs (recall élevé,
@@ -111,6 +129,13 @@ async function PropertiesList({ searchParams }: PageProps) {
     const t = norm(params.q)
     if (t) rows = rows.filter(r => hay(r).includes(t))
   }
+
+  // Prix / pièces : TOLÉRANTS aux valeurs manquantes. L'IA n'extrait pas toujours le
+  // loyer ou le nombre de pièces ; on n'exclut donc pas une annonce dont la donnée est
+  // inconnue (null) — sinon on génère de faux « aucune annonce ».
+  if (params.prix_min)   { const n = Number(params.prix_min);   rows = rows.filter(r => r.prix == null || Number(r.prix) >= n) }
+  if (params.prix_max)   { const n = Number(params.prix_max);   rows = rows.filter(r => r.prix == null || Number(r.prix) <= n) }
+  if (params.pieces_min) { const n = Number(params.pieces_min); rows = rows.filter(r => r.nb_pieces == null || Number(r.nb_pieces) >= n) }
 
   const total = rows.length
   const totalPages = Math.ceil(total / PER_PAGE)
