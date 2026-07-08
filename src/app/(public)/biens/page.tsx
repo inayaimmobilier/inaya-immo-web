@@ -46,18 +46,26 @@ async function PropertiesList({ searchParams }: PageProps) {
   // ne sont pas lisibles par le client anonyme (RLS), sinon la résolution
   // renverrait null et le filtre commune/quartier serait silencieusement ignoré.
   const refDb = createAdminClient()
-  let quartierNom = params.quartier || null
-  if (!quartierNom && params.quartier_id) {
-    const { data: qRow } = await refDb
-      .from("quartiers").select("nom").eq("id", params.quartier_id).single()
-    quartierNom = (qRow as { nom: string } | null)?.nom ?? null
+  const csv = (s?: string) => (s ? s.split(",").map(x => x.trim()).filter(Boolean) : [])
+
+  // Quartiers : plusieurs possibles (noms séparés par des virgules), + repli sur
+  // des quartier_id (UUID) hérités de HomeSearch, résolus en noms via le client admin.
+  const quartierNoms: string[] = csv(params.quartier)
+  if (!quartierNoms.length && params.quartier_id) {
+    const ids = csv(params.quartier_id)
+    const { data: qRows } = await refDb.from("quartiers").select("nom").in("id", ids)
+    for (const r of (qRows ?? []) as { nom: string }[]) if (r.nom) quartierNoms.push(r.nom)
   }
+
   let villeNom = params.ville || null
   if (!villeNom && params.ville_id) {
     const { data: vRow } = await refDb
       .from("villes").select("nom").eq("id", params.ville_id).single()
     villeNom = (vRow as { nom: string } | null)?.nom ?? null
   }
+
+  // Types de biens (catégories) : plusieurs possibles.
+  const categorieList = csv(params.categorie)
 
   // Filtres STRUCTURÉS en base (type, catégorie, prix, pièces). La commune/quartier
   // et la recherche texte sont appariés ensuite en JS avec normalisation (accents +
@@ -99,26 +107,28 @@ async function PropertiesList({ searchParams }: PageProps) {
   // (appartement, studio, villa, immeuble, duplex, chambre…). Les autres catégories
   // restent exactes, avec repli sur le titre si la colonne catégorie est vide.
   const RESIDENTIEL = ["maison", "appartement", "studio", "villa", "immeuble", "duplex", "chambre", "residence", "logement"]
-  if (params.categorie) {
-    const c = norm(params.categorie)
+  const reResid = new RegExp(RESIDENTIEL.join("|"))
+  // Vrai si l'annonce correspond à UNE catégorie recherchée (« maison » = générique).
+  const catMatch = (r: Row, c: string) => {
     if (c === "maison") {
-      const re = new RegExp(RESIDENTIEL.join("|"))
-      rows = rows.filter(r => {
-        const cat = norm(r.categorie)
-        if (RESIDENTIEL.includes(cat)) return true          // catégorie résidentielle explicite
-        if (!cat) return re.test(norm(r.titre))             // catégorie inconnue → repli sur le titre
-        return false                                        // magasin, terrain, bureau… exclus
-      })
-    } else {
-      rows = rows.filter(r => norm(r.categorie) === c || (!norm(r.categorie) && hay(r).includes(c)))
+      const cat = norm(r.categorie)
+      if (RESIDENTIEL.includes(cat)) return true
+      if (!cat) return reResid.test(norm(r.titre))
+      return false
     }
+    return norm(r.categorie) === c || (!norm(r.categorie) && hay(r).includes(c))
+  }
+  // Plusieurs types possibles → l'annonce passe si elle correspond à AU MOINS UN.
+  if (categorieList.length) {
+    const cats = categorieList.map(norm)
+    rows = rows.filter(r => cats.some(c => catMatch(r, c)))
   }
 
-  if (quartierNom) {
-    // Quartier prioritaire : on cherche le libellé dans tous les champs (recall élevé,
-    // pour ne pas rater une annonce où le quartier n'est que dans le titre/description).
-    const t = norm(quartierNom)
-    rows = rows.filter(r => hay(r).includes(t))
+  if (quartierNoms.length) {
+    // Plusieurs quartiers possibles → match si l'annonce correspond à AU MOINS UN.
+    // Recall élevé : on cherche chaque libellé dans tous les champs (titre/description…).
+    const qs = quartierNoms.map(norm)
+    rows = rows.filter(r => { const h = hay(r); return qs.some(q => h.includes(q)) })
   } else if (villeNom) {
     // Commune seule : match sur la commune ; on garde aussi les annonces sans commune
     // renseignée pour éviter les faux négatifs (dataset quasi mono-ville).

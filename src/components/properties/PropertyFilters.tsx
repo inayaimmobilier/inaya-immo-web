@@ -3,6 +3,9 @@
 import { useRouter, useSearchParams } from "next/navigation"
 import { useCallback, useEffect, useState } from "react"
 import { Search, SlidersHorizontal } from "lucide-react"
+import MultiSelect from "@/components/shared/MultiSelect"
+
+const csv = (s: string | null) => (s ? s.split(",").map(x => x.trim()).filter(Boolean) : [])
 
 const CATEGORIES = [
   { value: "", label: "Tous types" },
@@ -78,8 +81,6 @@ export default function PropertyFilters() {
     [params, router, quartiers, communes]
   )
 
-  const quartierValue = params.get("quartier") || quartiers.find(q => q.id === params.get("quartier_id"))?.nom || ""
-
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
       <div className="flex items-center gap-2 mb-4">
@@ -96,10 +97,13 @@ export default function PropertyFilters() {
           <option value="cession">Cession</option>
         </select>
 
-        {/* Catégorie */}
-        <select value={params.get("categorie") || ""} onChange={e => update("categorie", e.target.value)} className={cls}>
-          {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-        </select>
+        {/* Types de biens (plusieurs possibles) */}
+        <MultiSelect
+          placeholder="Type de bien"
+          options={CATEGORIES.filter(c => c.value)}
+          selected={csv(params.get("categorie"))}
+          onChange={vals => update("categorie", vals.join(","))}
+        />
 
         {/* Commune */}
         <select value={communeValue} onChange={e => update("ville", e.target.value)} className={cls}>
@@ -107,11 +111,13 @@ export default function PropertyFilters() {
           {communes.map(v => <option key={v.id} value={v.nom}>{v.nom}</option>)}
         </select>
 
-        {/* Quartier */}
-        <select value={quartierValue} onChange={e => update("quartier", e.target.value)} className={cls}>
-          <option value="">Tous les quartiers</option>
-          {quartiers.map(q => <option key={q.id} value={q.nom}>{q.nom}</option>)}
-        </select>
+        {/* Quartiers (plusieurs possibles) */}
+        <MultiSelect
+          placeholder="Tous les quartiers"
+          options={quartiers.map(q => ({ value: q.nom, label: q.nom }))}
+          selected={csv(params.get("quartier"))}
+          onChange={vals => update("quartier", vals.join(","))}
+        />
 
         {/* Pièces min */}
         <select value={params.get("pieces_min") || ""} onChange={e => update("pieces_min", e.target.value)} className={cls}>
