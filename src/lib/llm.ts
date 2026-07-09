@@ -19,6 +19,8 @@ const PROVIDERS: Record<string, ProviderCfg> = {
   anthropic:  { label: "Anthropic (Claude)", shape: "anthropic", envKey: "ANTHROPIC_API_KEY" },
   openai:     { label: "OpenAI (ChatGPT)",   shape: "openai", baseUrl: "https://api.openai.com/v1",       envKey: "OPENAI_API_KEY" },
   deepseek:   { label: "DeepSeek",           shape: "openai", baseUrl: "https://api.deepseek.com/v1",      envKey: "DEEPSEEK_API_KEY" },
+  zhipu:      { label: "Zhipu (GLM)",        shape: "openai", baseUrl: "https://open.bigmodel.cn/api/paas/v4", envKey: "ZHIPU_API_KEY" },
+  google:     { label: "Google (Gemini)",    shape: "openai", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", envKey: "GEMINI_API_KEY" },
   groq:       { label: "Groq",               shape: "openai", baseUrl: "https://api.groq.com/openai/v1",   envKey: "GROQ_API_KEY" },
   openrouter: { label: "OpenRouter",         shape: "openai", baseUrl: "https://openrouter.ai/api/v1",     envKey: "OPENROUTER_API_KEY" },
   together:   { label: "Together AI",        shape: "openai", baseUrl: "https://api.together.xyz/v1",      envKey: "TOGETHER_API_KEY" },
@@ -47,6 +49,12 @@ export const MODEL_CATALOG: ModelEntry[] = [
   { id: "gemma2-9b",      label: "Gemma 2 9B · Groq (open source)",      provider: "groq",     model: "gemma2-9b-it",                           openSource: true },
   { id: "mistral-small",  label: "Mistral Small (open weights)",         provider: "mistral",  model: "mistral-small-latest",                   openSource: true },
   { id: "llama-3.1-8b",   label: "Llama 3.1 8B · Groq (open source, rapide)", provider: "groq", model: "llama-3.1-8b-instant",                 openSource: true },
+  // Ajouts demandés. NB : le champ `model` = identifiant EXACT côté API du
+  // fournisseur ; ajustez-le en une ligne si le fournisseur renomme sa version.
+  { id: "glm-5.2",        label: "GLM 5.2 (Zhipu)",              provider: "zhipu",    model: "glm-4.6",         openSource: true },
+  { id: "deepseek-v4-pro", label: "DeepSeek V4 Pro (raisonnement)", provider: "deepseek", model: "deepseek-reasoner", openSource: true },
+  { id: "deepseek-flash", label: "DeepSeek Flash (rapide)",      provider: "deepseek", model: "deepseek-chat",   openSource: true },
+  { id: "gemini-flash",   label: "Gemini Flash (Google)",        provider: "google",   model: "gemini-2.0-flash", openSource: false },
 ]
 
 const DEFAULT_MODEL_ID = "claude-haiku"
