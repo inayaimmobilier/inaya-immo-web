@@ -45,6 +45,10 @@ export default function InscriptionForm() {
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Id renvoyé après une création réussie, DANS CETTE MÊME PAGE : seule preuve
+  // acceptée par le serveur pour mettre à jour (plutôt que recréer) le compte
+  // en cas de retour arrière + correction (cf. registerAccount).
+  const [pendingUserId, setPendingUserId] = useState<string | null>(null)
 
   // Vérification
   const [canaux, setCanaux] = useState<OtpCanal[]>([])
@@ -66,8 +70,10 @@ export default function InscriptionForm() {
         email: email.trim() || null,
         proprietaireType: type === "proprietaire" ? proprietaireType : null,
         metier: type === "prestataire" ? metier : null,
+        pendingUserId,
       })
       if (!res.ok) { setError(res.error); setLoading(false); return }
+      setPendingUserId(res.userId)
 
       const opts = await verificationOptions()
       setCanaux(opts.canaux)

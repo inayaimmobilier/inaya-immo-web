@@ -29,6 +29,10 @@ function maskEmail(e: string | null): string | null {
 
 export type AccountType = "chercheur" | "proprietaire" | "prestataire" | "apporteur"
 type Res = { ok: true } | { ok: false; error: string }
+type RegisterRes = { ok: true; userId: string } | { ok: false; error: string }
+
+// Rôles staff : jamais touchés par l'inscription en libre-service, sous aucun prétexte.
+const STAFF_ROLES = ["super_admin", "admin", "moderateur", "agent", "comptable"]
 
 // Type de compte choisi à l'inscription → rôle en base (les rôles staff ne sont
 // jamais attribuables en self-service).
@@ -53,7 +57,15 @@ export async function registerAccount(input: {
   email?: string | null
   proprietaireType?: "diffuseur" | "gere" | null
   metier?: string | null
-}): Promise<Res> {
+  /**
+   * Id renvoyé par un précédent appel RÉUSSI de registerAccount DANS CETTE MÊME
+   * page (le client le mémorise après création). Preuve que la correction en
+   * cours porte bien sur le compte qu'on vient de créer — jamais déduit d'un
+   * simple état de session, pour ne JAMAIS toucher un compte préexistant
+   * (ex. un admin resté connecté pendant qu'il teste ce formulaire).
+   */
+  pendingUserId?: string | null
+}): Promise<RegisterRes> {
   const nom = input.nom.trim()
   const telephone = normalizePhone(input.telephone)
   const commune = input.commune.trim()
@@ -101,32 +113,39 @@ export async function registerAccount(input: {
   }
 
   // Profil déjà rattaché à ce numéro ?
-  const { data: existProf } = await admin.from("profiles").select("id, verifie").eq("telephone", telephone).maybeSingle()
-  const existing = existProf as { id: string; verifie?: boolean } | null
+  const { data: existProf } = await admin.from("profiles").select("id, verifie, role").eq("telephone", telephone).maybeSingle()
+  const existing = existProf as { id: string; verifie?: boolean; role?: string } | null
 
-  // Session en cours (issue d'un premier essai non finalisé) ?
-  const { data: { user: sessionUser } } = await supabase.auth.getUser()
-  let sessionUnverified = false
-  if (sessionUser) {
-    const { data: sp } = await admin.from("profiles").select("verifie").eq("id", sessionUser.id).maybeSingle()
-    sessionUnverified = !(sp as { verifie?: boolean } | null)?.verifie
+  // ── Cas A : correction d'une inscription en attente, DANS LA MÊME PAGE.
+  // On ne réutilise JAMAIS un compte déduit du seul état de session (un compte
+  // « non vérifié » n'est PAS un signe fiable d'inscription en cours : tous les
+  // comptes créés avant l'OTP — y compris les comptes staff/admin — ont
+  // verifie=false par défaut). On exige la PREUVE explicite que le client a bien
+  // reçu cet id en retour d'un appel précédent de CETTE fonction, dans cette même
+  // page ; et on interdit catégoriquement de toucher un rôle staff, même si prouvé.
+  if (input.pendingUserId) {
+    const { data: { user: sessionUser } } = await supabase.auth.getUser()
+    if (sessionUser && sessionUser.id === input.pendingUserId) {
+      const { data: sp } = await admin.from("profiles").select("verifie, role").eq("id", sessionUser.id).maybeSingle()
+      const target = sp as { verifie?: boolean; role?: string } | null
+      const isStaff = !!target?.role && STAFF_ROLES.includes(target.role)
+      if (target && !target.verifie && !isStaff) {
+        if (existing && existing.id !== sessionUser.id)
+          return { ok: false, error: "Un autre compte utilise déjà ce numéro." }
+        await applyFields(sessionUser.id)
+        const a = await applyAuth(sessionUser.id)
+        if (!a.ok) return a
+        revalidatePath("/", "layout")
+        return { ok: true, userId: sessionUser.id }
+      }
+    }
+    // pendingUserId invalide/périmé/staff → on retombe sur les cas normaux ci-dessous
+    // (jamais d'écrasement silencieux d'un compte qu'on ne peut pas prouver sûr).
   }
 
-  // ── Cas A : correction d'une inscription en attente (déjà connecté, non vérifié).
-  // On met à jour le compte au lieu d'en recréer un → plus d'erreur « numéro déjà utilisé ».
-  if (sessionUser && sessionUnverified) {
-    if (existing && existing.id !== sessionUser.id)
-      return { ok: false, error: "Un autre compte utilise déjà ce numéro." }
-    await applyFields(sessionUser.id)
-    const a = await applyAuth(sessionUser.id)
-    if (!a.ok) return a
-    revalidatePath("/", "layout")
-    return { ok: true } // la session reste valide, l'utilisateur passe à la vérification
-  }
-
-  // ── Cas B : un compte existe déjà pour ce numéro (hors session courante).
-  // On NE reprend PAS automatiquement : un compte non vérifié peut être un compte
-  // légitime pré-existant (agent, admin créé avant l'OTP). Il faut se connecter.
+  // ── Cas B : un compte existe déjà pour ce numéro. On NE reprend JAMAIS
+  // automatiquement un compte préexistant (staff ou non) sans preuve explicite
+  // ci-dessus. Il faut se connecter.
   if (existing) {
     return { ok: false, error: "Un compte existe déjà avec ce numéro. Connectez-vous." }
   }
@@ -151,7 +170,7 @@ export async function registerAccount(input: {
   }
 
   revalidatePath("/", "layout")
-  return { ok: true }
+  return { ok: true, userId: created.user.id }
 }
 
 /** Canaux de vérification disponibles pour l'utilisateur connecté + destinations masquées. */
