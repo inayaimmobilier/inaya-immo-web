@@ -1,7 +1,7 @@
 import Link from "next/link"
 import { createClient, createAdminClient } from "@/lib/supabase/server"
 import { formatPrix, formatRelativeDate } from "@/lib/utils"
-import { Home, PlusCircle } from "lucide-react"
+import { Home, PlusCircle, Pencil } from "lucide-react"
 
 export const dynamic = "force-dynamic"
 
@@ -48,18 +48,23 @@ export default async function MesBiensPage() {
       ) : (
         <div className="space-y-2">
           {biens.map(b => (
-            <Link key={b.id} href={`/biens/${b.id}`}
+            <div key={b.id}
               className="flex items-center justify-between gap-3 bg-white rounded-2xl border border-gray-100 p-4 hover:border-blue-300 transition-colors">
-              <div className="min-w-0">
+              <Link href={`/biens/${b.id}`} className="min-w-0 flex-1">
                 <p className="font-medium text-gray-900 truncate">{b.titre}</p>
                 <p className="text-xs text-gray-500">
                   {[b.quartier, b.ville].filter(Boolean).join(", ") || "Localisation non précisée"} · {b.prix ? formatPrix(b.prix) : "Prix sur demande"}
                 </p>
-              </div>
+              </Link>
               <span className={`shrink-0 text-xs font-medium px-2.5 py-1 rounded-full border ${STATUT_PILL[b.statut] ?? "bg-gray-100 text-gray-500 border-gray-200"}`}>
                 {b.statut.replace(/_/g, " ")}
               </span>
-            </Link>
+              <Link href={`/proprietaire/biens/${b.id}`}
+                className="shrink-0 inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-blue-700 border border-gray-200 hover:border-blue-300 rounded-lg px-2.5 py-1.5"
+                title="Modifier">
+                <Pencil className="w-3.5 h-3.5" /> Modifier
+              </Link>
+            </div>
           ))}
         </div>
       )}
