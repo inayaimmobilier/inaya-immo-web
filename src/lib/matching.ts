@@ -28,6 +28,7 @@ export interface MatchableRequest {
   id: string
   user_id: string | null
   contact_telephone: string | null
+  canal: string | null
   type_offre: PropertyType | null
   categories: PropertyCat[] | null
   budget_min: number | null
@@ -36,6 +37,27 @@ export interface MatchableRequest {
   surface_min: number | null
   nb_pieces_min: number | null
   meuble: boolean | null
+}
+
+/**
+ * Un chercheur peut-il recevoir une ALERTE WhatsApp ?
+ * OUI seulement s'il a consenti : recherche enregistrée SUR LA PLATEFORME
+ * (canal web/app, ou compte connecté). Les demandes extraites des groupes
+ * WhatsApp (canal='whatsapp') ne sont PAS démarchées par défaut — envoyer des
+ * messages non sollicités fait bannir le numéro par WhatsApp. L'admin peut
+ * activer ces alertes de groupe à ses risques (réglage « alertes_groupe »).
+ */
+function mayNotify(req: MatchableRequest, allowGroupAlerts: boolean): boolean {
+  if (req.canal && req.canal !== "whatsapp") return true   // plateforme (web/app) → consenti
+  if (req.user_id) return true                             // compte connecté → consenti
+  return allowGroupAlerts                                  // demande de groupe → seulement si activé
+}
+
+async function groupAlertsEnabled(db: ReturnType<typeof createAdminClient>): Promise<boolean> {
+  try {
+    const { data } = await db.from("app_settings").select("value").eq("key", "alertes_groupe").maybeSingle()
+    return (data as { value?: unknown } | null)?.value === true
+  } catch { return false }
 }
 
 export interface MatchScore { type: MatchType; score: number }
@@ -81,7 +103,7 @@ export function evaluateMatch(p: MatchableProperty, r: MatchableRequest): MatchS
 }
 
 const PROP_COLS = "id,titre,type_offre,categorie,prix,quartier,surface,nb_pieces,meuble"
-const REQ_COLS = "id,user_id,contact_telephone,type_offre,categories,budget_min,budget_max,zones,surface_min,nb_pieces_min,meuble"
+const REQ_COLS = "id,user_id,contact_telephone,canal,type_offre,categories,budget_min,budget_max,zones,surface_min,nb_pieces_min,meuble"
 
 /**
  * Matche une annonce nouvellement publiée contre toutes les requêtes actives.
@@ -101,6 +123,7 @@ export async function runMatchingForProperty(propertyId: string): Promise<number
   ])
   const requests = (reqData ?? []) as MatchableRequest[]
   const already = new Set((existing ?? []).map(m => (m as { search_request_id: string }).search_request_id))
+  const allowGroup = await groupAlertsEnabled(db)
 
   let created = 0
   for (const req of requests) {
@@ -114,13 +137,17 @@ export async function runMatchingForProperty(propertyId: string): Promise<number
     if (error) { if (error.code !== "23505") console.error("INAYA-MATCH-001", error.message); continue }
 
     created++
-    await notifySearcher({
-      userId: req.user_id, contactTel: req.contact_telephone,
-      propertyTitre: property.titre, quartier: property.quartier,
-      propertyId, requestId: req.id, type: m.type,
-    })
-    await db.from("matches").update({ statut: "notifie", notifie_le: new Date().toISOString() } as never)
-      .eq("property_id", propertyId).eq("search_request_id", req.id)
+    // Alerte UNIQUEMENT les chercheurs consentis (plateforme). Les demandes de
+    // groupe restent enregistrées (match créé) mais ne sont pas démarchées.
+    if (mayNotify(req, allowGroup)) {
+      await notifySearcher({
+        userId: req.user_id, contactTel: req.contact_telephone,
+        propertyTitre: property.titre, quartier: property.quartier,
+        propertyId, requestId: req.id, type: m.type,
+      })
+      await db.from("matches").update({ statut: "notifie", notifie_le: new Date().toISOString() } as never)
+        .eq("property_id", propertyId).eq("search_request_id", req.id)
+    }
   }
   return created
 }
@@ -157,7 +184,7 @@ export async function runMatchingForRequest(requestId: string, opts: { notify?: 
     } as never)
     if (error) { if (error.code !== "23505") console.error("INAYA-MATCH-002", error.message); continue }
 
-    if (opts.notify) {
+    if (opts.notify && mayNotify(request, await groupAlertsEnabled(db))) {
       await notifySearcher({
         userId: request.user_id, contactTel: request.contact_telephone,
         propertyTitre: property.titre, quartier: property.quartier,
