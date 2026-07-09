@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation"
 import Link from "next/link"
-import { createAdminClient } from "@/lib/supabase/server"
+import { createClient, createAdminClient } from "@/lib/supabase/server"
 import Navbar from "@/components/shared/Navbar"
 import ContactActions from "./ContactActions"
 import { formatPrix, CATEGORIE_LABEL, TYPE_OFFRE_LABEL } from "@/lib/utils"
@@ -33,6 +33,16 @@ export default async function ContacterPage({ params }: PageProps) {
   const { data: setting } = await admin.from("app_settings").select("value").eq("key", "contact_support").maybeSingle()
   const phone = ((setting as { value?: unknown } | null)?.value as string | undefined)?.trim() || null
 
+  // Pré-remplissage du contact si l'utilisateur est connecté.
+  let initialContact: { nom?: string | null; telephone?: string | null } | undefined
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (user) {
+    const { data: prof } = await admin.from("profiles").select("nom, telephone").eq("id", user.id).maybeSingle()
+    const p = prof as { nom: string | null; telephone: string | null } | null
+    initialContact = { nom: p?.nom ?? (user.user_metadata?.nom as string | undefined) ?? null, telephone: p?.telephone ?? null }
+  }
+
   // Référence lisible de l'annonce (dérivée de l'ID).
   const ref = `INA-${property.id.replace(/-/g, "").slice(0, 6).toUpperCase()}`
   const base = process.env.NEXT_PUBLIC_APP_URL || "https://www.inaya.ci"
@@ -61,7 +71,7 @@ export default async function ContacterPage({ params }: PageProps) {
 
           {/* Message pré-rempli + boutons WhatsApp / Appel */}
           <div className="bg-white rounded-2xl border border-gray-100 p-5">
-            <ContactActions phone={phone} initialMessage={message} listingUrl={listingUrl} />
+            <ContactActions propertyId={property.id} phone={phone} initialMessage={message} listingUrl={listingUrl} initialContact={initialContact} />
           </div>
 
           {/* Détail de l'annonce */}
