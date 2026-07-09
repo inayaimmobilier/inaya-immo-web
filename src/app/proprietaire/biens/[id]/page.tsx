@@ -2,7 +2,8 @@ import { redirect, notFound } from "next/navigation"
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
 import { createClient, createAdminClient } from "@/lib/supabase/server"
-import EditPropertyForm, { type EditableProperty } from "./EditPropertyForm"
+import OwnerEditForm, { type EditableProperty } from "@/components/properties/OwnerEditForm"
+import { updateMyProperty, deleteMyProperty } from "./actions"
 
 export const metadata = { title: "Modifier mon annonce · Inaya Immo" }
 
@@ -36,7 +37,12 @@ export default async function EditMyPropertyPage({ params }: { params: Promise<{
         <h1 className="text-2xl font-bold text-gray-900">Modifier mon annonce</h1>
         <p className="text-sm text-gray-500 mt-0.5">{property.titre}</p>
       </div>
-      <EditPropertyForm property={property} />
+      <OwnerEditForm
+        property={property}
+        updateAction={updateMyProperty.bind(null, id)}
+        deleteAction={deleteMyProperty.bind(null, id)}
+        redirectAfterDelete="/proprietaire/biens"
+      />
     </div>
   )
 }

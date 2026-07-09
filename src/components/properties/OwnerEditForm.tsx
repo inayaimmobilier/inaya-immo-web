@@ -3,7 +3,6 @@
 import { useActionState, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { Loader2, AlertCircle, CheckCircle2, Trash2, Save } from "lucide-react"
-import { updateMyProperty, deleteMyProperty } from "./actions"
 
 const TYPE_OPTIONS = [
   { value: "location", label: "Location", desc: "Maison, studio, appartement…" },
@@ -41,11 +40,27 @@ export interface EditableProperty {
   conditions_acquisition: string | null
 }
 
-export default function EditPropertyForm({ property }: { property: EditableProperty }) {
+type UpdateResult = { ok: true } | { error: string }
+type DeleteResult = { ok: true } | { ok: false; error: string }
+
+/**
+ * Formulaire d'édition/suppression d'une annonce par son propriétaire (au sens
+ * large : propriétaire diffuseur OU agent créateur). Partagé entre
+ * /proprietaire/biens/[id] et /agent/annonces/[id] — seule la vérification de
+ * propriété diffère (property_publishers vs created_by), déjà faite par la
+ * page appelante avant d'atteindre ce composant.
+ */
+export default function OwnerEditForm({
+  property, updateAction, deleteAction, redirectAfterDelete,
+}: {
+  property: EditableProperty
+  updateAction: (prev: UpdateResult | null, form: FormData) => Promise<UpdateResult>
+  deleteAction: () => Promise<DeleteResult>
+  redirectAfterDelete: string
+}) {
   const router = useRouter()
   const [typeOffre, setTypeOffre] = useState(property.type_offre)
-  const updateWithId = updateMyProperty.bind(null, property.id)
-  const [state, action, pending] = useActionState(updateWithId, null)
+  const [state, action, pending] = useActionState(updateAction, null)
 
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, startDelete] = useTransition()
@@ -54,8 +69,8 @@ export default function EditPropertyForm({ property }: { property: EditablePrope
   function onDelete() {
     setDeleteErr(null)
     startDelete(async () => {
-      const res = await deleteMyProperty(property.id)
-      if (res.ok) router.push("/proprietaire/biens")
+      const res = await deleteAction()
+      if (res.ok) router.push(redirectAfterDelete)
       else setDeleteErr(res.error)
     })
   }
