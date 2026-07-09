@@ -83,7 +83,7 @@ export async function moderateProperty(propertyId: string, propertyData: {
   }
 
   // Met à jour le statut de l'annonce
-  const newStatut = result.decision === "approve" ? "publie" : "rejetee"
+  const newStatut = result.decision === "approve" ? "publie" : "rejete"
   await admin.from("properties").update({
     statut: newStatut,
     ia_moderation_decision: result.decision,

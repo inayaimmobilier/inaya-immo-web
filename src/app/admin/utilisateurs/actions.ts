@@ -27,6 +27,20 @@ async function currentProfile() {
 }
 
 /**
+ * Nombre de super admins ACTIFS autres que `excludeId`. Sert de filet de
+ * sécurité pour l'auto-gestion : un super admin peut modifier/supprimer SON
+ * PROPRE compte, mais jamais s'il est le dernier super admin actif restant —
+ * sinon la plateforme se retrouve verrouillée sans accès possible (incident
+ * déjà vécu : un compte altéré ne pouvait pas se réparer lui-même via l'UI).
+ */
+async function otherActiveSuperAdmins(admin: ReturnType<typeof createAdminClient>, excludeId: string): Promise<number> {
+  const { count } = await admin
+    .from("profiles").select("id", { count: "exact", head: true })
+    .eq("role", "super_admin").eq("status", "actif").neq("id", excludeId)
+  return count ?? 0
+}
+
+/**
  * Crée un utilisateur depuis le back-office (n'importe quel rôle).
  * Un compte d'authentification est créé (e-mail + mot de passe) puis le profil
  * est complété (rôle, type d'agent, agence…). Seul un super_admin peut créer un
@@ -100,9 +114,6 @@ export async function updateUserRole(targetId: string, role: UserRole): Promise<
   if (me.role !== "super_admin" && me.role !== "admin")
     return { ok: false, error: "Action réservée aux administrateurs." }
 
-  if (me.id === targetId)
-    return { ok: false, error: "Vous ne pouvez pas modifier votre propre rôle." }
-
   // Seul un super_admin peut attribuer ou retirer le rôle super_admin.
   const admin = createAdminClient()
   const { data: targetData } = await admin
@@ -113,6 +124,14 @@ export async function updateUserRole(targetId: string, role: UserRole): Promise<
 
   if ((role === "super_admin" || target.role === "super_admin") && me.role !== "super_admin")
     return { ok: false, error: "Seul un super admin peut gérer le rôle super admin." }
+
+  // Auto-gestion autorisée (y compris sur soi-même), sauf si ça retirerait le
+  // dernier super admin actif de la plateforme.
+  if (me.id === targetId && target.role === "super_admin" && role !== "super_admin") {
+    if (await otherActiveSuperAdmins(admin, me.id) === 0) {
+      return { ok: false, error: "Vous êtes le dernier super admin actif. Attribuez d'abord ce rôle à quelqu'un d'autre." }
+    }
+  }
 
   const { error } = await admin.from("profiles")
     .update({ role } as never).eq("id", targetId)
@@ -222,13 +241,19 @@ export async function deleteUser(targetId: string): Promise<ActionResult> {
   if (!me) return { ok: false, error: "Non authentifié." }
   if (me.role !== "super_admin" && me.role !== "admin")
     return { ok: false, error: "Action réservée aux administrateurs." }
-  if (me.id === targetId) return { ok: false, error: "Vous ne pouvez pas supprimer votre propre compte." }
 
   const admin = createAdminClient()
   const { data: targetData } = await admin.from("profiles").select("role").eq("id", targetId).single()
   const target = targetData as { role: UserRole } | null
   if (target?.role === "super_admin" && me.role !== "super_admin")
     return { ok: false, error: "Seul un super admin peut supprimer un super admin." }
+
+  // Auto-suppression autorisée, sauf si c'est le dernier super admin actif.
+  if (me.id === targetId && target?.role === "super_admin") {
+    if (await otherActiveSuperAdmins(admin, me.id) === 0) {
+      return { ok: false, error: "Vous êtes le dernier super admin actif. Créez un autre super admin avant de supprimer ce compte." }
+    }
+  }
 
   // Détache les références SANS ON DELETE CASCADE (sinon la suppression échoue par
   // violation de clé étrangère). Best-effort : on ignore table/colonne absente.
@@ -287,8 +312,6 @@ export async function updateUserStatus(targetId: string, status: UserStatus): Pr
   if (!me) return { ok: false, error: "Non authentifié." }
   if (me.role !== "super_admin" && me.role !== "admin")
     return { ok: false, error: "Action réservée aux administrateurs." }
-  if (me.id === targetId)
-    return { ok: false, error: "Vous ne pouvez pas modifier votre propre statut." }
 
   const admin = createAdminClient()
   const { data: targetData } = await admin
@@ -297,6 +320,13 @@ export async function updateUserStatus(targetId: string, status: UserStatus): Pr
   if (!target) return { ok: false, error: "Utilisateur introuvable." }
   if (target.role === "super_admin" && me.role !== "super_admin")
     return { ok: false, error: "Seul un super admin peut suspendre un super admin." }
+
+  // Auto-gestion autorisée, sauf si ça désactiverait le dernier super admin actif.
+  if (me.id === targetId && target.role === "super_admin" && status !== "actif") {
+    if (await otherActiveSuperAdmins(admin, me.id) === 0) {
+      return { ok: false, error: "Vous êtes le dernier super admin actif. Cette action vous verrouillerait hors de la plateforme." }
+    }
+  }
 
   const { error } = await admin.from("profiles")
     .update({ status } as never).eq("id", targetId)

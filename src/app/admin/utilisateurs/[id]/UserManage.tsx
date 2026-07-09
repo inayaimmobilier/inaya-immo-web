@@ -108,8 +108,8 @@ export default function UserManage({ user, roleOptions, canManageRole, isSelf }:
     start(async () => {
       const res = await deleteUser(user.id)
       if (!res.ok) { setDeleting(false); setMsg({ ok: false, text: res.error }); return }
-      router.push("/admin/utilisateurs")
-      router.refresh()
+      // Auto-suppression : la session vient d'être détruite, direction l'accueil.
+      window.location.href = isSelf ? "/" : "/admin/utilisateurs"
     })
   }
 
@@ -164,20 +164,24 @@ export default function UserManage({ user, roleOptions, canManageRole, isSelf }:
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="text-xs font-medium text-gray-500">Rôle</label>
-            <select value={role} disabled={!canManageRole || isSelf || pending} onChange={e => onRole(e.target.value as UserRole)}
+            <select value={role} disabled={!canManageRole || pending} onChange={e => onRole(e.target.value as UserRole)}
               className={`${input} disabled:opacity-60`}>
               {roleOptions.map(r => <option key={r} value={r}>{ROLE_LABEL[r] ?? r}</option>)}
             </select>
           </div>
           <div>
             <label className="text-xs font-medium text-gray-500">Statut</label>
-            <select value={status} disabled={!canManageRole || isSelf || pending} onChange={e => onStatus(e.target.value as UserStatus)}
+            <select value={status} disabled={!canManageRole || pending} onChange={e => onStatus(e.target.value as UserStatus)}
               className={`${input} disabled:opacity-60`}>
               {STATUSES.map(s => <option key={s} value={s}>{USER_STATUS_LABEL[s] ?? s}</option>)}
             </select>
           </div>
         </div>
-        {isSelf && <p className="text-xs text-gray-400">Vous ne pouvez pas modifier votre propre rôle ni votre statut.</p>}
+        {isSelf && role === "super_admin" && (
+          <p className="text-xs text-gray-400">
+            Vous gérez votre propre compte. Impossible de vous retirer le rôle super admin ou de vous suspendre si vous êtes le dernier super admin actif.
+          </p>
+        )}
       </div>
 
       {/* Mot de passe */}
@@ -224,30 +228,32 @@ export default function UserManage({ user, roleOptions, canManageRole, isSelf }:
       </div>
 
       {/* Zone de danger */}
-      {!isSelf && (
-        <div className="bg-red-50/60 rounded-2xl border border-red-100 p-5 space-y-3">
-          <h2 className="text-sm font-semibold text-red-700">Zone de danger</h2>
-          <p className="text-xs text-red-600">
-            Supprimer ce compte efface définitivement l&apos;utilisateur et ses données rattachées. Action irréversible.
-          </p>
-          {!confirmDel ? (
-            <button onClick={() => setConfirmDel(true)}
-              className="inline-flex items-center gap-2 bg-white border border-red-300 text-red-700 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-red-50">
-              <Trash2 className="w-4 h-4" /> Supprimer ce compte
+      <div className="bg-red-50/60 rounded-2xl border border-red-100 p-5 space-y-3">
+        <h2 className="text-sm font-semibold text-red-700">Zone de danger</h2>
+        <p className="text-xs text-red-600">
+          {isSelf
+            ? "Supprimer VOTRE PROPRE compte efface définitivement vos données et vous déconnecte immédiatement. Action irréversible."
+            : "Supprimer ce compte efface définitivement l'utilisateur et ses données rattachées. Action irréversible."}
+        </p>
+        {!confirmDel ? (
+          <button onClick={() => setConfirmDel(true)}
+            className="inline-flex items-center gap-2 bg-white border border-red-300 text-red-700 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-red-50">
+            <Trash2 className="w-4 h-4" /> {isSelf ? "Supprimer mon compte" : "Supprimer ce compte"}
+          </button>
+        ) : (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm text-red-700 font-medium">
+              {isSelf ? "Confirmer la suppression de VOTRE compte ? Vous serez déconnecté." : "Confirmer la suppression définitive ?"}
+            </span>
+            <button onClick={doDelete} disabled={deleting}
+              className="inline-flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-red-700 disabled:opacity-60">
+              {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} Oui, supprimer
             </button>
-          ) : (
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm text-red-700 font-medium">Confirmer la suppression définitive ?</span>
-              <button onClick={doDelete} disabled={deleting}
-                className="inline-flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-red-700 disabled:opacity-60">
-                {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} Oui, supprimer
-              </button>
-              <button onClick={() => setConfirmDel(false)} disabled={deleting}
-                className="px-4 py-2 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-100">Annuler</button>
-            </div>
-          )}
-        </div>
-      )}
+            <button onClick={() => setConfirmDel(false)} disabled={deleting}
+              className="px-4 py-2 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-100">Annuler</button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
