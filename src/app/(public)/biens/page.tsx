@@ -108,13 +108,15 @@ async function PropertiesList({ searchParams }: PageProps) {
   // restent exactes, avec repli sur le titre si la colonne catégorie est vide.
   const RESIDENTIEL = ["maison", "appartement", "studio", "villa", "immeuble", "duplex", "chambre", "residence", "logement"]
   const reResid = new RegExp(RESIDENTIEL.join("|"))
-  // « Local / espace commercial » est GÉNÉRIQUE : toute forme d'espace commercial
-  // (magasin, boutique, restaurant, salon, quincaillerie, blanchisserie, point
-  // mobile money, kiosque, entrepôt, fonds de commerce à céder…).
+  // « Local / espace commercial » est GÉNÉRIQUE : tout petit commerce à céder ou
+  // à louer (cave, salon de coiffure, quincaillerie, salle de jeux, kiosque,
+  // maquis, lavage auto, pressing, restaurant, gargote, boulangerie, garage,
+  // point mobile money, boutique, cyber café, bar…) relève de cette catégorie.
   const COMMERCE_CATS = ["local_commercial", "magasin", "boutique", "bureau", "commerce", "entrepot"]
-  // Mots-clés commerciaux SPÉCIFIQUES (on évite « salon »/« bar » trop ambigus :
-  // « chambre salon » = séjour d'un logement). « coiffure » couvre le salon de coiffure.
-  const reCommerce = /local commercial|magasin|boutique|commerce|restaurant|maquis|coiffure|quincaillerie|blanchisserie|pressing|mobile money|kiosque|superette|supermarche|pharmacie|atelier|entrepot|fonds de commerce|pas de porte/
+  // Mots-clés commerciaux SPÉCIFIQUES. « salon » et « bar » seuls sont ambigus
+  // (« chambre salon » = séjour d'un logement) → bornés par \b (mot entier) pour
+  // ne matcher que « salon de coiffure », « bar » isolé, etc., pas « chambre salon ».
+  const reCommerce = /local commercial|magasin|boutique|commerce|restaurant|maquis|coiffure|quincaillerie|blanchisserie|pressing|mobile money|kiosque|superette|supermarche|pharmacie|atelier|entrepot|fonds de commerce|pas de porte|salle de jeux|lavage auto|gargote|garbadrome|boulangerie|cyber ?caf|\bcave\b|\bgarage\b|\bbar\b/
   // Vrai si l'annonce correspond à UNE catégorie recherchée (générique pour maison/commerce).
   const catMatch = (r: Row, c: string) => {
     if (c === "maison") {
