@@ -1,6 +1,6 @@
 import Navbar from "@/components/shared/Navbar"
 import PublierForm from "../../publier/PublierForm"
-import { createAdminClient } from "@/lib/supabase/server"
+import { createAdminClient, createClient } from "@/lib/supabase/server"
 import { Sofa, Shield, Clock, BadgeCheck } from "lucide-react"
 
 export const metadata = { title: "Publier une résidence meublée – Inaya Immo" }
@@ -11,8 +11,19 @@ async function getVilles() {
   return (data ?? []) as { id: string; nom: string }[]
 }
 
+/** Coordonnées du compte connecté — évite de redemander nom/téléphone. */
+async function getInitialContact() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
+  const { data: prof } = await supabase.from("profiles").select("nom, prenom, telephone").eq("id", user.id).maybeSingle()
+  const p = prof as { nom: string | null; prenom: string | null; telephone: string | null } | null
+  const nom = `${p?.prenom || ""} ${p?.nom || ""}`.trim() || null
+  return { nom, telephone: p?.telephone || null }
+}
+
 export default async function PublierResidencePage() {
-  const villes = await getVilles()
+  const [villes, initialContact] = await Promise.all([getVilles(), getInitialContact()])
   return (
     <>
       <Navbar />
@@ -46,7 +57,7 @@ export default async function PublierResidencePage() {
 
         <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10">
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 md:p-8">
-            <PublierForm villes={villes} residence />
+            <PublierForm villes={villes} residence initialContact={initialContact} />
           </div>
         </div>
       </main>

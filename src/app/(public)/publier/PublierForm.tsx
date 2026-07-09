@@ -4,7 +4,7 @@ import { useActionState, useRef, useState, useCallback, useEffect } from "react"
 import { publierAnnonce } from "./actions"
 import {
   CheckCircle2, Loader2, AlertCircle, Upload, X,
-  ImageIcon, Film, ArrowRight, Plus,
+  ImageIcon, Film, ArrowRight, Plus, Pencil,
 } from "lucide-react"
 
 const CATEGORIES = [
@@ -217,8 +217,14 @@ function SuccessScreen() {
   )
 }
 
+interface InitialContact { nom: string | null; telephone: string | null }
+
 // ── Formulaire principal ───────────────────────────────────────────────────
-export default function PublierForm({ villes, residence = false }: { villes: Zone[]; residence?: boolean }) {
+export default function PublierForm({
+  villes, residence = false, initialContact = null,
+}: {
+  villes: Zone[]; residence?: boolean; initialContact?: InitialContact | null
+}) {
   const [state, action, pending] = useActionState(
     async (_prev: unknown, fd: FormData) => publierAnnonce(fd),
     null,
@@ -230,6 +236,12 @@ export default function PublierForm({ villes, residence = false }: { villes: Zon
   // Résidences meublées : type + période de tarification
   const [residType, setResidType] = useState("studio")
   const [periode, setPeriode] = useState("nuit")
+  // Type d'annonce (location/vente/cession) — pilote les sections de conditions.
+  const [typeOffre, setTypeOffre] = useState("location")
+  // Coordonnées déjà connues (compte connecté) : on ne les redemande pas, sauf
+  // si l'utilisateur souhaite les corriger.
+  const hasKnownContact = !!(initialContact?.nom && initialContact?.telephone)
+  const [editContact, setEditContact] = useState(!hasKnownContact)
 
   useEffect(() => {
     if (!villeId) { setQuartiers([]); return }
@@ -284,14 +296,15 @@ export default function PublierForm({ villes, residence = false }: { villes: Zon
       ) : (
         <div>
           <label className={labelCls}>Type d&apos;annonce <span className="text-red-500">*</span></label>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {[
               { value: "location", label: "Location", desc: "Maison, studio, appartement…" },
               { value: "vente", label: "Vente", desc: "Terrain, maison, local…" },
+              { value: "cession", label: "Cession", desc: "Fonds de commerce, bail à céder…" },
             ].map(opt => (
               <label key={opt.value} className="relative cursor-pointer">
                 <input type="radio" name="type_offre" value={opt.value} defaultChecked={opt.value === "location"}
-                  className="peer sr-only" required />
+                  onChange={() => setTypeOffre(opt.value)} className="peer sr-only" required />
                 <div className="border-2 border-gray-200 rounded-xl p-4 peer-checked:border-blue-600 peer-checked:bg-blue-50 transition-all">
                   <p className="font-semibold text-gray-900 text-sm">{opt.label}</p>
                   <p className="text-xs text-gray-400 mt-0.5">{opt.desc}</p>
@@ -441,6 +454,53 @@ export default function PublierForm({ villes, residence = false }: { villes: Zon
         </div>
       </div>
 
+      {/* Conditions de location (maison, appartement, studio, local… en location) */}
+      {!residence && typeOffre === "location" && (
+        <div>
+          <p className={labelCls}>Conditions de location <span className="text-gray-400 font-normal">(facultatif)</span></p>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label htmlFor="mois_caution" className="block text-xs text-gray-500 mb-1">Caution (mois)</label>
+              <input id="mois_caution" name="mois_caution" type="number" min="0" placeholder="Ex : 2" className={inputCls} />
+            </div>
+            <div>
+              <label htmlFor="mois_avance" className="block text-xs text-gray-500 mb-1">Avance (mois)</label>
+              <input id="mois_avance" name="mois_avance" type="number" min="0" placeholder="Ex : 2" className={inputCls} />
+            </div>
+            <div>
+              <label htmlFor="mois_agence" className="block text-xs text-gray-500 mb-1">Frais d&apos;agence (mois)</label>
+              <input id="mois_agence" name="mois_agence" type="number" min="0" placeholder="Ex : 1" className={inputCls} />
+            </div>
+          </div>
+          <p className="text-xs text-gray-400 mt-1.5">Nombre de mois de loyer exigés à l&apos;entrée dans le logement.</p>
+        </div>
+      )}
+
+      {/* Conditions de cession (magasins, entrepôts, locaux commerciaux, fonds de commerce à céder) */}
+      {!residence && typeOffre === "cession" && (
+        <div>
+          <p className={labelCls}>Conditions de cession <span className="text-gray-400 font-normal">(facultatif)</span></p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="cout_cession" className="block text-xs text-gray-500 mb-1">Pas de porte / coût de cession (FCFA)</label>
+              <input id="cout_cession" name="cout_cession" type="number" min="0" placeholder="Ex : 2 500 000" className={inputCls} />
+            </div>
+            <div>
+              <label htmlFor="loyer_cession" className="block text-xs text-gray-500 mb-1">Loyer mensuel après reprise (FCFA)</label>
+              <input id="loyer_cession" name="loyer_cession" type="number" min="0" placeholder="Ex : 50 000" className={inputCls} />
+            </div>
+          </div>
+          <div className="mt-3">
+            <label htmlFor="conditions_acquisition" className="block text-xs text-gray-500 mb-1">Conditions d&apos;acquisition</label>
+            <textarea id="conditions_acquisition" name="conditions_acquisition" rows={2}
+              placeholder="Ex : 3 mois de caution inclus, matériel cédé avec le local…" className={`${inputCls} resize-none`} maxLength={500} />
+          </div>
+          <p className="text-xs text-gray-400 mt-1.5">
+            S&apos;applique typiquement aux magasins, entrepôts, locaux commerciaux à céder (fonds de commerce, bail…).
+          </p>
+        </div>
+      )}
+
       {/* Description */}
       <div>
         <label htmlFor="description" className={labelCls}>Description</label>
@@ -449,27 +509,44 @@ export default function PublierForm({ villes, residence = false }: { villes: Zon
           className={`${inputCls} resize-none`} maxLength={2000} />
       </div>
 
-      {/* Contact propriétaire */}
+      {/* Contact propriétaire — déjà connu si compte connecté, pas besoin de redemander */}
       <div className="bg-amber-50 border border-amber-100 rounded-2xl p-5 space-y-4">
         <div>
           <p className="text-sm font-semibold text-amber-900 mb-0.5">Vos coordonnées <span className="text-red-500">*</span></p>
           <p className="text-xs text-amber-700">
-            Ces informations restent <strong>strictement confidentielles</strong> — elles ne seront jamais
-            communiquées aux clients. Nos agents vous contacteront en cas de besoin.
+            {hasKnownContact && !editContact
+              ? "Déjà enregistrées sur votre compte. Elles restent strictement confidentielles."
+              : <>Ces informations restent <strong>strictement confidentielles</strong> — elles ne seront jamais communiquées aux clients. Nos agents vous contacteront en cas de besoin.</>}
           </p>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label htmlFor="contact_nom" className="block text-xs text-amber-800 font-medium mb-1.5">Nom complet</label>
-            <input id="contact_nom" name="contact_nom" type="text" required
-              placeholder="Votre nom" className={inputCls} />
+
+        {hasKnownContact && !editContact ? (
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-amber-900 truncate">{initialContact!.nom}</p>
+              <p className="text-xs text-amber-700">{initialContact!.telephone}</p>
+            </div>
+            <button type="button" onClick={() => setEditContact(true)}
+              className="inline-flex items-center gap-1 text-xs text-amber-800 hover:text-amber-900 underline underline-offset-2 shrink-0">
+              <Pencil className="w-3 h-3" /> Modifier
+            </button>
+            <input type="hidden" name="contact_nom" value={initialContact!.nom ?? ""} />
+            <input type="hidden" name="contact_phone" value={initialContact!.telephone ?? ""} />
           </div>
-          <div>
-            <label htmlFor="contact_phone" className="block text-xs text-amber-800 font-medium mb-1.5">Numéro WhatsApp</label>
-            <input id="contact_phone" name="contact_phone" type="tel" required
-              placeholder="+225 07 00 00 00 00" className={inputCls} />
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="contact_nom" className="block text-xs text-amber-800 font-medium mb-1.5">Nom complet</label>
+              <input id="contact_nom" name="contact_nom" type="text" required
+                defaultValue={initialContact?.nom ?? ""} placeholder="Votre nom" className={inputCls} />
+            </div>
+            <div>
+              <label htmlFor="contact_phone" className="block text-xs text-amber-800 font-medium mb-1.5">Numéro WhatsApp</label>
+              <input id="contact_phone" name="contact_phone" type="tel" required
+                defaultValue={initialContact?.telephone ?? ""} placeholder="+225 07 00 00 00 00" className={inputCls} />
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       <button type="submit" disabled={pending}

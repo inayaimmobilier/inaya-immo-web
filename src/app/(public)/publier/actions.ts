@@ -44,6 +44,19 @@ export async function publierAnnonce(fd: FormData): Promise<PublierResult> {
   const tarif_periode = isResidence ? ((fd.get("tarif_periode") as string | null)?.trim() || "nuit") : null
   const forfaits = (fd.get("forfaits") as string | null)?.trim() || null
 
+  // ── Conditions d'accès au bien ────────────────────────────────────────────
+  // Location (maison, appartement, studio, local…) : mois de caution/avance/agence.
+  const numOrNull = (v: FormDataEntryValue | null) => { const n = Number(v); return v && !isNaN(n) ? n : null }
+  const mois_caution = type_offre === "location" ? numOrNull(fd.get("mois_caution")) : null
+  const mois_avance  = type_offre === "location" ? numOrNull(fd.get("mois_avance"))  : null
+  const mois_agence  = type_offre === "location" ? numOrNull(fd.get("mois_agence"))  : null
+  // Cession (fonds de commerce, bail à céder — magasins, entrepôts, locaux commerciaux) :
+  // pas-de-porte, loyer après reprise, conditions d'acquisition.
+  const cout_cession = type_offre === "cession" ? numOrNull(fd.get("cout_cession")) : null
+  const loyer_cession = type_offre === "cession" ? numOrNull(fd.get("loyer_cession")) : null
+  const conditions_acquisition = type_offre === "cession"
+    ? ((fd.get("conditions_acquisition") as string | null)?.trim() || null) : null
+
   // Pour une résidence « autre », on précise le type dans la description.
   // Les forfaits sont stockés dans leur colonne dédiée (pas dans la description).
   if (isResidence && residAutre) {
@@ -56,7 +69,7 @@ export async function publierAnnonce(fd: FormData): Promise<PublierResult> {
     terrain: "Terrain", local_commercial: "Local commercial",
     bureau: "Bureau", magasin: "Magasin", autre: "Bien",
   }
-  const TYPE_LABEL: Record<string, string> = { location: "à louer", vente: "à vendre", residence_meublee: "meublé à louer" }
+  const TYPE_LABEL: Record<string, string> = { location: "à louer", vente: "à vendre", cession: "à céder", residence_meublee: "meublé à louer" }
   // Titre : pour une résidence, basé sur le type choisi ("autre" → précision saisie).
   const residNom = residAutre || residTypeLabel || "Résidence meublée"
   const titre = titre_raw || (isResidence
@@ -79,6 +92,8 @@ export async function publierAnnonce(fd: FormData): Promise<PublierResult> {
     nb_chambres: nb_chambres || null,
     tarif_periode,
     forfaits: isResidence ? forfaits : null,
+    mois_caution, mois_avance, mois_agence,
+    cout_cession, loyer_cession, conditions_acquisition,
     statut: "en_attente_validation",
     source: "proprietaire",
   }
@@ -86,11 +101,24 @@ export async function publierAnnonce(fd: FormData): Promise<PublierResult> {
   let { data: prop, error: propErr } = await admin
     .from("properties").insert(insertPayload as never).select("id").single()
 
-  // 42703 = colonne récente absente (migrations 020/023 non appliquées) → réessai sans.
+  // 42703 = colonne récente absente (migrations 010/014/020/023 non appliquées) → réessai sans.
   if (propErr?.code === "42703") {
-    const { tarif_periode: _tp, forfaits: _f, ...base } = insertPayload
-    // On reverse les forfaits dans la description en repli, pour ne rien perdre.
-    if (forfaits) base.description = [base.description, `Forfaits spéciaux : ${forfaits}`].filter(Boolean).join("\n\n")
+    const {
+      tarif_periode: _tp, forfaits: _f,
+      mois_caution: _mc, mois_avance: _ma, mois_agence: _mg,
+      cout_cession: _cc, loyer_cession: _lc, conditions_acquisition: _ca,
+      ...base
+    } = insertPayload
+    // On reverse les champs perdus dans la description en repli, pour ne rien perdre.
+    const lost: string[] = []
+    if (forfaits) lost.push(`Forfaits spéciaux : ${forfaits}`)
+    if (mois_caution != null || mois_avance != null || mois_agence != null) {
+      lost.push(`Conditions de location : ${mois_caution ?? "?"} mois de caution, ${mois_avance ?? "?"} mois d'avance, ${mois_agence ?? "?"} mois d'agence.`)
+    }
+    if (cout_cession != null) lost.push(`Pas de porte / coût de cession : ${cout_cession} FCFA.`)
+    if (loyer_cession != null) lost.push(`Loyer après reprise : ${loyer_cession} FCFA/mois.`)
+    if (conditions_acquisition) lost.push(`Conditions d'acquisition : ${conditions_acquisition}`)
+    if (lost.length) base.description = [base.description, ...lost].filter(Boolean).join("\n\n")
     const retry = await admin.from("properties").insert(base as never).select("id").single()
     prop = retry.data; propErr = retry.error
   }
