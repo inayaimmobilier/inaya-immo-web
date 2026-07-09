@@ -128,6 +128,7 @@ export default function ModerationTable({ rows }: { rows: AnnonceRow[] }) {
                         : <div className="w-10 h-10 rounded-lg bg-gray-100 flex-shrink-0" />}
                       <div className="min-w-0">
                         <p className={`font-medium truncate max-w-[200px] ${p.reported > 0 ? "text-red-700" : "text-gray-900 group-hover:text-blue-700"}`}>{p.titre}</p>
+                        <p className="text-[10px] font-mono text-gray-400">N° INA-{p.id.replace(/-/g, "").slice(0, 6).toUpperCase()}</p>
                         {p.reported > 0
                           ? <span className="inline-flex items-center gap-1 mt-0.5 text-[11px] font-semibold text-red-600 bg-red-100 px-1.5 py-0.5 rounded-full"><Flag className="w-3 h-3" /> {p.reported} signalement{p.reported > 1 ? "s" : ""}</span>
                           : <p className="text-xs text-gray-400">{p.quartier}</p>}

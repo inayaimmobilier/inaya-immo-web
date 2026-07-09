@@ -29,7 +29,7 @@ export default async function AnnoncesAdminPage({ searchParams }: PageProps) {
   const to = from + PER_PAGE - 1
 
   type PropRow = {
-    id: string; titre: string; type_offre: string; categorie: string
+    id: string; titre: string; description: string | null; type_offre: string; categorie: string
     statut: string; prix: number | null; quartier: string | null
     created_at: string; source: string | null
     property_media: { url: string; type: string; ordre: number; thumbnail_url: string | null }[]
@@ -50,24 +50,50 @@ export default async function AnnoncesAdminPage({ searchParams }: PageProps) {
   const reportedIds = [...reportCount.keys()]
   const signaleesActive = params.signalees === "1"
 
-  let countQ = supabase.from("properties").select("*", { count: "exact", head: true })
-  let dataQ  = supabase.from("properties")
-    .select("id,titre,type_offre,categorie,statut,prix,quartier,created_at,source,property_media(url,type,ordre,thumbnail_url)")
-    .order("created_at", { ascending: false })
-    .range(from, to)
+  const SELECT = "id,titre,description,type_offre,categorie,statut,prix,quartier,created_at,source,property_media(url,type,ordre,thumbnail_url)"
+  const dummyIds = ["00000000-0000-0000-0000-000000000000"]
 
-  if (params.statut) { countQ = countQ.eq("statut", params.statut); dataQ = dataQ.eq("statut", params.statut as never) }
-  if (params.q)      { countQ = countQ.ilike("titre", `%${params.q}%`); dataQ = dataQ.ilike("titre", `%${params.q}%`) }
-  if (signaleesActive) {
-    // Restreint aux annonces signalées (uuid factice si aucune → 0 résultat).
-    const ids = reportedIds.length ? reportedIds : ["00000000-0000-0000-0000-000000000000"]
-    countQ = countQ.in("id", ids); dataQ = dataQ.in("id", ids)
+  let properties: PropRow[]
+  let total: number
+  let totalPages: number
+
+  if (params.q) {
+    // Recherche LARGE : n'importe quel texte de l'annonce (titre / description /
+    // quartier), le NUMÉRO d'annonce (INA-XXXXXX) ou l'identifiant. Filtrage en JS
+    // (accents/casse ignorés) pour couvrir tous les cas de façon fiable.
+    let sq = supabase.from("properties").select(SELECT).order("created_at", { ascending: false }).limit(2000)
+    if (params.statut) sq = sq.eq("statut", params.statut as never)
+    if (signaleesActive) sq = sq.in("id", reportedIds.length ? reportedIds : dummyIds)
+    const { data } = await sq
+    const all = (data ?? []) as PropRow[]
+
+    const norm = (s: unknown) => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
+    const t = norm(params.q).trim()
+    // Numéro d'annonce : « INA-A3D855 », « A3D855 » ou id complet → fragment hex.
+    const hex = params.q.replace(/[^0-9a-zA-Z]/g, "").toLowerCase().replace(/^ina/, "")
+
+    const filtered = all.filter(p => {
+      if (t && (norm(p.titre).includes(t) || norm(p.description).includes(t) || norm(p.quartier).includes(t))) return true
+      const idHex = p.id.replace(/-/g, "").toLowerCase()
+      if (hex.length >= 4 && (idHex.startsWith(hex) || idHex.includes(hex))) return true
+      return false
+    })
+    total = filtered.length
+    totalPages = Math.ceil(total / PER_PAGE)
+    properties = filtered.slice(from, to + 1)
+  } else {
+    let countQ = supabase.from("properties").select("*", { count: "exact", head: true })
+    let dataQ = supabase.from("properties").select(SELECT).order("created_at", { ascending: false }).range(from, to)
+    if (params.statut) { countQ = countQ.eq("statut", params.statut); dataQ = dataQ.eq("statut", params.statut as never) }
+    if (signaleesActive) {
+      const ids = reportedIds.length ? reportedIds : dummyIds
+      countQ = countQ.in("id", ids); dataQ = dataQ.in("id", ids)
+    }
+    const [{ count }, { data }] = await Promise.all([countQ, dataQ])
+    properties = (data ?? []) as PropRow[]
+    total = count ?? 0
+    totalPages = Math.ceil(total / PER_PAGE)
   }
-
-  const [{ count }, { data }] = await Promise.all([countQ, dataQ])
-  const properties = (data ?? []) as PropRow[]
-  const total = count ?? 0
-  const totalPages = Math.ceil(total / PER_PAGE)
 
   // Données sérialisables pour le tableau interactif (sélection + modération groupée).
   const rows: AnnonceRow[] = properties.map(p => {
@@ -158,7 +184,7 @@ export default async function AnnoncesAdminPage({ searchParams }: PageProps) {
           <input
             name="q"
             defaultValue={params.q}
-            placeholder="Rechercher par titre..."
+            placeholder="Texte de l'annonce, quartier, ou N° (INA-XXXXXX)…"
             className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:border-blue-400"
           />
           <button
