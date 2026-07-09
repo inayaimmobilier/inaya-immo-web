@@ -123,6 +123,22 @@ export default async function ParametresPage({ searchParams }: PageProps) {
                 className={`${field} resize-none`} />
             </div>
           </div>
+
+          <p className="text-xs text-gray-500 pt-2">Statistiques affichées sous la barre de recherche (laisser vide = valeur automatique).</p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label className={label}>Annonces vérifiées</label>
+              <input name="stat_annonces" defaultValue={get("stat_annonces")} placeholder="auto" className={field} />
+            </div>
+            <div>
+              <label className={label}>Quartiers couverts</label>
+              <input name="stat_quartiers" defaultValue={get("stat_quartiers", "14")} className={field} />
+            </div>
+            <div>
+              <label className={label}>Transactions conclues</label>
+              <input name="stat_transactions" defaultValue={get("stat_transactions")} placeholder="auto" className={field} />
+            </div>
+          </div>
         </section>
 
         <section className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3">

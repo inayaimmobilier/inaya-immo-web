@@ -35,20 +35,20 @@ export default function ContactActions({
 
   const field = "w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
 
-  // Crée le lead (flux normal → assignation agent) PUIS ouvre WhatsApp / l'appel.
+  // Ouvre TOUJOURS WhatsApp / l'appel. Si un nom + téléphone valides sont fournis,
+  // on crée aussi un lead (best-effort) — mais on ne bloque JAMAIS l'action.
   async function go(kind: "wa" | "call") {
     setError(null)
-    if (!nom.trim()) { setError("Indiquez votre nom."); return }
-    if (tel.replace(/\D/g, "").length < 8) { setError("Indiquez un numéro de téléphone valide."); return }
-    setLoading(kind)
-    try {
-      const res = await createContactLead({ propertyId, nom, telephone: tel, message: msg })
-      if (!res.ok) { setError(res.error); setLoading(null); return }
-      // Navigation (pas window.open → évite le blocage de pop-up).
-      window.location.href = kind === "wa" ? (wa ?? "#") : (tel2 ?? "#")
-    } catch {
-      setError("Action impossible. Réessayez."); setLoading(null)
+    const target = kind === "wa" ? wa : tel2
+    if (!target) { setError("Numéro de contact non configuré."); return }
+
+    if (nom.trim() && tel.replace(/\D/g, "").length >= 8) {
+      setLoading(kind)
+      try { await createContactLead({ propertyId, nom, telephone: tel, message: msg }) } catch { /* best-effort */ }
     }
+    // Navigation (pas window.open → évite le blocage de pop-up) : ouvre WhatsApp
+    // (wa.me) ou l'application téléphone (tel:) selon le bouton.
+    window.location.href = target
   }
 
   return (

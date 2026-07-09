@@ -40,7 +40,10 @@ export default async function ContacterPage({ params }: PageProps) {
   if (user) {
     const { data: prof } = await admin.from("profiles").select("nom, telephone").eq("id", user.id).maybeSingle()
     const p = prof as { nom: string | null; telephone: string | null } | null
-    initialContact = { nom: p?.nom ?? (user.user_metadata?.nom as string | undefined) ?? null, telephone: p?.telephone ?? null }
+    const rawNom = p?.nom ?? (user.user_metadata?.nom as string | undefined) ?? null
+    // N'affiche pas un e-mail comme « nom » (certains profils ont l'e-mail en nom).
+    const nom = rawNom && !rawNom.includes("@") ? rawNom : null
+    initialContact = { nom, telephone: p?.telephone ?? null }
   }
 
   // Référence lisible de l'annonce (dérivée de l'ID).

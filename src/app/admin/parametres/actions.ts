@@ -72,6 +72,10 @@ export async function saveSettings(form: FormData): Promise<ActionResult> {
     { key: "hero_titre", value: str("hero_titre") || "L'immobilier en Côte d'Ivoire" },
     { key: "hero_titre_accent", value: str("hero_titre_accent") || "simplifiée" },
     { key: "hero_sous_titre", value: str("hero_sous_titre") || "Annonces vérifiées par nos agents. Location, vente, gestion de biens. Votre maison, entre de bonnes mains." },
+    // Statistiques affichées sur l'accueil (vides = valeur automatique).
+    { key: "stat_annonces", value: str("stat_annonces") },
+    { key: "stat_quartiers", value: str("stat_quartiers") || "14" },
+    { key: "stat_transactions", value: str("stat_transactions") },
     { key: "devise", value: str("devise") || "XOF" },
     { key: "delai_expiration_jours", value: Number(str("delai_expiration_jours")) || 30 },
     { key: "contact_support", value: str("contact_support") },

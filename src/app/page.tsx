@@ -50,23 +50,27 @@ async function getVilles() {
   return (data ?? []) as { id: string; nom: string }[]
 }
 
-// Textes du hero, éditables par l'admin (app_settings), avec repli.
+// Textes du hero + stats de l'accueil, éditables par l'admin (app_settings), avec repli.
 async function getHero() {
   const def = {
     titre: "L'immobilier en Côte d'Ivoire",
     accent: "simplifiée",
     sousTitre: "Annonces vérifiées par nos agents. Location, vente, gestion de biens. Votre maison, entre de bonnes mains.",
+    statAnnonces: "", statQuartiers: "14", statTransactions: "",
   }
   try {
     const admin = createAdminClient()
     const { data } = await admin.from("app_settings").select("key,value")
-      .in("key", ["hero_titre", "hero_titre_accent", "hero_sous_titre"])
+      .in("key", ["hero_titre", "hero_titre_accent", "hero_sous_titre", "stat_annonces", "stat_quartiers", "stat_transactions"])
     const m = new Map((data ?? []).map(s => [(s as { key: string }).key, (s as { value: unknown }).value]))
     const str = (k: string, d: string) => { const v = m.get(k); return typeof v === "string" && v.trim() ? v : d }
     return {
       titre: str("hero_titre", def.titre),
       accent: str("hero_titre_accent", def.accent),
       sousTitre: str("hero_sous_titre", def.sousTitre),
+      statAnnonces: str("stat_annonces", ""),
+      statQuartiers: str("stat_quartiers", "14"),
+      statTransactions: str("stat_transactions", ""),
     }
   } catch { return def }
 }
@@ -140,9 +144,9 @@ export default async function Home() {
           <div className="max-w-5xl mx-auto px-4 sm:px-6">
             <div className="grid grid-cols-3 divide-x divide-gray-100">
               {[
-                { value: stats.totalBiens || "—", label: "annonces vérifiées" },
-                { value: "14", label: "quartiers couverts" },
-                { value: stats.totalTransactions || "—", label: "transactions conclues" },
+                { value: hero.statAnnonces || stats.totalBiens || "—", label: "annonces vérifiées" },
+                { value: hero.statQuartiers || "14", label: "quartiers couverts" },
+                { value: hero.statTransactions || stats.totalTransactions || "—", label: "transactions conclues" },
               ].map(s => (
                 <div key={s.label} className="flex flex-col sm:flex-row sm:items-baseline gap-0.5 sm:gap-2 px-2 sm:px-8 py-5 sm:py-6 text-center sm:text-left">
                   <span className="text-xl sm:text-2xl font-bold text-slate-900">{s.value}</span>
@@ -336,6 +340,7 @@ export default async function Home() {
                 <Link href="/biens" className="hover:text-slate-300 transition-colors">Annonces</Link>
                 <Link href="/publier" className="hover:text-slate-300 transition-colors">Publier</Link>
                 <Link href="/temoignages" className="hover:text-slate-300 transition-colors">Avis</Link>
+                <Link href="/conditions" className="hover:text-slate-300 transition-colors">Conditions</Link>
                 <Link href="/connexion" className="hover:text-slate-300 transition-colors">Connexion</Link>
                 <span>© {new Date().getFullYear()}</span>
               </div>
