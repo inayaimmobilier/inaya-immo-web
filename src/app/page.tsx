@@ -50,6 +50,27 @@ async function getVilles() {
   return (data ?? []) as { id: string; nom: string }[]
 }
 
+// Textes du hero, éditables par l'admin (app_settings), avec repli.
+async function getHero() {
+  const def = {
+    titre: "L'immobilier en Côte d'Ivoire",
+    accent: "simplifiée",
+    sousTitre: "Annonces vérifiées par nos agents. Location, vente, gestion de biens. Votre maison, entre de bonnes mains.",
+  }
+  try {
+    const admin = createAdminClient()
+    const { data } = await admin.from("app_settings").select("key,value")
+      .in("key", ["hero_titre", "hero_titre_accent", "hero_sous_titre"])
+    const m = new Map((data ?? []).map(s => [(s as { key: string }).key, (s as { value: unknown }).value]))
+    const str = (k: string, d: string) => { const v = m.get(k); return typeof v === "string" && v.trim() ? v : d }
+    return {
+      titre: str("hero_titre", def.titre),
+      accent: str("hero_titre_accent", def.accent),
+      sousTitre: str("hero_sous_titre", def.sousTitre),
+    }
+  } catch { return def }
+}
+
 async function getServiceBanners() {
   const admin = createAdminClient()
   const { data } = await admin
@@ -64,8 +85,8 @@ async function getServiceBanners() {
 }
 
 export default async function Home() {
-  const [stats, recentProperties, residences, villes, serviceBanners, testimonials] = await Promise.all([
-    getStats(), getRecentProperties(), getResidences(), getVilles(), getServiceBanners(), getPublishedTestimonials(6),
+  const [stats, recentProperties, residences, villes, serviceBanners, testimonials, hero] = await Promise.all([
+    getStats(), getRecentProperties(), getResidences(), getVilles(), getServiceBanners(), getPublishedTestimonials(6), getHero(),
   ])
 
   return (
@@ -102,12 +123,11 @@ export default async function Home() {
 
             {/* Titre */}
             <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold text-white leading-[1.1] tracking-tight mb-4 max-w-2xl">
-              L&apos;immobilier à Bouaké,{" "}
-              <span className="text-amber-400">simplifié.</span>
+              {hero.titre}{" "}
+              <span className="text-amber-400">{hero.accent}</span>
             </h1>
             <p className="text-slate-400 text-sm md:text-base mb-6 max-w-lg leading-relaxed">
-              Annonces vérifiées par nos agents. Location, vente, gestion de biens.
-              Votre maison, entre de bonnes mains.
+              {hero.sousTitre}
             </p>
 
             {/* Barre de recherche */}

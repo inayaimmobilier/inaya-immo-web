@@ -103,6 +103,28 @@ export default async function ParametresPage({ searchParams }: PageProps) {
           </div>
         </section>
 
+        {/* Page d'accueil (hero) */}
+        <section className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
+          <h2 className="text-sm font-semibold text-gray-900">Page d&apos;accueil</h2>
+          <p className="text-xs text-gray-500">Le grand titre affiché en haut du site. La partie « accent » est mise en surbrillance (jaune).</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className={label}>Titre</label>
+              <input name="hero_titre" defaultValue={get("hero_titre", "L'immobilier en Côte d'Ivoire")} className={field} />
+            </div>
+            <div>
+              <label className={label}>Accent (surligné)</label>
+              <input name="hero_titre_accent" defaultValue={get("hero_titre_accent", "simplifiée")} className={field} />
+            </div>
+            <div className="sm:col-span-2">
+              <label className={label}>Sous-titre</label>
+              <textarea name="hero_sous_titre" rows={2}
+                defaultValue={get("hero_sous_titre", "Annonces vérifiées par nos agents. Location, vente, gestion de biens. Votre maison, entre de bonnes mains.")}
+                className={`${field} resize-none`} />
+            </div>
+          </div>
+        </section>
+
         <section className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3">
           <h2 className="text-sm font-semibold text-gray-900">Canaux de notification interne</h2>
           <div className="flex flex-wrap gap-4">

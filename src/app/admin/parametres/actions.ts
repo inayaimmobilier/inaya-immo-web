@@ -68,6 +68,10 @@ export async function saveSettings(form: FormData): Promise<ActionResult> {
   const updates: { key: string; value: unknown }[] = [
     { key: "nom_plateforme", value: str("nom_plateforme") || "Inaya Immo" },
     { key: "ville_principale", value: str("ville_principale") || "Bouaké" },
+    // Hero de la page d'accueil (éditable).
+    { key: "hero_titre", value: str("hero_titre") || "L'immobilier en Côte d'Ivoire" },
+    { key: "hero_titre_accent", value: str("hero_titre_accent") || "simplifiée" },
+    { key: "hero_sous_titre", value: str("hero_sous_titre") || "Annonces vérifiées par nos agents. Location, vente, gestion de biens. Votre maison, entre de bonnes mains." },
     { key: "devise", value: str("devise") || "XOF" },
     { key: "delai_expiration_jours", value: Number(str("delai_expiration_jours")) || 30 },
     { key: "contact_support", value: str("contact_support") },
