@@ -33,7 +33,7 @@ export default function PropertyCard({ property }: { property: Property }) {
 
   return (
     <Link href={`/biens/${property.id}`} className="group block">
-      <article className="bg-white rounded-2xl shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden border border-gray-100 hover:border-blue-200">
+      <article className="bg-white rounded-2xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden border border-gray-100 hover:border-blue-200 hover:-translate-y-1">
         {/* Photo */}
         <div className="relative h-48 bg-gray-100 overflow-hidden">
           {cover ? (
@@ -41,11 +41,14 @@ export default function PropertyCard({ property }: { property: Property }) {
               src={cover}
               alt={property.titre}
               fill
-              className="object-cover group-hover:scale-105 transition-transform duration-300"
+              sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
+              className="object-cover group-hover:scale-105 transition-transform duration-500 ease-out"
             />
           ) : (
             <PropertyPlaceholder categorie={property.categorie} />
           )}
+          {/* Dégradé bas : lisibilité des badges + profondeur au survol */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
 
           {/* Badges */}
           <div className="absolute top-3 left-3 flex gap-2">

@@ -25,7 +25,7 @@ export default function Gallery({ images, alt, badges, categorie }: {
     <div className="space-y-2">
       <div className="relative h-72 sm:h-[26rem] bg-gray-100 rounded-2xl overflow-hidden group">
         {current ? (
-          <Image src={current} alt={alt} fill className="object-cover" priority />
+          <Image src={current} alt={alt} fill sizes="(max-width: 1024px) 100vw, 66vw" className="object-cover" priority />
         ) : (
           <PropertyPlaceholder categorie={categorie ?? "autre"} />
         )}
@@ -56,7 +56,7 @@ export default function Gallery({ images, alt, badges, categorie }: {
               className={`relative h-16 w-24 sm:w-auto flex-shrink-0 rounded-lg overflow-hidden transition-all ${
                 i === active ? "ring-2 ring-blue-500" : "ring-1 ring-gray-100 opacity-80 hover:opacity-100"
               }`}>
-              <Image src={img.url} alt={`${alt} ${i + 1}`} fill className="object-cover" />
+              <Image src={img.url} alt={`${alt} ${i + 1}`} fill sizes="120px" className="object-cover" />
             </button>
           ))}
         </div>
