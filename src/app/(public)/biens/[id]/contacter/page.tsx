@@ -46,8 +46,9 @@ export default async function ContacterPage({ params }: PageProps) {
     initialContact = { nom, telephone: p?.telephone ?? null }
   }
 
-  // Référence lisible de l'annonce (dérivée de l'ID).
-  const ref = `INA-${property.id.replace(/-/g, "").slice(0, 6).toUpperCase()}`
+  // Numéro d'annonce (le même que partout ailleurs) ; repli hex si absent.
+  const refNum = (property as unknown as { reference?: number | null }).reference ?? null
+  const ref = refNum != null ? String(refNum) : `INA-${property.id.replace(/-/g, "").slice(0, 6).toUpperCase()}`
   const base = process.env.NEXT_PUBLIC_APP_URL || "https://www.inaya.ci"
   const listingUrl = `${base}/biens/${property.id}`
 
