@@ -1,4 +1,5 @@
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3"
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
 
 const ACCOUNT_ID = process.env.CLOUDFLARE_R2_ACCOUNT_ID
 const BUCKET = process.env.CLOUDFLARE_R2_BUCKET_NAME ?? "inaya-medias"
@@ -30,6 +31,21 @@ export async function uploadToR2(key: string, body: Buffer, contentType: string)
 
 export async function deleteFromR2(key: string): Promise<void> {
   await getS3().send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key }))
+}
+
+/** URL publique de service d'une clé R2. */
+export function publicUrlForKey(key: string): string {
+  return `${PUBLIC_URL}/${key}`
+}
+
+/**
+ * URL présignée pour un PUT DIRECT navigateur → R2. Permet d'envoyer des
+ * fichiers lourds (vidéos) sans passer par la fonction serverless (limite de
+ * corps ~4,5 Mo sur Vercel). Le bucket R2 doit autoriser le CORS PUT depuis
+ * l'origine du site.
+ */
+export async function presignPutUrl(key: string, contentType: string, expiresIn = 600): Promise<string> {
+  return getSignedUrl(getS3(), new PutObjectCommand({ Bucket: BUCKET, Key: key, ContentType: contentType }), { expiresIn })
 }
 
 /** Extrait la clé R2 depuis une URL publique (pour la suppression). */

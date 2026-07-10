@@ -26,21 +26,58 @@ export default function MediaSection({ propertyId, initialMedia }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
 
+  // Upload DIRECT navigateur → R2 (URL présignée), puis enregistrement en base.
+  // Contourne la limite de corps serverless (~4,5 Mo sur Vercel) qui bloquait
+  // les vidéos (erreur « Request Entity Too Large » non-JSON côté client).
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return
     setErrors([])
     setUploading(true)
+    const errs: string[] = []
+    const toRecord: { key: string; type: "image" | "video" }[] = []
     try {
-      const fd = new FormData()
-      Array.from(files).forEach(f => fd.append("files", f))
-      const res = await fetch(`/api/admin/annonces/${propertyId}/media`, { method: "POST", body: fd })
-      const json = await res.json() as { created?: MediaRow[]; errors?: string[] }
-      if (json.created?.length) {
-        setMedia(prev => [...prev, ...json.created!].sort((a, b) => a.ordre - b.ordre))
+      for (const file of Array.from(files)) {
+        try {
+          // 1) URL présignée
+          const presignRes = await fetch(`/api/admin/annonces/${propertyId}/media/presign`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ files: [{ name: file.name, contentType: file.type, size: file.size }] }),
+          })
+          const presign = await presignRes.json().catch(() => null) as
+            { items?: { key: string; uploadUrl: string; type: "image" | "video"; contentType: string }[]; errors?: string[] } | null
+          if (!presignRes.ok || !presign) { errs.push(`${file.name} : préparation de l'envoi impossible.`); continue }
+          if (presign.errors?.length) errs.push(...presign.errors)
+          const item = presign.items?.[0]
+          if (!item) continue
+
+          // 2) PUT direct vers R2 (pas de limite serverless)
+          const put = await fetch(item.uploadUrl, {
+            method: "PUT", headers: { "Content-Type": item.contentType }, body: file,
+          })
+          if (!put.ok) {
+            errs.push(`${file.name} : envoi vers le stockage refusé (${put.status}). Vérifiez la config CORS du bucket R2.`)
+            continue
+          }
+          toRecord.push({ key: item.key, type: item.type })
+        } catch (e) {
+          errs.push(`${file.name} : ${(e as Error).message}`)
+        }
       }
-      if (json.errors?.length) setErrors(json.errors)
+
+      // 3) Enregistrement en base des médias uploadés
+      if (toRecord.length > 0) {
+        const rec = await fetch(`/api/admin/annonces/${propertyId}/media`, {
+          method: "PUT", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ items: toRecord }),
+        })
+        const json = await rec.json().catch(() => null) as { created?: MediaRow[]; errors?: string[] } | null
+        if (json?.created?.length) setMedia(prev => [...prev, ...json.created!].sort((a, b) => a.ordre - b.ordre))
+        if (json?.errors?.length) errs.push(...json.errors)
+        if (!json) errs.push("Médias envoyés mais enregistrement impossible. Réessayez.")
+      }
+      setErrors(errs)
     } catch (e) {
-      setErrors([(e as Error).message])
+      setErrors([...errs, (e as Error).message])
     } finally {
       setUploading(false)
       if (inputRef.current) inputRef.current.value = ""
@@ -117,7 +154,7 @@ export default function MediaSection({ propertyId, initialMedia }: Props) {
             ? <><Loader2 className="w-4 h-4 animate-spin" /> Envoi en cours…</>
             : <><Upload className="w-4 h-4" /> Ajouter des photos / vidéos</>}
         </button>
-        <p className="text-xs text-gray-400 mt-1.5">JPEG, PNG, WebP, MP4 — 20 Mo max par fichier</p>
+        <p className="text-xs text-gray-400 mt-1.5">JPEG, PNG, WebP, MP4 — jusqu&apos;à 200 Mo par fichier (envoi direct)</p>
       </div>
 
       {errors.length > 0 && (

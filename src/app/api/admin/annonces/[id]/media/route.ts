@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient, createAdminClient } from "@/lib/supabase/server"
-import { uploadToR2, r2Configured } from "@/lib/r2"
+import { uploadToR2, r2Configured, publicUrlForKey } from "@/lib/r2"
 import type { UserRole } from "@/types/database"
 
 // ffmpeg nécessite le runtime Node (pas Edge) ; la compression vidéo peut être longue.
@@ -103,6 +103,47 @@ export async function POST(
     }
   }
 
+  return NextResponse.json({ created, errors }, { status: created.length > 0 ? 200 : 400 })
+}
+
+/**
+ * Enregistre en base des médias déjà uploadés DIRECTEMENT sur R2 (via URL
+ * présignée). Body : { items: [{ key, type }] }. Sert le flux d'upload des
+ * fichiers lourds (vidéos) qui contourne la limite de corps serverless.
+ */
+export async function PUT(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: "Non authentifié" }, { status: 401 })
+  const { data: prof } = await supabase.from("profiles").select("role").eq("id", user.id).single()
+  const role = (prof as { role: UserRole } | null)?.role
+  if (!role || !STAFF_ROLES.includes(role)) return NextResponse.json({ error: "Accès refusé" }, { status: 403 })
+
+  const { id: propertyId } = await params
+  let body: { items?: { key?: string; type?: string }[] }
+  try { body = await req.json() } catch { return NextResponse.json({ error: "Corps invalide" }, { status: 400 }) }
+  const items = (body.items ?? []).filter(it => it.key)
+  if (items.length === 0) return NextResponse.json({ error: "Aucun média à enregistrer" }, { status: 400 })
+
+  const admin = createAdminClient()
+  const { data: existing } = await admin.from("property_media").select("ordre")
+    .eq("property_id", propertyId).order("ordre", { ascending: false }).limit(1)
+  let nextOrdre = ((existing?.[0] as { ordre: number } | undefined)?.ordre ?? -1) + 1
+
+  const created: unknown[] = []
+  const errors: string[] = []
+  for (const it of items) {
+    const type = it.type === "video" ? "video" : "image"
+    const url = publicUrlForKey(it.key!)
+    const { data: row, error } = await admin.from("property_media")
+      .insert({ property_id: propertyId, type, url, ordre: nextOrdre++ } as never)
+      .select().single()
+    if (error) { errors.push(`DB : ${error.message}`); continue }
+    created.push(row)
+  }
   return NextResponse.json({ created, errors }, { status: created.length > 0 ? 200 : 400 })
 }
 
