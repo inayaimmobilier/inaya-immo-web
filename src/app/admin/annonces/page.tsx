@@ -29,7 +29,7 @@ export default async function AnnoncesAdminPage({ searchParams }: PageProps) {
   const to = from + PER_PAGE - 1
 
   type PropRow = {
-    id: string; titre: string; description: string | null; type_offre: string; categorie: string
+    id: string; reference: number | null; titre: string; description: string | null; type_offre: string; categorie: string
     statut: string; prix: number | null; quartier: string | null
     created_at: string; source: string | null
     property_media: { url: string; type: string; ordre: number; thumbnail_url: string | null }[]
@@ -50,7 +50,7 @@ export default async function AnnoncesAdminPage({ searchParams }: PageProps) {
   const reportedIds = [...reportCount.keys()]
   const signaleesActive = params.signalees === "1"
 
-  const SELECT = "id,titre,description,type_offre,categorie,statut,prix,quartier,created_at,source,property_media(url,type,ordre,thumbnail_url)"
+  const SELECT = "id,reference,titre,description,type_offre,categorie,statut,prix,quartier,created_at,source,property_media(url,type,ordre,thumbnail_url)"
   const dummyIds = ["00000000-0000-0000-0000-000000000000"]
 
   let properties: PropRow[]
@@ -69,13 +69,17 @@ export default async function AnnoncesAdminPage({ searchParams }: PageProps) {
 
     const norm = (s: unknown) => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
     const t = norm(params.q).trim()
-    // Numéro d'annonce : « INA-A3D855 », « A3D855 » ou id complet → fragment hex.
+    // NUMÉRO d'annonce (le même que côté client) : « N°601 », « #601 » ou « 601 ».
+    const numPart = t.replace(/^n[°o]?\s*|^#\s*|^numero\s*/, "").trim()
+    const asRef = /^\d+$/.test(numPart) ? Number(numPart) : null
+    // Repli : ancien identifiant hex (« A3D855 » / UUID) pour les liens existants.
     const hex = params.q.replace(/[^0-9a-zA-Z]/g, "").toLowerCase().replace(/^ina/, "")
 
     const filtered = all.filter(p => {
+      if (asRef != null && p.reference === asRef) return true
       if (t && (norm(p.titre).includes(t) || norm(p.description).includes(t) || norm(p.quartier).includes(t))) return true
       const idHex = p.id.replace(/-/g, "").toLowerCase()
-      if (hex.length >= 4 && (idHex.startsWith(hex) || idHex.includes(hex))) return true
+      if (asRef == null && hex.length >= 4 && (idHex.startsWith(hex) || idHex.includes(hex))) return true
       return false
     })
     total = filtered.length
@@ -102,7 +106,7 @@ export default async function AnnoncesAdminPage({ searchParams }: PageProps) {
       ?? media.filter(m => m.type === "video" && m.thumbnail_url).sort((a, b) => a.ordre - b.ordre)[0]?.thumbnail_url
       ?? null
     return {
-      id: p.id, titre: p.titre, type_offre: p.type_offre, categorie: p.categorie, statut: p.statut,
+      id: p.id, reference: p.reference, titre: p.titre, type_offre: p.type_offre, categorie: p.categorie, statut: p.statut,
       prix: p.prix, quartier: p.quartier, source: p.source, created_at: p.created_at,
       thumb, reported: reportCount.get(p.id) ?? 0,
     }
@@ -184,7 +188,7 @@ export default async function AnnoncesAdminPage({ searchParams }: PageProps) {
           <input
             name="q"
             defaultValue={params.q}
-            placeholder="Texte de l'annonce, quartier, ou N° (INA-XXXXXX)…"
+            placeholder="N° d'annonce (ex : 601), texte, quartier…"
             className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:border-blue-400"
           />
           <button
