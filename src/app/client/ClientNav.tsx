@@ -2,10 +2,11 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Search, MessageSquare, Heart, User } from "lucide-react"
+import { Search, MessageSquare, Heart, User, Bell } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const TABS = [
+  { href: "/client/notifications", label: "Alertes", icon: Bell },
   { href: "/client/mes-requetes", label: "Mes recherches", icon: Search },
   { href: "/client/mes-demandes", label: "Mes demandes", icon: MessageSquare },
   { href: "/client/favoris", label: "Favoris", icon: Heart },

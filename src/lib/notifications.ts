@@ -9,6 +9,7 @@
 import { createAdminClient } from "@/lib/supabase/server"
 import type { NotifCanal } from "@/types/database"
 import { sendSms } from "@/lib/sms"
+import { absoluteUrl } from "@/lib/site"
 
 const VALID_CANAUX: NotifCanal[] = ["push", "email", "whatsapp", "telegram"]
 const DEFAULT_CANAUX: NotifCanal[] = ["push", "whatsapp", "telegram"]
@@ -127,7 +128,7 @@ export async function notifySearcher(args: {
   const base = {
     type: "match_offre",
     titre: "Nouveau bien pour vous",
-    contenu: `${intro} : « ${args.propertyTitre} »${lieu}. Voir : ${(process.env.NEXT_PUBLIC_APP_URL ?? "").replace(/\/$/, "")}/biens/${args.propertyId}`,
+    contenu: `${intro} : « ${args.propertyTitre} »${lieu}. Voir : ${absoluteUrl(`/biens/${args.propertyId}`)}`,
     payload: { property_id: args.propertyId, request_id: args.requestId, match_type: args.type },
     lu: false,
     envoye: false,
