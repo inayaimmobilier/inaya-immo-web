@@ -20,7 +20,7 @@ import type { Database } from "@/types/database"
 interface PageProps { params: Promise<{ id: string }> }
 
 type Property = Database["public"]["Tables"]["properties"]["Row"] & {
-  property_media?: Array<{ url: string; type: string; ordre: number; thumbnail_url: string | null }>
+  property_media?: Array<{ url: string; type: string; ordre: number; thumbnail_url: string | null; taille_bytes?: number | null }>
   zones?: { nom: string } | null
 }
 
@@ -70,7 +70,7 @@ export default async function BienDetailPage({ params }: PageProps) {
   // publique). Le filtre statut="publie" garantit qu'on n'expose que du public.
   const { data } = await createAdminClient()
     .from("properties")
-    .select("*, property_media(url, type, ordre, thumbnail_url), zones(nom)")
+    .select("*, property_media(url, type, ordre, thumbnail_url, taille_bytes), zones(nom)")
     .eq("id", id)
     .eq("statut", "publie")
     .single()
@@ -97,12 +97,20 @@ export default async function BienDetailPage({ params }: PageProps) {
     }
   }
 
-  const images = (property.property_media ?? [])
-    .filter(m => m.type === "image")
-    .sort((a, b) => a.ordre - b.ordre)
-  const videos = (property.property_media ?? [])
-    .filter(m => m.type === "video")
-    .sort((a, b) => a.ordre - b.ordre)
+  // Déduplication des médias : un même fichier reposté sur WhatsApp est ré-uploadé
+  // sous une URL R2 différente mais garde la MÊME taille → doublons visuels. On
+  // dédoublonne par (type + taille) quand la taille est connue, sinon par URL.
+  const dedupeMedia = <T extends { url: string; type: string; taille_bytes?: number | null }>(list: T[]): T[] => {
+    const seen = new Set<string>()
+    return list.filter(m => {
+      const key = m.taille_bytes != null ? `${m.type}:${m.taille_bytes}` : `url:${m.url}`
+      if (seen.has(key)) return false
+      seen.add(key); return true
+    })
+  }
+  const allMedia = dedupeMedia((property.property_media ?? []).slice().sort((a, b) => a.ordre - b.ordre))
+  const images = allMedia.filter(m => m.type === "image")
+  const videos = allMedia.filter(m => m.type === "video")
   // Couverture : 1re photo, sinon miniature de la 1re vidéo (annonces vidéo-only)
   const coverUrl = images[0]?.url ?? videos.find(v => v.thumbnail_url)?.thumbnail_url ?? null
   const isLocation = property.type_offre === "location"
