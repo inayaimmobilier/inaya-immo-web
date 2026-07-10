@@ -34,7 +34,7 @@ export default function PropertyCard({ property }: { property: Property }) {
 
   return (
     <Link href={`/biens/${property.id}`} className="group block">
-      <article className="bg-white rounded-2xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden border border-gray-100 hover:border-blue-200 hover:-translate-y-1">
+      <article className="animate-fade-up bg-white rounded-2xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden border border-gray-100 hover:border-blue-200 hover:-translate-y-1">
         {/* Photo */}
         <div className="relative h-48 bg-gray-100 overflow-hidden">
           {cover ? (
