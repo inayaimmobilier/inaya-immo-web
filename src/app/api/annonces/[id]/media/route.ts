@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/server"
-import { uploadToR2, r2Configured } from "@/lib/r2"
+import { uploadToR2, r2Configured, publicUrlForKey } from "@/lib/r2"
 
 // Endpoint public : permet aux propriétaires d'ajouter des médias juste après
 // avoir soumis leur annonce, sans compte. Sécurité : la propriété doit être
@@ -104,5 +104,48 @@ export async function POST(
     }
   }
 
+  return NextResponse.json({ created, errors }, { status: created.length > 0 ? 200 : 400 })
+}
+
+/**
+ * Enregistre en base des médias déjà uploadés DIRECTEMENT sur R2 (URL présignée),
+ * pour contourner la limite de corps serverless. Mêmes garde-fous que le POST.
+ * Body : { items: [{ key, type }] }.
+ */
+export async function PUT(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id: propertyId } = await params
+  const admin = createAdminClient()
+
+  const { data: prop } = await admin.from("properties")
+    .select("id, statut, source, created_at").eq("id", propertyId).single()
+  const p = prop as { statut: string; source: string; created_at: string } | null
+  if (!p) return NextResponse.json({ error: "Annonce introuvable" }, { status: 404 })
+  if (p.source !== "proprietaire" || p.statut !== "en_attente_validation")
+    return NextResponse.json({ error: "Upload non autorisé" }, { status: 403 })
+  if (Date.now() - new Date(p.created_at).getTime() > WINDOW_MS)
+    return NextResponse.json({ error: "Délai d'upload expiré (2h)." }, { status: 403 })
+
+  let body: { items?: { key?: string; type?: string }[] }
+  try { body = await req.json() } catch { return NextResponse.json({ error: "Corps invalide" }, { status: 400 }) }
+  const items = (body.items ?? []).filter(it => it.key)
+  if (items.length === 0) return NextResponse.json({ error: "Aucun média" }, { status: 400 })
+
+  const { data: existing } = await admin.from("property_media").select("ordre")
+    .eq("property_id", propertyId).order("ordre", { ascending: false }).limit(1)
+  let nextOrdre = ((existing?.[0] as { ordre: number } | undefined)?.ordre ?? -1) + 1
+
+  const created: unknown[] = []
+  const errors: string[] = []
+  for (const it of items) {
+    const type = it.type === "video" ? "video" : "image"
+    const { data: row, error } = await admin.from("property_media")
+      .insert({ property_id: propertyId, type, url: publicUrlForKey(it.key!), ordre: nextOrdre++ } as never)
+      .select().single()
+    if (error) { errors.push(`DB: ${error.message}`); continue }
+    created.push(row)
+  }
   return NextResponse.json({ created, errors }, { status: created.length > 0 ? 200 : 400 })
 }

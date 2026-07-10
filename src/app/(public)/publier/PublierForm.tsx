@@ -73,21 +73,53 @@ function MediaUploadStep({ propertyId, onDone }: { propertyId: string; onDone: (
     addFiles(e.dataTransfer.files)
   }, [addFiles])
 
+  // Upload DIRECT navigateur → R2 (URL présignée), puis enregistrement en base.
+  // Contourne la limite de corps serverless (~4,5 Mo sur Vercel) qui bloquait
+  // les vidéos avec une erreur « Request Entity Too Large ».
   const upload = async () => {
     if (files.length === 0) { onDone(); return }
     setUploading(true)
     setUploadErrors([])
-    const fd = new FormData()
-    files.forEach(pf => fd.append("files", pf.file))
+    const errs: string[] = []
+    const toRecord: { key: string; type: "image" | "video" }[] = []
     try {
-      const res = await fetch(`/api/annonces/${propertyId}/media`, { method: "POST", body: fd })
-      const json = await res.json() as { created: unknown[]; errors: string[] }
-      if (json.errors?.length) setUploadErrors(json.errors)
-      if (json.created?.length > 0 || json.errors?.length === 0) setDone(true)
-      else if (json.errors?.length === files.length) { /* tout échoué, rester */ }
-      else setDone(true)
+      for (const pf of files) {
+        try {
+          const presignRes = await fetch(`/api/annonces/${propertyId}/media/presign`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ files: [{ name: pf.file.name, contentType: pf.file.type, size: pf.file.size }] }),
+          })
+          const presign = await presignRes.json().catch(() => null) as
+            { items?: { key: string; uploadUrl: string; type: "image" | "video"; contentType: string }[]; errors?: string[] } | null
+          if (!presignRes.ok || !presign) { errs.push(`${pf.file.name} : préparation de l'envoi impossible.`); continue }
+          if (presign.errors?.length) errs.push(...presign.errors)
+          const item = presign.items?.[0]
+          if (!item) continue
+
+          const put = await fetch(item.uploadUrl, { method: "PUT", headers: { "Content-Type": item.contentType }, body: pf.file })
+          if (!put.ok) { errs.push(`${pf.file.name} : envoi vers le stockage refusé (${put.status}).`); continue }
+          toRecord.push({ key: item.key, type: item.type })
+        } catch (e) {
+          errs.push(`${pf.file.name} : ${(e as Error).message}`)
+        }
+      }
+
+      if (toRecord.length > 0) {
+        const rec = await fetch(`/api/annonces/${propertyId}/media`, {
+          method: "PUT", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ items: toRecord }),
+        })
+        const json = await rec.json().catch(() => null) as { created?: unknown[]; errors?: string[] } | null
+        if (json?.errors?.length) errs.push(...json.errors)
+        if (!json) errs.push("Médias envoyés mais enregistrement impossible.")
+      }
+
+      setUploadErrors(errs)
+      // Succès si au moins un média enregistré, ou aucune erreur.
+      if (toRecord.length > 0 && errs.length === 0) setDone(true)
+      else if (errs.length === 0) setDone(true)
     } catch (e) {
-      setUploadErrors([(e as Error).message])
+      setUploadErrors([...errs, (e as Error).message])
     } finally {
       setUploading(false)
     }
