@@ -20,8 +20,9 @@ COLLECTE DES CRITÈRES (avant de proposer des biens) — TRÈS IMPORTANT :
 - Exemple de première relance (courte) : « Avec plaisir ! Vous cherchez à louer ou à acheter, et dans quelle commune ? »
 
 RÈGLES IMPÉRATIVES :
-- Pour proposer des biens, utilise TOUJOURS l'outil "rechercher_annonces". Ne JAMAIS inventer une annonce, un prix, une surface ou un quartier.
-- Présente chaque bien sous forme de lien markdown : [{titre} — {prix_texte} · {localisation}]({url}), en utilisant EXACTEMENT les champs "prix_texte" et "localisation" renvoyés par l'outil.
+- Si le client donne un NUMÉRO d'annonce (ex. « N°1234 », « l'annonce 1234 ») ou cite un TITRE précis, utilise l'outil "trouver_annonce" (paramètre numero ou titre). Pour une recherche par critères, utilise "rechercher_annonces". Ne JAMAIS inventer une annonce, un prix, une surface ou un quartier.
+- Présente chaque bien sous forme de lien markdown, en préfixant par son numéro : N°{reference} — [{titre} — {prix_texte} · {localisation}]({url}), en utilisant EXACTEMENT les champs "reference", "prix_texte" et "localisation" renvoyés par l'outil (si "reference" est absent, n'invente pas de numéro).
+- L'"url" doit être reprise EXACTEMENT telle quelle (elle commence par « / ») : n'ajoute JAMAIS de nom de domaine (pas de https://…) devant, sinon le lien ne fonctionne pas.
 - N'écris JAMAIS le mot « null », ni un prix de « 0 FCFA ». Si "prix_texte" vaut "Prix sur demande", écris « Prix sur demande ». Ne déduis jamais un prix toi-même.
 - COHÉRENCE : ne dis pas « aucun bien trouvé » si tu listes ensuite des biens. Si l'outil renvoie des résultats, présente-les comme des propositions. Ne propose un bien que s'il figure réellement dans les résultats de l'outil.
 - PRIX & TRI : ne conclus JAMAIS sur « le moins cher / le plus cher » sans avoir appelé "rechercher_annonces" avec tri="prix_asc" (moins cher) ou tri="prix_desc" (plus cher). L'outil ne renvoie que 6 biens à la fois : sans le bon tri, tu ne vois pas les vrais minimums/maximums. Le 1er résultat avec tri="prix_asc" est le bien le moins cher correspondant.
@@ -34,6 +35,17 @@ RÈGLES IMPÉRATIVES :
 - Réponds en français, de façon concise, chaleureuse et professionnelle. Montants en FCFA.`
 
 const TOOLS: ToolSpec[] = [
+  {
+    name: "trouver_annonce",
+    description: "Retrouve une annonce PRÉCISE par son NUMÉRO (référence affichée « N°1234 »), un identifiant, ou une partie du TITRE. Utilise-le dès qu'un client mentionne un numéro d'annonce ou un titre.",
+    parameters: {
+      type: "object",
+      properties: {
+        numero: { type: "string", description: "Numéro d'annonce (référence, ex. 1234) ou identifiant." },
+        titre: { type: "string", description: "Une partie du titre ou un mot-clé du bien." },
+      },
+    },
+  },
   {
     name: "rechercher_annonces",
     description: "Recherche des annonces PUBLIÉES selon des critères. Renvoie au plus 6 biens.",
@@ -108,47 +120,67 @@ async function rechercherAnnonces(args: Args): Promise<unknown> {
 
   const { data, error } = await q
   if (error) return { erreur: "Recherche indisponible pour le moment." }
+  const rows = (data ?? []) as PropRow[]
+  return { nombre: rows.length, resultats: rows.map(formatProperty) }
+}
 
-  // On pré-formate chaque bien pour éviter que le modèle ne recopie des valeurs
-  // brutes (quartier "null", prix "0"). Il doit utiliser prix_texte et localisation tels quels.
-  type Row = {
-    id: string; titre: string; type_offre: string; categorie: string
-    prix: number | null; prix_m2: number | null; surface: number | null
-    nb_pieces: number | null; nb_chambres: number | null; quartier: string | null; ville: string | null
-    meuble: boolean | null; tarif_periode: string | null
+// Formatage partagé d'un bien pour le modèle (évite les valeurs brutes « null »/« 0 »).
+type PropRow = {
+  id: string; reference: number | null; titre: string; type_offre: string; categorie: string
+  prix: number | null; prix_m2: number | null; surface: number | null
+  nb_pieces: number | null; nb_chambres: number | null; quartier: string | null; ville: string | null
+  meuble: boolean | null; tarif_periode: string | null
+}
+const fmtNum = (n: number) => n.toLocaleString("fr-FR")
+const PERIODE_TXT: Record<string, string> = { nuit: "/nuit", semaine: "/semaine", mois: "/mois" }
+function formatProperty(p: PropRow) {
+  const isResid = p.type_offre === "residence_meublee"
+  const localisation = [p.quartier, p.ville].filter(Boolean).join(", ") || "Localisation non précisée"
+  let prix_texte: string
+  if (p.categorie === "terrain" && p.prix_m2) {
+    prix_texte = `${fmtNum(p.prix_m2)} FCFA/m²${p.prix ? ` (${fmtNum(p.prix)} FCFA)` : ""}`
+  } else if (p.prix && p.prix > 0) {
+    const suffixe = isResid ? (PERIODE_TXT[p.tarif_periode ?? "nuit"] ?? "/nuit") : (p.type_offre === "location" ? "/mois" : "")
+    prix_texte = `${fmtNum(p.prix)} FCFA${suffixe}`
+  } else {
+    prix_texte = "Prix sur demande"
   }
-  const fmt = (n: number) => n.toLocaleString("fr-FR")
-  const PERIODE: Record<string, string> = { nuit: "/nuit", semaine: "/semaine", mois: "/mois" }
-  const rows = (data ?? []) as Row[]
   return {
-    nombre: rows.length,
-    resultats: rows.map(p => {
-      const isResid = p.type_offre === "residence_meublee"
-      const localisation = [p.quartier, p.ville].filter(Boolean).join(", ") || "Localisation non précisée"
-      let prix_texte: string
-      if (p.categorie === "terrain" && p.prix_m2) {
-        prix_texte = `${fmt(p.prix_m2)} FCFA/m²${p.prix ? ` (${fmt(p.prix)} FCFA)` : ""}`
-      } else if (p.prix && p.prix > 0) {
-        const suffixe = isResid ? (PERIODE[p.tarif_periode ?? "nuit"] ?? "/nuit") : (p.type_offre === "location" ? "/mois" : "")
-        prix_texte = `${fmt(p.prix)} FCFA${suffixe}`
-      } else {
-        prix_texte = "Prix sur demande"
-      }
-      return {
-        url: `/biens/${p.id}`,
-        titre: p.titre,
-        type_offre: p.type_offre,
-        type_libelle: isResid ? "Résidence meublée" : p.type_offre,
-        categorie: p.categorie,
-        meuble: isResid ? true : !!p.meuble,
-        prix_texte,
-        localisation,
-        nb_pieces: p.nb_pieces,
-        nb_chambres: p.nb_chambres,
-        surface: p.surface,
-      }
-    }),
+    reference: p.reference,
+    url: `/biens/${p.id}`,
+    titre: p.titre,
+    type_offre: p.type_offre,
+    type_libelle: isResid ? "Résidence meublée" : p.type_offre,
+    categorie: p.categorie,
+    meuble: isResid ? true : !!p.meuble,
+    prix_texte, localisation,
+    nb_pieces: p.nb_pieces, nb_chambres: p.nb_chambres, surface: p.surface,
   }
+}
+
+/** Recherche par NUMÉRO (référence), identifiant, ou fragment de titre. */
+async function trouverAnnonce(args: { numero?: number | string; titre?: string }): Promise<unknown> {
+  const admin = createAdminClient()
+  const rows: PropRow[] = []
+  if (args.numero != null && String(args.numero).trim()) {
+    const raw = String(args.numero).trim()
+    const asNum = Number(raw.replace(/\D/g, ""))
+    if (Number.isFinite(asNum) && asNum > 0) {
+      const { data } = await admin.from("properties").select("*").eq("statut", "publie").eq("reference", asNum).limit(1)
+      rows.push(...((data ?? []) as PropRow[]))
+    }
+    if (rows.length === 0 && /^[0-9a-f-]{6,}$/i.test(raw)) {
+      const { data } = await admin.from("properties").select("*").eq("statut", "publie").ilike("id", `${raw}%`).limit(1)
+      rows.push(...((data ?? []) as PropRow[]))
+    }
+  }
+  if (rows.length === 0 && args.titre?.trim()) {
+    const term = args.titre.trim()
+    const { data } = await admin.from("properties").select("*").eq("statut", "publie")
+      .or(`titre.ilike.%${term}%,description.ilike.%${term}%`).limit(4)
+    rows.push(...((data ?? []) as PropRow[]))
+  }
+  return { nombre: rows.length, resultats: rows.map(formatProperty) }
 }
 
 async function listerZones(): Promise<unknown> {
@@ -169,6 +201,7 @@ async function listerZones(): Promise<unknown> {
 }
 
 async function exec(name: string, args: Record<string, unknown>): Promise<unknown> {
+  if (name === "trouver_annonce") return trouverAnnonce(args as { numero?: string; titre?: string })
   if (name === "rechercher_annonces") return rechercherAnnonces(args as Args)
   if (name === "lister_zones") return listerZones()
   return { erreur: "Outil inconnu." }

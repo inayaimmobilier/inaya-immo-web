@@ -95,11 +95,13 @@ async function PropertiesList({ searchParams }: PageProps) {
   // Normalisation : minuscules + suppression des accents. « Bouaké » → « bouake ».
   const norm = (s: unknown) => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
   type Row = {
+    reference?: number | null
     quartier?: string | null; ville?: string | null; titre?: string | null; description?: string | null
     categorie?: string | null; prix?: number | null; nb_pieces?: number | null; zones?: { nom?: string | null } | null
   }
-  // Concatène tous les champs texte pertinents d'une annonce.
-  const hay = (r: Row) => [r.quartier, r.ville, r.titre, r.description, r.zones?.nom, r.categorie].map(norm).join(" · ")
+  // Concatène tous les champs texte pertinents d'une annonce. Inclut le numéro
+  // d'annonce (référence) pour permettre la recherche par « N°1234 » ou « 1234 ».
+  const hay = (r: Row) => [r.reference, r.quartier, r.ville, r.titre, r.description, r.zones?.nom, r.categorie].map(norm).join(" · ")
 
   let rows = (data ?? []) as (Row & { id: string })[]
 
@@ -151,7 +153,11 @@ async function PropertiesList({ searchParams }: PageProps) {
   }
   if (params.q) {
     const t = norm(params.q)
-    if (t) rows = rows.filter(r => hay(r).includes(t))
+    // Recherche par NUMÉRO d'annonce : « N°1234 », « no 1234 », « #1234 », « 1234 ».
+    const numPart = t.replace(/^n[°o]?\s*|^#\s*|^numero\s*/, "").trim()
+    const asRef = /^\d+$/.test(numPart) ? Number(numPart) : null
+    if (asRef != null) rows = rows.filter(r => r.reference === asRef || hay(r).includes(t))
+    else if (t) rows = rows.filter(r => hay(r).includes(t))
   }
 
   // Prix / pièces : TOLÉRANTS aux valeurs manquantes. L'IA n'extrait pas toujours le

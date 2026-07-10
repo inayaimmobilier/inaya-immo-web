@@ -89,7 +89,7 @@ export default function ChatWidget() {
           aria-label="Ouvrir l'assistant"
         >
           <MessageCircle className="w-5 h-5" />
-          <span className="text-sm font-semibold hidden sm:inline">Assistant Inaya</span>
+          <span className="text-sm font-semibold">Assistant Inaya</span>
         </button>
       )}
 

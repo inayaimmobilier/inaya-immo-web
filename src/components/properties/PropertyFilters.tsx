@@ -145,7 +145,7 @@ export default function PropertyFilters() {
           <input
             ref={qRef}
             type="text"
-            placeholder="Mot-clé (quartier, résidence, description…)"
+            placeholder="N° d'annonce, quartier, mot-clé…"
             defaultValue={params.get("q") || ""}
             onKeyDown={e => { if (e.key === "Enter") update("q", (e.target as HTMLInputElement).value) }}
             className={`w-full pl-9 pr-3 ${cls}`}
