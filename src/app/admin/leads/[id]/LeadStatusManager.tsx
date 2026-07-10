@@ -2,9 +2,9 @@
 
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { Check, Loader2, Save } from "lucide-react"
+import { Check, Loader2, Save, Trash2 } from "lucide-react"
 import { LEAD_STATUT_LABEL, LEAD_STATUT_COLOR } from "@/lib/utils"
-import { setLeadStatut, saveLeadNote } from "./actions"
+import { setLeadStatut, saveLeadNote, deleteLead } from "./actions"
 
 // Ordre du cycle de vie + l'abandon en option terminale.
 const FLOW = ["nouveau", "en_traitement", "contacte", "visite_planifiee", "visite_effectuee", "paiement_planifie", "conclu"]
@@ -17,7 +17,18 @@ export default function LeadStatusManager({ leadId, currentStatut, initialNote }
   const [note, setNote] = useState(initialNote ?? "")
   const [pending, startTransition] = useTransition()
   const [savingNote, startNote] = useTransition()
+  const [deleting, startDelete] = useTransition()
+  const [confirmDel, setConfirmDel] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
+
+  function onDelete() {
+    setMsg(null)
+    startDelete(async () => {
+      const res = await deleteLead(leadId)
+      if (res.ok) router.push("/admin/leads")
+      else setMsg(res.error)
+    })
+  }
 
   function changeStatut(next: string) {
     if (next === statut || pending) return
@@ -97,6 +108,25 @@ export default function LeadStatusManager({ leadId, currentStatut, initialNote }
       </div>
 
       {msg && <p className="text-xs text-gray-500">{msg}</p>}
+
+      {/* Suppression définitive (admin) */}
+      <div className="pt-3 border-t border-gray-100">
+        {confirmDel ? (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-red-700">Supprimer définitivement ce lead et ses relances ?</span>
+            <button onClick={onDelete} disabled={deleting}
+              className="inline-flex items-center gap-1 text-xs font-medium bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg disabled:opacity-60">
+              {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />} Confirmer
+            </button>
+            <button onClick={() => setConfirmDel(false)} className="text-xs text-gray-500">Annuler</button>
+          </div>
+        ) : (
+          <button onClick={() => setConfirmDel(true)}
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600 hover:text-red-700">
+            <Trash2 className="w-3.5 h-3.5" /> Supprimer ce lead
+          </button>
+        )}
+      </div>
     </div>
   )
 }

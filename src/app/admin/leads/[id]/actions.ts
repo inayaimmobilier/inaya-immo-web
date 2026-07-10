@@ -169,3 +169,24 @@ export async function saveLeadNote(leadId: string, compteRendu: string): Promise
   revalidatePath(`/admin/leads/${leadId}`)
   return { ok: true }
 }
+
+/** Supprime définitivement un lead et ses relances (réservé admin/super_admin). */
+export async function deleteLead(leadId: string): Promise<Result> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { ok: false, error: "Non authentifié." }
+  const { data: meData } = await supabase.from("profiles").select("role").eq("id", user.id).single()
+  const role = (meData as { role: UserRole } | null)?.role
+  if (!role || !["super_admin", "admin"].includes(role)) {
+    return { ok: false, error: "Suppression réservée aux administrateurs." }
+  }
+
+  const admin = createAdminClient()
+  // Relances d'abord (pas de cascade garantie), puis le lead.
+  await admin.from("lead_followups").delete().eq("lead_id", leadId)
+  const { error } = await admin.from("leads").delete().eq("id", leadId)
+  if (error) { console.error("INAYA-LEAD-012", error); return { ok: false, error: "Échec de la suppression." } }
+
+  revalidatePath("/admin/leads")
+  return { ok: true }
+}
