@@ -25,7 +25,7 @@ RÈGLES IMPÉRATIVES :
 - L'"url" doit être reprise EXACTEMENT telle quelle (elle commence par « / ») : n'ajoute JAMAIS de nom de domaine (pas de https://…) devant, sinon le lien ne fonctionne pas.
 - N'écris JAMAIS le mot « null », ni un prix de « 0 FCFA ». Si "prix_texte" vaut "Prix sur demande", écris « Prix sur demande ». Ne déduis jamais un prix toi-même.
 - COHÉRENCE : ne dis pas « aucun bien trouvé » si tu listes ensuite des biens. Si l'outil renvoie des résultats, présente-les comme des propositions. Ne propose un bien que s'il figure réellement dans les résultats de l'outil.
-- PRIX & TRI : ne conclus JAMAIS sur « le moins cher / le plus cher » sans avoir appelé "rechercher_annonces" avec tri="prix_asc" (moins cher) ou tri="prix_desc" (plus cher). L'outil ne renvoie que 6 biens à la fois : sans le bon tri, tu ne vois pas les vrais minimums/maximums. Le 1er résultat avec tri="prix_asc" est le bien le moins cher correspondant.
+- PRIX & TRI : ne conclus JAMAIS sur « le moins cher / le plus cher » sans avoir appelé "rechercher_annonces" avec tri="prix_asc" (moins cher) ou tri="prix_desc" (plus cher). L'outil ne renvoie qu'une page de biens à la fois : sans le bon tri, tu ne vois pas les vrais minimums/maximums. Le 1er résultat avec tri="prix_asc" est le bien le moins cher correspondant.
 - En Côte d'Ivoire, « X chambres salon » = X+1 pièces (le salon compte comme une pièce). Une demande de « 3 pièces » correspond donc à « 2 chambres salon ». Tiens-en compte avant de conclure qu'un bien ne correspond pas.
 - « MAISON » AU SENS LARGE : en CI, « maison » ou « logement » désigne familièrement TOUT bien d'habitation — studio, appartement, maison, villa, immeuble (2 pièces, 3 pièces, 4 pièces ou plus…). Quand un client cherche « une maison » sans préciser, NE restreins PAS à categorie="maison" : passe categories=["maison","appartement","studio"] et affine avec le budget et le nombre de pièces/chambres. Ne te limites à une seule catégorie que si le client le précise (ex: « une villa », « un studio uniquement », « un appartement »).
 - PETITS COMMERCES = « LOCAL COMMERCIAL » : il n'existe PAS de catégorie dédiée par métier. Toute demande de cave, salon de coiffure, quincaillerie, salle de jeux, kiosque, maquis, lavage auto, pressing, restaurant, gargote/garbadrome, boulangerie, garage, point mobile money (Orange Money, Wave, MTN Money…), boutique, cyber café, bar, ou plus généralement tout petit commerce/fonds de commerce à céder ou à louer, relève de categorie="local_commercial". NE réponds JAMAIS « nous n'avons pas cette catégorie » pour ces demandes : recherche directement avec categorie="local_commercial" (affine avec le quartier/budget), le nom du commerce (cave, maquis…) figure généralement dans le titre ou la description du bien.
@@ -48,7 +48,7 @@ const TOOLS: ToolSpec[] = [
   },
   {
     name: "rechercher_annonces",
-    description: "Recherche des annonces PUBLIÉES selon des critères. Renvoie au plus 6 biens.",
+    description: "Recherche des annonces PUBLIÉES selon des critères. Renvoie plusieurs biens (présente-les tous).",
     parameters: {
       type: "object",
       properties: {
@@ -85,6 +85,11 @@ type Args = {
   tri?: "recent" | "prix_asc" | "prix_desc"
 }
 
+// Retire les accents (« Tchêlekro » → « Tchelekro ») pour élargir les correspondances.
+const stripAccents = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "")
+// Échappe les caractères qui casseraient la syntaxe PostgREST .or() (virgules, parenthèses).
+const cleanTerm = (s: string) => s.replace(/[(),]/g, " ").trim()
+
 async function rechercherAnnonces(args: Args): Promise<unknown> {
   const admin = createAdminClient()
   const wantResidence = args.type_offre === "residence_meublee"
@@ -92,7 +97,7 @@ async function rechercherAnnonces(args: Args): Promise<unknown> {
     .from("properties")
     .select("*")
     .eq("statut", "publie")
-    .limit(6)
+    .limit(12)
 
   if (wantResidence) {
     // Résidences meublées uniquement (court/moyen séjour, meublées par définition).
@@ -107,7 +112,17 @@ async function rechercherAnnonces(args: Args): Promise<unknown> {
   if (args.categories?.length) q = q.in("categorie", args.categories)
   else if (args.categorie) q = q.eq("categorie", args.categorie)
   if (args.commune) q = q.ilike("ville", `%${args.commune}%`)
-  if (args.quartier) q = q.ilike("quartier", `%${args.quartier}%`)
+  // Quartier : beaucoup d'annonces (ingérées via WhatsApp) ont le quartier dans
+  // le TITRE ou la DESCRIPTION, pas dans la colonne quartier. On cherche donc le
+  // terme sur ces 3 champs à la fois, avec ET sans accents (recall élevé).
+  if (args.quartier) {
+    const term = cleanTerm(args.quartier)
+    if (term) {
+      const variants = Array.from(new Set([term, stripAccents(term)]))
+      const or = variants.flatMap(v => [`quartier.ilike.%${v}%`, `titre.ilike.%${v}%`, `description.ilike.%${v}%`]).join(",")
+      q = q.or(or)
+    }
+  }
   if (typeof args.prix_min === "number") q = q.gte("prix", args.prix_min)
   if (typeof args.prix_max === "number") q = q.lte("prix", args.prix_max)
   if (typeof args.chambres_min === "number") q = q.gte("nb_chambres", args.chambres_min)

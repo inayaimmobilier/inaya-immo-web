@@ -91,16 +91,28 @@ type SearchArgs = {
   prix_min?: number; prix_max?: number; chambres_min?: number; tri?: "recent" | "prix_asc" | "prix_desc"
 }
 
+// Retire les accents et échappe les caractères cassant la syntaxe .or().
+const stripAccents = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "")
+const cleanTerm = (s: string) => s.replace(/[(),]/g, " ").trim()
+
 async function rechercherAnnonces(args: SearchArgs) {
   const admin = createAdminClient()
-  let q = admin.from("properties").select(SELECT).eq("statut", "publie").limit(6)
+  let q = admin.from("properties").select(SELECT).eq("statut", "publie").limit(12)
   if (args.type_offre === "residence_meublee") q = q.eq("type_offre", "residence_meublee")
   else if (args.type_offre) q = q.eq("type_offre", args.type_offre)
   else q = q.neq("type_offre", "residence_meublee")
   if (args.categories?.length) q = q.in("categorie", args.categories)
   else if (args.categorie) q = q.eq("categorie", args.categorie)
   if (args.commune) q = q.ilike("ville", `%${args.commune}%`)
-  if (args.quartier) q = q.ilike("quartier", `%${args.quartier}%`)
+  // Quartier cherché sur titre + description + quartier (beaucoup d'annonces WhatsApp
+  // ont le quartier dans le titre), avec et sans accents.
+  if (args.quartier) {
+    const term = cleanTerm(args.quartier)
+    if (term) {
+      const variants = Array.from(new Set([term, stripAccents(term)]))
+      q = q.or(variants.flatMap(v => [`quartier.ilike.%${v}%`, `titre.ilike.%${v}%`, `description.ilike.%${v}%`]).join(","))
+    }
+  }
   if (typeof args.prix_min === "number") q = q.gte("prix", args.prix_min)
   if (typeof args.prix_max === "number") q = q.lte("prix", args.prix_max)
   if (typeof args.chambres_min === "number") q = q.gte("nb_chambres", args.chambres_min)
@@ -174,7 +186,7 @@ const TOOLS: ToolSpec[] = [
   },
   {
     name: "rechercher_annonces",
-    description: "Recherche des annonces PUBLIÉES par critères. Renvoie au plus 6 biens.",
+    description: "Recherche des annonces PUBLIÉES par critères. Renvoie plusieurs biens (présente-les tous).",
     parameters: {
       type: "object",
       properties: {
