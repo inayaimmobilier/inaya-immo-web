@@ -8,7 +8,6 @@ import {
   registerAccount, verificationOptions, sendVerificationCode, confirmVerificationCode,
   type AccountType,
 } from "./actions"
-import { postLoginPath } from "@/lib/account-actions"
 import type { OtpCanal } from "@/lib/otp"
 
 const TYPES: { value: AccountType; label: string; desc: string; Icon: typeof Home }[] = [
@@ -18,6 +17,17 @@ const TYPES: { value: AccountType; label: string; desc: string; Icon: typeof Hom
   { value: "apporteur",    label: "Je suis apporteur",   desc: "Apporter des affaires",     Icon: Handshake },
   { value: "agent",        label: "Je suis agent immobilier", desc: "Candidature — validation admin", Icon: Briefcase },
 ]
+
+// Destination après inscription, déduite du type choisi (connue côté client,
+// évite un aller-retour serveur superflu). Reflète pathForRole() côté serveur
+// pour les rôles réellement attribuables à l'inscription (jamais staff/admin).
+const REDIRECT_FOR: Record<AccountType, string> = {
+  chercheur: "/client/mes-requetes",
+  proprietaire: "/proprietaire",
+  prestataire: "/prestataire",
+  apporteur: "/apporteur",
+  agent: "/client/mes-requetes", // candidature : rôle reste "client" tant qu'elle n'est pas approuvée
+}
 
 const CANAL_META: Record<OtpCanal, { label: string; hint: (d: string | null) => string }> = {
   whatsapp: { label: "WhatsApp", hint: d => `Sur ${d ?? "votre numéro"}` },
@@ -113,9 +123,8 @@ export default function InscriptionForm() {
     }
   }
 
-  async function goToSpace() {
-    const target = await postLoginPath()
-    router.push(target)
+  function goToSpace() {
+    router.push(REDIRECT_FOR[type])
     router.refresh()
   }
 
@@ -124,9 +133,10 @@ export default function InscriptionForm() {
     setLoading(true); setError(null)
     try {
       const res = await confirmVerificationCode(code)
-      if (!res.ok) { setError(res.error); setLoading(false); return }
-      if (type === "agent") { setAgentApplied(true); setLoading(false); return }
-      await goToSpace()
+      setLoading(false)
+      if (!res.ok) { setError(res.error); return }
+      if (type === "agent") { setAgentApplied(true); return }
+      goToSpace()
     } catch {
       setError("Vérification impossible. Réessayez."); setLoading(false)
     }
