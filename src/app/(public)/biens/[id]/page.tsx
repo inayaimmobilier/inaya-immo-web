@@ -5,6 +5,7 @@ import Navbar from "@/components/shared/Navbar"
 import ContactForm from "./ContactForm"
 import FavoriteButton from "./FavoriteButton"
 import ReportButton from "./ReportButton"
+import ShareButton from "./ShareButton"
 import Gallery from "./Gallery"
 import { isRealEmail } from "@/lib/account-actions"
 import {
@@ -275,6 +276,7 @@ export default async function BienDetailPage({ params }: PageProps) {
                     <CheckCircle2 className="w-4 h-4" /> Annonce vérifiée par Inaya
                   </div>
                   <div className="flex items-center gap-2">
+                    <ShareButton title={property.titre} reference={(property as unknown as { reference?: number | null }).reference ?? null} />
                     <ReportButton propertyId={property.id} />
                     <FavoriteButton propertyId={property.id} initialActive={isFav} loggedIn={!!user} />
                   </div>
