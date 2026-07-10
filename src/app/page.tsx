@@ -177,11 +177,20 @@ export default async function Home() {
                 <p className="text-slate-400 text-sm">Les premières annonces arrivent bientôt.</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                {(recentProperties as { id: string }[]).map(p => (
-                  <PropertyCard key={p.id} property={p as never} />
-                ))}
-              </div>
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                  {(recentProperties as { id: string }[]).map(p => (
+                    <PropertyCard key={p.id} property={p as never} />
+                  ))}
+                </div>
+                {/* Bouton « Voir toutes les annonces » en bas, après la dernière annonce */}
+                <div className="flex justify-center mt-8">
+                  <Link href="/biens"
+                    className="inline-flex items-center gap-2 bg-blue-700 hover:bg-blue-600 text-white px-6 py-3 rounded-xl text-sm font-semibold transition-colors shadow-sm">
+                    Voir toutes les annonces <ArrowRight className="w-4 h-4" />
+                  </Link>
+                </div>
+              </>
             )}
           </div>
         </section>
