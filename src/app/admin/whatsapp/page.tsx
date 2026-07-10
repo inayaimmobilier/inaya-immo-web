@@ -9,6 +9,7 @@ import QrDisplay from "./QrDisplay"
 import GroupsManager from "./GroupsManager"
 import NotifStats from "./NotifStats"
 import WaDiagnostic from "./WaDiagnostic"
+import GupshupStatusCard from "./GupshupStatusCard"
 import { createWaAccount } from "./actions"
 
 export const metadata = { title: "Comptes WhatsApp · Inaya Immo" }
@@ -65,6 +66,16 @@ export default async function WhatsAppPage() {
     sent24h: sent24hRes.count ?? 0,
   }
 
+  // Statut Gupshup (config + moteur OTP effectif) — les clés Gupshup ne vivent
+  // que sur Railway (whatsapp-service), d'où l'appel /health plutôt qu'un env local.
+  const gupshupConfigured = await fetch(`${process.env.WA_SERVICE_URL ?? ""}/health`, {
+    headers: process.env.WA_HTTP_SECRET ? { "x-inaya-secret": process.env.WA_HTTP_SECRET } : {},
+    signal: AbortSignal.timeout(3000), cache: "no-store",
+  }).then(r => r.json()).then(d => (d as { gupshupConfigured?: boolean }).gupshupConfigured ?? false)
+    .catch(() => null as boolean | null)
+  const otpEngine: "gupshup" | "baileys" =
+    process.env.WA_OTP_ENGINE === "baileys" || !gupshupConfigured ? "baileys" : "gupshup"
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -84,6 +95,9 @@ export default async function WhatsAppPage() {
 
       {/* Diagnostic service + test envoi direct */}
       <WaDiagnostic />
+
+      {/* Statut moteur Gupshup / OTP */}
+      <GupshupStatusCard gupshupConfigured={gupshupConfigured} otpEngine={otpEngine} />
 
       {/* Panneau diagnostic notifications */}
       <NotifStats {...notifStats} />

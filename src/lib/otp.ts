@@ -95,13 +95,18 @@ export async function issueOtp(userId: string, canal: OtpCanal, destination: str
     const waUrl = process.env.WA_SERVICE_URL
     if (waUrl) {
       try {
+        // Repli temporaire : WA_OTP_ENGINE=baileys force l'OTP sur le compte Baileys
+        // existant tant qu'un template Gupshup (ex. OTP) est encore "Pending" chez
+        // Meta — sans toucher aux autres envois (alertes), qui restent sur Gupshup.
+        // Retirer cette variable une fois le template approuvé.
+        const engine = process.env.WA_OTP_ENGINE === "baileys" ? "baileys" : undefined
         const r = await fetch(`${waUrl}/send-direct`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             ...(process.env.WA_HTTP_SECRET ? { "x-inaya-secret": process.env.WA_HTTP_SECRET } : {}),
           },
-          body: JSON.stringify({ to: dest, text: texte }),
+          body: JSON.stringify({ to: dest, text: texte, engine }),
           signal: AbortSignal.timeout(9000),
         })
         if (r.ok) return { ok: true }
