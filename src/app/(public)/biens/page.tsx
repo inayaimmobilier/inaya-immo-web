@@ -73,7 +73,7 @@ async function PropertiesList({ searchParams }: PageProps) {
   // libres (« Bouake » sans accent, quartier dans le titre plutôt que la colonne…).
   // Les résidences meublées ont leur propre catalogue (/residences) → exclues d'ici.
   let dataQ = supabase.from("properties")
-    .select("id,titre,description,type_offre,categorie,prix,quartier,ville,statut,surface,nb_pieces,nb_chambres,nb_sdb,meuble,created_at,validated_at,property_media(url,type,ordre,thumbnail_url),zones(nom)")
+    .select("id,reference,titre,description,type_offre,categorie,prix,quartier,ville,statut,surface,nb_pieces,nb_chambres,nb_sdb,meuble,created_at,validated_at,property_media(url,type,ordre,thumbnail_url),zones(nom)")
     .eq("statut", "publie")
     .neq("type_offre", "residence_meublee")
     .order("created_at", { ascending: false })

@@ -19,7 +19,7 @@ const TABS = [
 ]
 
 type PropRow = {
-  id: string; titre: string; type_offre: string; statut: string
+  id: string; reference: number | null; titre: string; type_offre: string; statut: string
   prix: number | null; quartier: string | null; ville: string | null
   created_at: string; rejected_reason: string | null
   ia_moderation_reason: string | null; ia_moderation_decision: string | null
@@ -33,7 +33,7 @@ export default async function AgentAnnoncesPage({ searchParams }: PageProps) {
 
   let query = supabase
     .from("properties")
-    .select("id,titre,type_offre,statut,prix,quartier,ville,created_at,rejected_reason,ia_moderation_reason,ia_moderation_decision")
+    .select("id,reference,titre,type_offre,statut,prix,quartier,ville,created_at,rejected_reason,ia_moderation_reason,ia_moderation_decision")
     .eq("created_by", uid)
     .order("created_at", { ascending: false })
   if (params.statut) query = query.eq("statut", params.statut as never)
@@ -89,7 +89,9 @@ export default async function AgentAnnoncesPage({ searchParams }: PageProps) {
               <div key={b.id} className="bg-white rounded-2xl border border-gray-100 p-4 hover:border-blue-300 transition-colors">
                 <div className="flex items-center justify-between gap-3">
                   <Link href={`/biens/${b.id}`} className="min-w-0 flex-1">
-                    <p className="font-medium text-gray-900 truncate">{b.titre}</p>
+                    <p className="font-medium text-gray-900 truncate">
+                      {b.reference != null && <span className="text-blue-700 font-semibold">N°{b.reference} · </span>}{b.titre}
+                    </p>
                     <p className="text-xs text-gray-500">
                       {[b.quartier, b.ville].filter(Boolean).join(", ") || "Localisation non précisée"} · {b.prix ? formatPrix(b.prix) : "Prix sur demande"}
                     </p>

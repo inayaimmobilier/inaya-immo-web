@@ -21,11 +21,11 @@ export default async function MesBiensPage() {
   // Biens rattachés au compte via property_publishers.publisher_id.
   const { data: pubs } = await admin
     .from("property_publishers")
-    .select("property_id, publie_le, properties(id,titre,type_offre,statut,prix,quartier,ville)")
+    .select("property_id, publie_le, properties(id,reference,titre,type_offre,statut,prix,quartier,ville)")
     .eq("publisher_id", user?.id ?? "")
     .order("publie_le", { ascending: false })
 
-  type Row = { property_id: string; publie_le: string | null; properties: { id: string; titre: string; type_offre: string; statut: string; prix: number | null; quartier: string | null; ville: string | null } | null }
+  type Row = { property_id: string; publie_le: string | null; properties: { id: string; reference: number | null; titre: string; type_offre: string; statut: string; prix: number | null; quartier: string | null; ville: string | null } | null }
   const biens = ((pubs ?? []) as Row[]).map(r => r.properties).filter(Boolean) as NonNullable<Row["properties"]>[]
 
   return (
@@ -51,7 +51,9 @@ export default async function MesBiensPage() {
             <div key={b.id}
               className="flex items-center justify-between gap-3 bg-white rounded-2xl border border-gray-100 p-4 hover:border-blue-300 transition-colors">
               <Link href={`/biens/${b.id}`} className="min-w-0 flex-1">
-                <p className="font-medium text-gray-900 truncate">{b.titre}</p>
+                <p className="font-medium text-gray-900 truncate">
+                  {b.reference != null && <span className="text-blue-700 font-semibold">N°{b.reference} · </span>}{b.titre}
+                </p>
                 <p className="text-xs text-gray-500">
                   {[b.quartier, b.ville].filter(Boolean).join(", ") || "Localisation non précisée"} · {b.prix ? formatPrix(b.prix) : "Prix sur demande"}
                 </p>

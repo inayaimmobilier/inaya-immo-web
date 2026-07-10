@@ -228,6 +228,11 @@ export default async function BienDetailPage({ params }: PageProps) {
               <div className="bg-white rounded-2xl border border-gray-100 p-5">
                 <div className="flex items-start justify-between gap-4 flex-wrap">
                   <div>
+                    {(property as unknown as { reference?: number | null }).reference != null && (
+                      <span className="inline-block mb-1.5 text-xs font-semibold text-blue-700 bg-blue-50 rounded-md px-2 py-0.5">
+                        Annonce N°{(property as unknown as { reference: number }).reference}
+                      </span>
+                    )}
                     <h1 className="text-xl font-bold text-gray-900 mb-1">{property.titre}</h1>
                     <p className="flex items-center gap-1.5 text-sm text-gray-500">
                       <MapPin className="w-4 h-4" />

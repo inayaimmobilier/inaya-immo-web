@@ -23,6 +23,7 @@ export default function PropertyCard({ property }: { property: Property }) {
     : undefined
   const cover = photo?.url ?? videoThumb?.thumbnail_url ?? null
 
+  const reference = (property as unknown as { reference?: number | null }).reference ?? null
   const isLocation = property.type_offre === "location"
   const isCession  = property.type_offre === "cession"
   const isResidence = property.type_offre === "residence_meublee"
@@ -169,10 +170,17 @@ export default function PropertyCard({ property }: { property: Property }) {
             </button>
           </div>
 
-          {/* Date et heure de publication */}
-          <p className="text-[11px] text-gray-400 mt-2.5 pt-2.5 border-t border-gray-50">
-            Publié le {formatDateTime(property.validated_at ?? property.created_at)}
-          </p>
+          {/* Numéro d'annonce + date de publication */}
+          <div className="flex items-center justify-between gap-2 mt-2.5 pt-2.5 border-t border-gray-50">
+            {reference != null && (
+              <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 rounded-md px-1.5 py-0.5">
+                N°{reference}
+              </span>
+            )}
+            <p className="text-[11px] text-gray-400 ml-auto">
+              Publié le {formatDateTime(property.validated_at ?? property.created_at)}
+            </p>
+          </div>
         </div>
       </article>
     </Link>

@@ -25,7 +25,7 @@ async function getRecentProperties() {
   const supabase = await createClient()
   const { data } = await supabase
     .from("properties")
-    .select("id,titre,type_offre,categorie,prix,quartier,statut,surface,nb_pieces,nb_chambres,nb_sdb,meuble,created_at,validated_at,property_media(url,type,ordre,thumbnail_url),zones(nom)")
+    .select("id,reference,titre,type_offre,categorie,prix,quartier,statut,surface,nb_pieces,nb_chambres,nb_sdb,meuble,created_at,validated_at,property_media(url,type,ordre,thumbnail_url),zones(nom)")
     .eq("statut", "publie")
     .neq("type_offre", "residence_meublee") // les résidences ont leur propre espace
     .order("created_at", { ascending: false })
