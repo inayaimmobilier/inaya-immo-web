@@ -6,7 +6,7 @@ import Navbar from "@/components/shared/Navbar"
 import SaveSearchButton from "./SaveSearchButton"
 import SaveSearchLink from "./SaveSearchLink"
 import AutoRefresh from "@/components/shared/AutoRefresh"
-import { LayoutGrid, List } from "lucide-react"
+import { LayoutGrid, List, ChevronLeft, ChevronRight } from "lucide-react"
 
 // Données temps réel (ingestion WhatsApp) : jamais de cache, toujours frais.
 export const dynamic = "force-dynamic"
@@ -221,24 +221,50 @@ async function PropertiesList({ searchParams }: PageProps) {
         ))}
       </div>
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex justify-center gap-2 mt-10">
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-            <a
-              key={p}
-              href={`/biens?${new URLSearchParams({ ...params, page: String(p) })}`}
-              className={`w-9 h-9 flex items-center justify-center rounded-xl text-sm font-medium transition-colors ${
-                p === page
-                  ? "bg-blue-700 text-white"
-                  : "bg-white border border-gray-200 text-gray-600 hover:border-blue-300"
-              }`}
-            >
-              {p}
-            </a>
-          ))}
-        </div>
-      )}
+      {/* Pagination compacte (fenêtre autour de la page courante + Préc./Suiv.).
+          Sur mobile, on n'affiche JAMAIS toutes les pages : seulement 1 … n-1 [n] n+1 … N. */}
+      {totalPages > 1 && (() => {
+        const pageUrl = (p: number) => `/biens?${new URLSearchParams({ ...params, page: String(p) })}`
+        // Construit la liste des pages à afficher avec des « … ».
+        const nums: (number | "…")[] = []
+        const push = (p: number) => { if (!nums.includes(p)) nums.push(p) }
+        push(1)
+        for (let p = page - 1; p <= page + 1; p++) if (p > 1 && p < totalPages) { if (nums[nums.length - 1] !== "…" && p - (nums[nums.length - 1] as number) > 1) nums.push("…"); push(p) }
+        if (totalPages > 1) { if (nums[nums.length - 1] !== "…" && totalPages - (nums[nums.length - 1] as number) > 1) nums.push("…"); push(totalPages) }
+        const cell = "min-w-9 h-9 px-2 flex items-center justify-center rounded-xl text-sm font-medium transition-colors"
+        return (
+          <div className="flex flex-wrap justify-center items-center gap-1.5 mt-10">
+            {/* Précédent */}
+            {page > 1 ? (
+              <a href={pageUrl(page - 1)} aria-label="Page précédente"
+                className={`${cell} bg-white border border-gray-200 text-gray-600 hover:border-blue-300`}>
+                <ChevronLeft className="w-4 h-4" />
+              </a>
+            ) : (
+              <span className={`${cell} bg-gray-50 border border-gray-100 text-gray-300 cursor-not-allowed`}><ChevronLeft className="w-4 h-4" /></span>
+            )}
+
+            {nums.map((p, i) => p === "…" ? (
+              <span key={`e${i}`} className="w-6 text-center text-gray-400 select-none">…</span>
+            ) : (
+              <a key={p} href={pageUrl(p)}
+                className={`${cell} ${p === page ? "bg-blue-700 text-white" : "bg-white border border-gray-200 text-gray-600 hover:border-blue-300"}`}>
+                {p}
+              </a>
+            ))}
+
+            {/* Suivant */}
+            {page < totalPages ? (
+              <a href={pageUrl(page + 1)} aria-label="Page suivante"
+                className={`${cell} bg-white border border-gray-200 text-gray-600 hover:border-blue-300`}>
+                <ChevronRight className="w-4 h-4" />
+              </a>
+            ) : (
+              <span className={`${cell} bg-gray-50 border border-gray-100 text-gray-300 cursor-not-allowed`}><ChevronRight className="w-4 h-4" /></span>
+            )}
+          </div>
+        )
+      })()}
     </>
   )
 }
