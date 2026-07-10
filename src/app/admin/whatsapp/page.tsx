@@ -10,6 +10,7 @@ import GroupsManager from "./GroupsManager"
 import NotifStats from "./NotifStats"
 import WaDiagnostic from "./WaDiagnostic"
 import GupshupStatusCard from "./GupshupStatusCard"
+import AssistantToggle from "./AssistantToggle"
 import { createWaAccount } from "./actions"
 
 export const metadata = { title: "Comptes WhatsApp · Inaya Immo" }
@@ -76,6 +77,10 @@ export default async function WhatsAppPage() {
   const otpEngine: "gupshup" | "baileys" =
     process.env.WA_OTP_ENGINE === "baileys" || !gupshupConfigured ? "baileys" : "gupshup"
 
+  // Réglage de l'assistant IA WhatsApp (pause/actif) — défaut actif si absent.
+  const { data: assistantSetting } = await adminDb.from("app_settings").select("value").eq("key", "wa_assistant").maybeSingle()
+  const assistantActif = (assistantSetting as { value: { actif?: boolean } } | null)?.value?.actif !== false
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -95,6 +100,9 @@ export default async function WhatsAppPage() {
 
       {/* Diagnostic service + test envoi direct */}
       <WaDiagnostic />
+
+      {/* Assistant IA WhatsApp — pause / actif */}
+      <AssistantToggle initialActif={assistantActif} />
 
       {/* Statut moteur Gupshup / OTP */}
       <GupshupStatusCard gupshupConfigured={gupshupConfigured} otpEngine={otpEngine} />
