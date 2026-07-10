@@ -10,6 +10,7 @@ import { isRealEmail } from "@/lib/account-actions"
 import {
   formatPrix, formatDateTime, CATEGORIE_LABEL, TYPE_OFFRE_LABEL,
 } from "@/lib/utils"
+import { SITE_NAME, absoluteUrl } from "@/lib/site"
 import {
   MapPin, BedDouble, Bath, Maximize2, Home, CheckCircle2, ArrowLeft, Tag, Layers, Sofa, Video, Clock,
 } from "lucide-react"
@@ -24,10 +25,39 @@ type Property = Database["public"]["Tables"]["properties"]["Row"] & {
 
 export async function generateMetadata({ params }: PageProps) {
   const { id } = await params
-  const supabase = await createClient()
-  const { data } = await supabase.from("properties").select("titre, quartier").eq("id", id).single()
-  const p = data as { titre: string; quartier: string | null } | null
-  return { title: p ? `${p.titre} · Inaya Immo` : "Annonce · Inaya Immo" }
+  const { data } = await createAdminClient()
+    .from("properties")
+    .select("titre, description, quartier, ville, prix, type_offre, categorie, statut, property_media(url, type, ordre, thumbnail_url)")
+    .eq("id", id).eq("statut", "publie").single()
+  const p = data as {
+    titre: string; description: string | null; quartier: string | null; ville: string | null
+    prix: number; type_offre: string; categorie: string
+    property_media?: { url: string; type: string; ordre: number; thumbnail_url: string | null }[]
+  } | null
+  if (!p) return { title: "Annonce · Inaya Immo", robots: { index: false } }
+
+  const lieu = [p.quartier, p.ville].filter(Boolean).join(", ") || "Bouaké"
+  const offre = TYPE_OFFRE_LABEL[p.type_offre as keyof typeof TYPE_OFFRE_LABEL] ?? p.type_offre
+  const cat = CATEGORIE_LABEL[p.categorie as keyof typeof CATEGORIE_LABEL] ?? p.categorie
+  const desc = (p.description?.trim()
+    || `${cat} en ${offre.toLowerCase()} à ${lieu}. ${formatPrix(p.prix)} FCFA. Annonce vérifiée par ${SITE_NAME}.`
+  ).slice(0, 200)
+
+  const media = (p.property_media ?? []).sort((a, b) => a.ordre - b.ordre)
+  const cover = media.find(m => m.type === "image")?.url ?? media.find(m => m.thumbnail_url)?.thumbnail_url ?? null
+  const canonical = `/biens/${id}`
+
+  return {
+    title: `${p.titre} · ${offre} à ${lieu}`,
+    description: desc,
+    alternates: { canonical },
+    openGraph: {
+      title: p.titre, description: desc, url: absoluteUrl(canonical),
+      type: "article", siteName: SITE_NAME, locale: "fr_CI",
+      images: cover ? [{ url: cover }] : undefined,
+    },
+    twitter: { card: "summary_large_image", title: p.titre, description: desc, images: cover ? [cover] : undefined },
+  }
 }
 
 export default async function BienDetailPage({ params }: PageProps) {
@@ -116,8 +146,33 @@ export default async function BienDetailPage({ params }: PageProps) {
     property.charges > 0 && { label: "Charges", value: `${formatPrix(property.charges)} FCFA` },
   ].filter(Boolean) as { label: string; value: string }[]
 
+  // JSON-LD de l'annonce : décrit le bien de façon structurée pour Google
+  // (rich results) et les assistants IA (données citables sans ambiguïté).
+  const offreLabel = TYPE_OFFRE_LABEL[property.type_offre]
+  const catLabel = CATEGORIE_LABEL[property.categorie]
+  const lieuLabel = [property.quartier, property.ville].filter(Boolean).join(", ") || "Bouaké"
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: property.titre,
+    description: (descriptionAffichee || `${catLabel} en ${offreLabel.toLowerCase()} à ${lieuLabel}.`).slice(0, 500),
+    category: catLabel,
+    image: images.map(i => i.url).slice(0, 6),
+    url: absoluteUrl(`/biens/${property.id}`),
+    offers: {
+      "@type": "Offer",
+      price: property.prix,
+      priceCurrency: "XOF",
+      availability: "https://schema.org/InStock",
+      seller: { "@type": "RealEstateAgent", name: SITE_NAME },
+    },
+    ...(property.surface != null && { additionalProperty: [{ "@type": "PropertyValue", name: "Surface", value: `${property.surface} m²` }] }),
+    areaServed: { "@type": "City", name: property.ville || "Bouaké" },
+  }
+
   return (
     <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       <Navbar />
       <main className="min-h-screen bg-gray-50">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
