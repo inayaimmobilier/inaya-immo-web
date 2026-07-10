@@ -174,7 +174,34 @@ async function exec(name: string, args: Record<string, unknown>): Promise<unknow
   return { erreur: "Outil inconnu." }
 }
 
+// ── Anti-abus (endpoint public appelant un LLM payant) ─────────────────────
+// L'assistant est ouvert aux visiteurs anonymes (widget de chat public), donc
+// pas d'authentification possible. On borne donc le COÛT par requête (taille
+// des messages) et la FRÉQUENCE par IP. Le limiteur est en mémoire : best-effort
+// par instance serverless (une couche Redis/Upstash serait nécessaire pour un
+// plafond strict multi-instances), mais suffit à casser le martelage trivial.
+const MAX_MSG_CHARS = 1500          // par message
+const MAX_TOTAL_CHARS = 8000        // sur tout l'historique retenu
+const RATE_MAX = 15                 // requêtes…
+const RATE_WINDOW_MS = 60_000       // …par minute et par IP
+const hits = new Map<string, number[]>()
+
+function rateLimited(ip: string): boolean {
+  const now = Date.now()
+  const recent = (hits.get(ip) ?? []).filter(t => now - t < RATE_WINDOW_MS)
+  recent.push(now)
+  hits.set(ip, recent)
+  if (hits.size > 5000) for (const [k, v] of hits) if (v.every(t => now - t >= RATE_WINDOW_MS)) hits.delete(k)
+  return recent.length > RATE_MAX
+}
+
 export async function POST(req: NextRequest) {
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+    || req.headers.get("x-real-ip") || "inconnu"
+  if (rateLimited(ip)) {
+    return NextResponse.json({ reply: "Un instant, vous allez un peu vite 🙂 Réessayez dans quelques secondes." }, { status: 429 })
+  }
+
   let incoming: ChatTurn[]
   try {
     const body = await req.json()
@@ -183,8 +210,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Requête invalide." }, { status: 400 })
   }
 
-  // Borne l'historique pour limiter le coût.
-  const history = incoming.slice(-12).filter(m => m.text?.trim())
+  // Borne l'historique (nombre de tours) ET la taille (coût LLM) : chaque message
+  // est tronqué à MAX_MSG_CHARS, puis on coupe l'historique dès MAX_TOTAL_CHARS.
+  const trimmed = incoming.slice(-12)
+    .filter(m => m.text?.trim())
+    .map(m => ({ ...m, text: m.text.slice(0, MAX_MSG_CHARS) }))
+  const history: ChatTurn[] = []
+  let total = 0
+  for (let i = trimmed.length - 1; i >= 0; i--) {
+    total += trimmed[i].text.length
+    if (total > MAX_TOTAL_CHARS && history.length > 0) break
+    history.unshift(trimmed[i])
+  }
   if (history.length === 0) return NextResponse.json({ reply: "Posez-moi votre question 🙂" })
 
   const res = await runAssistant({ system: SYSTEM, history, tools: TOOLS, exec })
