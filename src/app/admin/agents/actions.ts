@@ -138,3 +138,71 @@ export async function deleteAgent(agentId: string): Promise<Res> {
   revalidatePath("/admin/agents")
   return { ok: true }
 }
+
+/**
+ * Approuve une candidature agent : octroie le rôle « agent » (externe, avec
+ * l'agence indiquée) et marque la candidature comme approuvée. Avant cela, le
+ * compte candidat reste role='client' — aucun accès agent tant que ce n'est
+ * pas explicitement approuvé ici.
+ */
+export async function approveAgentApplication(applicationId: string): Promise<Res> {
+  const adminId = await requireAdmin()
+  if (!adminId) return { ok: false, error: "Réservé aux administrateurs." }
+  const admin = createAdminClient()
+
+  const { data: app } = await admin
+    .from("agent_applications").select("id, user_id, agence, agence_adresse, statut").eq("id", applicationId).maybeSingle()
+  const application = app as { id: string; user_id: string; agence: string | null; agence_adresse: string | null; statut: string } | null
+  if (!application) return { ok: false, error: "Candidature introuvable." }
+  if (application.statut !== "en_attente") return { ok: false, error: "Cette candidature a déjà été traitée." }
+
+  const patch: Record<string, unknown> = {
+    role: "agent", agent_type: "externe",
+    agence: application.agence, agence_adresse: application.agence_adresse,
+  }
+  let { error } = await admin.from("profiles").update(patch as never).eq("id", application.user_id)
+  if (error?.code === "42703") {
+    const { agence_adresse: _aa, ...base } = patch
+    const retry = await admin.from("profiles").update(base as never).eq("id", application.user_id)
+    error = retry.error
+  }
+  if (error) { console.error("INAYA-AGENT-APP-010", error); return { ok: false, error: "Échec de l'octroi du rôle agent." } }
+
+  await admin.from("agent_applications")
+    .update({ statut: "approuvee", decided_by: adminId, decided_at: new Date().toISOString() } as never)
+    .eq("id", applicationId)
+
+  // Notification best-effort (WhatsApp) — n'échoue jamais l'approbation.
+  try {
+    const { data: prof } = await admin.from("profiles").select("telephone").eq("id", application.user_id).maybeSingle()
+    const tel = (prof as { telephone: string | null } | null)?.telephone
+    if (tel) {
+      await admin.from("notifications").insert({
+        contact_telephone: tel, canal: "whatsapp", type: "candidature_agent_approuvee",
+        titre: "Candidature agent approuvée", contenu: "Bonne nouvelle : votre candidature d'agent immobilier Inaya a été validée ! Connectez-vous pour accéder à votre espace agent.",
+        payload: {}, lu: false, envoye: false,
+      } as never)
+    }
+  } catch (e) { console.error("INAYA-AGENT-APP-011", e) }
+
+  revalidatePath("/admin/agents")
+  return { ok: true }
+}
+
+/** Rejette une candidature agent (le compte reste role='client', inchangé). */
+export async function rejectAgentApplication(applicationId: string, motif?: string): Promise<Res> {
+  const adminId = await requireAdmin()
+  if (!adminId) return { ok: false, error: "Réservé aux administrateurs." }
+  const admin = createAdminClient()
+
+  const { data: app } = await admin.from("agent_applications").select("statut").eq("id", applicationId).maybeSingle()
+  if ((app as { statut?: string } | null)?.statut !== "en_attente") return { ok: false, error: "Cette candidature a déjà été traitée." }
+
+  const { error } = await admin.from("agent_applications")
+    .update({ statut: "rejetee", decided_by: adminId, decided_at: new Date().toISOString(), motif_rejet: motif?.trim() || null } as never)
+    .eq("id", applicationId)
+  if (error) { console.error("INAYA-AGENT-APP-012", error); return { ok: false, error: "Échec du rejet." } }
+
+  revalidatePath("/admin/agents")
+  return { ok: true }
+}

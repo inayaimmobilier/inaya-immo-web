@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Loader2, Eye, EyeOff, Search, Home, Wrench, Handshake, ShieldCheck, ArrowLeft } from "lucide-react"
+import { Loader2, Eye, EyeOff, Search, Home, Wrench, Handshake, ShieldCheck, ArrowLeft, Briefcase } from "lucide-react"
 import Link from "next/link"
 import {
   registerAccount, verificationOptions, sendVerificationCode, confirmVerificationCode,
@@ -16,6 +16,7 @@ const TYPES: { value: AccountType; label: string; desc: string; Icon: typeof Hom
   { value: "proprietaire", label: "Je suis propriétaire", desc: "Diffuser ou confier mes biens", Icon: Home },
   { value: "prestataire",  label: "Je suis prestataire", desc: "Plomberie, électricité…",  Icon: Wrench },
   { value: "apporteur",    label: "Je suis apporteur",   desc: "Apporter des affaires",     Icon: Handshake },
+  { value: "agent",        label: "Je suis agent immobilier", desc: "Candidature — validation admin", Icon: Briefcase },
 ]
 
 const CANAL_META: Record<OtpCanal, { label: string; hint: (d: string | null) => string }> = {
@@ -36,6 +37,8 @@ export default function InscriptionForm() {
   const [type, setType] = useState<AccountType>("chercheur")
   const [proprietaireType, setProprietaireType] = useState<"diffuseur" | "gere">("diffuseur")
   const [metier, setMetier] = useState("")
+  const [agence, setAgence] = useState("")
+  const [candidatureMessage, setCandidatureMessage] = useState("")
   const [nom, setNom] = useState("")
   const [telephone, setTelephone] = useState("")
   const [commune, setCommune] = useState("")
@@ -58,6 +61,7 @@ export default function InscriptionForm() {
   const [sent, setSent] = useState(false)
   const [code, setCode] = useState("")
   const [info, setInfo] = useState<string | null>(null)
+  const [agentApplied, setAgentApplied] = useState(false)
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault()
@@ -70,6 +74,8 @@ export default function InscriptionForm() {
         email: email.trim() || null,
         proprietaireType: type === "proprietaire" ? proprietaireType : null,
         metier: type === "prestataire" ? metier : null,
+        agence: type === "agent" ? agence : null,
+        message: type === "agent" ? candidatureMessage : null,
         pendingUserId,
       })
       if (!res.ok) { setError(res.error); setLoading(false); return }
@@ -107,15 +113,20 @@ export default function InscriptionForm() {
     }
   }
 
+  async function goToSpace() {
+    const target = await postLoginPath()
+    router.push(target)
+    router.refresh()
+  }
+
   async function handleVerify(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true); setError(null)
     try {
       const res = await confirmVerificationCode(code)
       if (!res.ok) { setError(res.error); setLoading(false); return }
-      const target = await postLoginPath()
-      router.push(target)
-      router.refresh()
+      if (type === "agent") { setAgentApplied(true); setLoading(false); return }
+      await goToSpace()
     } catch {
       setError("Vérification impossible. Réessayez."); setLoading(false)
     }
@@ -149,7 +160,7 @@ export default function InscriptionForm() {
                   const active = type === value
                   return (
                     <button type="button" key={value} onClick={() => setType(value)}
-                      className={`text-left p-3 rounded-xl border transition-colors ${
+                      className={`text-left p-3 rounded-xl border transition-colors ${value === "agent" ? "col-span-2" : ""} ${
                         active ? "border-blue-500 bg-blue-50 ring-1 ring-blue-100" : "border-gray-200 hover:border-blue-300 bg-white"
                       }`}>
                       <Icon className={`w-5 h-5 mb-1 ${active ? "text-blue-600" : "text-gray-400"}`} />
@@ -179,6 +190,22 @@ export default function InscriptionForm() {
                 placeholder="Votre métier (plomberie, électricité, peinture…)" className={field} />
             )}
 
+            {/* Agent : candidature — nom d'agence + message, validation admin requise */}
+            {type === "agent" && (
+              <div className="space-y-2">
+                <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5">
+                  <p className="text-xs text-blue-800">
+                    Votre compte sera créé immédiatement (accès chercheur), et votre candidature transmise à
+                    notre équipe. L&apos;accès agent est activé après validation.
+                  </p>
+                </div>
+                <input value={agence} onChange={e => setAgence(e.target.value)}
+                  placeholder="Nom de votre agence (facultatif)" className={field} />
+                <textarea value={candidatureMessage} onChange={e => setCandidatureMessage(e.target.value)} rows={3}
+                  placeholder="Votre expérience, zone d'activité… (facultatif)" className={`${field} resize-none`} maxLength={500} />
+              </div>
+            )}
+
             <input value={nom} onChange={e => setNom(e.target.value)} required placeholder="Nom complet" className={field} />
             <input value={telephone} onChange={e => setTelephone(e.target.value)} type="tel" required
               placeholder="Téléphone (WhatsApp)" className={field} />
@@ -199,6 +226,23 @@ export default function InscriptionForm() {
               {loading ? <><Loader2 className="w-4 h-4 animate-spin" /> Création…</> : "Créer mon compte"}
             </button>
           </form>
+        ) : agentApplied ? (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-4 text-center">
+            <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center mx-auto">
+              <Briefcase className="w-6 h-6 text-blue-600" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-gray-800">Candidature transmise !</p>
+              <p className="text-sm text-gray-500 mt-1">
+                Votre compte est vérifié. Notre équipe examine votre candidature d&apos;agent et vous
+                notifiera dès qu&apos;elle sera validée. En attendant, vous pouvez utiliser votre espace chercheur.
+              </p>
+            </div>
+            <button onClick={goToSpace}
+              className="w-full bg-blue-700 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-blue-600 transition-colors">
+              Accéder à mon espace →
+            </button>
+          </div>
         ) : (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-4">
             <div className="flex items-center gap-2 text-green-600">
@@ -212,7 +256,7 @@ export default function InscriptionForm() {
             {canaux.length === 0 ? (
               <p className="text-sm text-gray-500">
                 Aucun canal de vérification n&apos;est disponible pour le moment. Vous pouvez continuer et vérifier plus tard.
-                <button onClick={async () => { const t = await postLoginPath(); router.push(t); router.refresh() }}
+                <button onClick={() => { if (type === "agent") setAgentApplied(true); else void goToSpace() }}
                   className="block mt-3 text-blue-700 font-medium">Continuer →</button>
               </p>
             ) : (

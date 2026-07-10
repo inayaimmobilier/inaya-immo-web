@@ -27,20 +27,40 @@ function maskEmail(e: string | null): string | null {
   return `${mu}@${dom}`
 }
 
-export type AccountType = "chercheur" | "proprietaire" | "prestataire" | "apporteur"
+export type AccountType = "chercheur" | "proprietaire" | "prestataire" | "apporteur" | "agent"
 type Res = { ok: true } | { ok: false; error: string }
 type RegisterRes = { ok: true; userId: string } | { ok: false; error: string }
 
 // Rôles staff : jamais touchés par l'inscription en libre-service, sous aucun prétexte.
 const STAFF_ROLES = ["super_admin", "admin", "moderateur", "agent", "comptable"]
 
-// Type de compte choisi à l'inscription → rôle en base (les rôles staff ne sont
-// jamais attribuables en self-service).
+// Type de compte choisi à l'inscription → rôle en base. IMPORTANT : « agent »
+// est une CANDIDATURE, jamais un octroi direct du rôle staff — le compte reste
+// "client" tant qu'un administrateur n'a pas approuvé la candidature (voir
+// recordAgentApplication + approbation dans /admin/agents).
 const ROLE_FOR: Record<AccountType, string> = {
   chercheur:    "client",
   proprietaire: "proprietaire",
   prestataire:  "prestataire",
   apporteur:    "apporteur",
+  agent:        "client",
+}
+
+/** Enregistre (ou met à jour si encore en attente) une candidature agent. Best-effort. */
+async function recordAgentApplication(
+  admin: ReturnType<typeof createAdminClient>, uid: string, agence: string | null, message: string | null,
+): Promise<void> {
+  try {
+    const { data: existing } = await admin
+      .from("agent_applications").select("id").eq("user_id", uid).eq("statut", "en_attente").maybeSingle()
+    if (existing) {
+      await admin.from("agent_applications").update({ agence, message } as never).eq("id", (existing as { id: string }).id)
+    } else {
+      await admin.from("agent_applications").insert({ user_id: uid, agence, message, statut: "en_attente" } as never)
+    }
+  } catch (e) {
+    console.error("INAYA-AGENT-APP-001", e)
+  }
 }
 
 /**
@@ -57,6 +77,9 @@ export async function registerAccount(input: {
   email?: string | null
   proprietaireType?: "diffuseur" | "gere" | null
   metier?: string | null
+  /** Candidature agent (type="agent") : nom d'agence + message facultatifs. */
+  agence?: string | null
+  message?: string | null
   /**
    * Id renvoyé par un précédent appel RÉUSSI de registerAccount DANS CETTE MÊME
    * page (le client le mémorise après création). Preuve que la correction en
@@ -135,6 +158,7 @@ export async function registerAccount(input: {
         await applyFields(sessionUser.id)
         const a = await applyAuth(sessionUser.id)
         if (!a.ok) return a
+        if (input.type === "agent") await recordAgentApplication(admin, sessionUser.id, input.agence ?? null, input.message ?? null)
         revalidatePath("/", "layout")
         return { ok: true, userId: sessionUser.id }
       }
@@ -162,6 +186,7 @@ export async function registerAccount(input: {
     return { ok: false, error: "Échec de la création du compte. Réessayez." }
   }
   await applyFields(created.user.id)
+  if (input.type === "agent") await recordAgentApplication(admin, created.user.id, input.agence ?? null, input.message ?? null)
 
   const { error: signErr } = await supabase.auth.signInWithPassword({ email, password })
   if (signErr) {

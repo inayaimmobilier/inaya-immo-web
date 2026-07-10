@@ -5,6 +5,7 @@ import { Users, Trophy, TrendingUp, Wallet, CheckCircle2, Clock } from "lucide-r
 import { formatPrix } from "@/lib/utils"
 import type { UserRole } from "@/types/database"
 import AddAgentModal from "./AddAgentModal"
+import AgentApplications, { type PendingApplication } from "./AgentApplications"
 
 export const metadata = { title: "Agents · Inaya Immo" }
 
@@ -24,15 +25,31 @@ export default async function AgentsPage() {
   if (!["super_admin", "admin"].includes(role)) redirect("/admin/dashboard")
 
   const admin = createAdminClient()
-  const [{ data: agData }, { data: leadData }, { data: txData }] = await Promise.all([
+  const [{ data: agData }, { data: leadData }, { data: txData }, appsRes] = await Promise.all([
     admin.from("profiles").select("*").eq("role", "agent").order("created_at"),
     admin.from("leads").select("agent_id, statut").not("agent_id", "is", null),
     admin.from("transactions").select("agent_id, statut, commission_part_agent").not("agent_id", "is", null),
+    admin.from("agent_applications")
+      .select("id, agence, message, created_at, profiles(nom, prenom, telephone)")
+      .eq("statut", "en_attente").order("created_at", { ascending: true }),
   ])
 
   const agents = (agData ?? []) as Agent[]
   const leads = (leadData ?? []) as LeadRow[]
   const txs = (txData ?? []) as TxRow[]
+
+  type AppRow = {
+    id: string; agence: string | null; message: string | null; created_at: string
+    profiles: { nom: string | null; prenom: string | null; telephone: string | null } | { nom: string | null; prenom: string | null; telephone: string | null }[] | null
+  }
+  const applications: PendingApplication[] = ((appsRes.data ?? []) as AppRow[]).map(r => {
+    const p = Array.isArray(r.profiles) ? r.profiles[0] : r.profiles
+    return {
+      id: r.id, agence: r.agence, message: r.message, created_at: r.created_at,
+      nom: `${p?.prenom || ""} ${p?.nom || ""}`.trim() || "Candidat",
+      telephone: p?.telephone ?? null,
+    }
+  })
 
   const stats = agents.map(a => {
     const aLeads = leads.filter(l => l.agent_id === a.id)
@@ -66,6 +83,8 @@ export default async function AgentsPage() {
         </div>
         <AddAgentModal />
       </div>
+
+      <AgentApplications applications={applications} />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {card("Agents actifs", String(agents.filter(a => a.status === "actif").length), Users, "bg-blue-50 text-blue-600")}
