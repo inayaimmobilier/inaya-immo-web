@@ -4,6 +4,7 @@ import { Wallet, Plus, CheckCircle2, Clock, Banknote } from "lucide-react"
 import { formatPrix, formatRelativeDate } from "@/lib/utils"
 import type { UserRole, TransactionStatus, PropertyType, PaymentMode } from "@/types/database"
 import StatusControl from "./StatusControl"
+import TransactionRowActions from "./TransactionRowActions"
 
 export const metadata = { title: "Transactions · Inaya Immo" }
 
@@ -129,6 +130,7 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
                   <th className="px-4 py-3">Paiement</th>
                   <th className="px-4 py-3">Date</th>
                   <th className="px-4 py-3">Statut</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -146,6 +148,7 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
                     <td className="px-4 py-3 text-xs text-gray-500">{t.mode_paiement ? MODE_LABEL[t.mode_paiement] : "—"}</td>
                     <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">{formatRelativeDate(t.created_at)}</td>
                     <td className="px-4 py-3"><StatusControl id={t.id} statut={t.statut} /></td>
+                    <td className="px-4 py-3"><div className="flex justify-end"><TransactionRowActions id={t.id} montant={t.montant_transaction} /></div></td>
                   </tr>
                 ))}
               </tbody>

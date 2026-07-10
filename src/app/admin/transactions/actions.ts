@@ -97,6 +97,57 @@ export async function updateTransactionStatus(id: string, statut: TransactionSta
   return { ok: true }
 }
 
+/** Modifie une transaction (montant, agent, mode, note) et RECALCULE la commission. */
+export async function updateTransaction(id: string, input: {
+  montant?: number; agent_id?: string | null; mode_paiement?: PaymentMode | null; note_admin?: string | null
+}): Promise<ActionResult> {
+  const admin = await requireAdmin()
+  if (!admin) return { ok: false, error: "Action réservée aux administrateurs." }
+
+  const { data: txData } = await admin.db
+    .from("transactions").select("property_id, montant_transaction, agent_id, mode_paiement, note_admin").eq("id", id).single()
+  const tx = txData as { property_id: string; montant_transaction: number; agent_id: string | null; mode_paiement: PaymentMode | null; note_admin: string | null } | null
+  if (!tx) return { ok: false, error: "Transaction introuvable." }
+
+  const montant = input.montant != null && input.montant > 0 ? input.montant : tx.montant_transaction
+  const agentId = input.agent_id !== undefined ? input.agent_id : tx.agent_id
+
+  // Recalcule la commission sur le nouveau montant.
+  const { data: propData } = await admin.db.from("properties").select("type_offre, categorie, quartier").eq("id", tx.property_id).single()
+  const prop = propData as { type_offre: PropertyType; categorie: PropertyCat; quartier: string | null } | null
+  const { data: rulesData } = await admin.db.from("commission_rules").select("*").eq("actif", true)
+  const rules = (rulesData ?? []) as CommissionRule[]
+  let calc: { total: number; partInaya: number; partAgent: number } | null = null
+  let ruleId: string | null = null
+  if (prop) {
+    const ctx = { type_operation: prop.type_offre as "location" | "vente", categorie: prop.categorie, zone: prop.quartier ?? undefined, montant }
+    const rule = selectRule(rules, ctx)
+    if (rule) { calc = computeCommission(rule, ctx); ruleId = rule.id }
+  }
+
+  const patch: Record<string, unknown> = {
+    montant_transaction: montant, agent_id: agentId,
+    mode_paiement: input.mode_paiement !== undefined ? input.mode_paiement : tx.mode_paiement,
+    note_admin: input.note_admin !== undefined ? input.note_admin : tx.note_admin,
+  }
+  if (calc) { patch.commission_rule_id = ruleId; patch.commission_montant_total = calc.total; patch.commission_part_inaya = calc.partInaya; patch.commission_part_agent = calc.partAgent }
+
+  const { error } = await admin.db.from("transactions").update(patch as never).eq("id", id)
+  if (error) { console.error("INAYA-PAY-003", error); return { ok: false, error: "Échec de la modification." } }
+  revalidatePath("/admin/transactions")
+  return { ok: true }
+}
+
+/** Supprime une transaction. */
+export async function deleteTransaction(id: string): Promise<ActionResult> {
+  const admin = await requireAdmin()
+  if (!admin) return { ok: false, error: "Action réservée aux administrateurs." }
+  const { error } = await admin.db.from("transactions").delete().eq("id", id)
+  if (error) { console.error("INAYA-PAY-004", error); return { ok: false, error: "Échec de la suppression." } }
+  revalidatePath("/admin/transactions")
+  return { ok: true }
+}
+
 export async function createTransactionAndRedirect(form: FormData) {
   const res = await createTransaction(form)
   if (!res.ok) redirect(`/admin/transactions/nouvelle?error=${encodeURIComponent(res.error)}`)
