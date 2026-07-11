@@ -16,7 +16,7 @@ const NAV = [
   { href: "/admin/annonces",      icon: Home,            label: "Annonces",         roles: ["super_admin","admin","moderateur","agent"] },
   { href: "/admin/residences",    icon: Sofa,            label: "Résidences",       roles: ["super_admin","admin","moderateur","agent"] },
   { href: "/admin/expiration",    icon: Clock,           label: "Durée des annonces", roles: ["super_admin","admin"] },
-  { href: "/admin/leads",         icon: MessageSquare,   label: "Leads",            roles: ["super_admin","admin","agent"] },
+  { href: "/admin/leads",         icon: MessageSquare,   label: "Tâches / Leads",   roles: ["super_admin","admin","agent"] },
   { href: "/admin/agents",        icon: TrendingUp,      label: "Agents",           roles: ["super_admin","admin"] },
   { href: "/admin/gestion",       icon: Building2,       label: "Gestion locative", roles: ["super_admin","admin","moderateur","comptable"] },
   { href: "/admin/apports",       icon: HandCoins,       label: "Apports",          roles: ["super_admin","admin","comptable"] },
