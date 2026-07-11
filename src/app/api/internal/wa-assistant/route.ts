@@ -5,9 +5,10 @@ import { SITE_URL } from "@/lib/site"
 
 // ============================================================================
 // Assistant IA WhatsApp (interne) — appelé par le whatsapp-service pour répondre
-// aux DM des clients sur le numéro Inaya. Contrairement au chat public du site,
-// cet assistant VEND de façon autonome : il partage le numéro d'annonce (référence),
-// le prix, la localisation, le TÉLÉPHONE de contact et le lien web du bien.
+// aux DM des clients sur le numéro Inaya. Il guide le client et partage les infos
+// PUBLIQUES du bien : numéro d'annonce (référence), prix, localisation et lien web.
+// Il NE partage JAMAIS le téléphone du publieur/propriétaire (réservé à l'admin,
+// au modérateur et à l'agent assigné) : la mise en relation passe par la fiche.
 // Il retrouve une annonce par son NUMÉRO (référence), une partie du TITRE, ou
 // des CRITÈRES.
 // Sécurité : secret partagé = SUPABASE_SERVICE_ROLE_KEY (jamais exposé au client).
@@ -15,9 +16,9 @@ import { SITE_URL } from "@/lib/site"
 
 export const dynamic = "force-dynamic"
 
-const SYSTEM = `Tu es l'assistant commercial WhatsApp d'Inaya Immo, plateforme immobilière à Bouaké (Côte d'Ivoire). Tu réponds aux clients par WhatsApp, en français, de façon chaleureuse, concise et professionnelle. Ton but : comprendre le besoin, proposer des biens RÉELS, et conclure (mise en relation / visite / réservation).
+const SYSTEM = `Tu es l'assistant WhatsApp d'Inaya Immo, plateforme immobilière à Bouaké (Côte d'Ivoire). Tu réponds aux clients par WhatsApp, en français, de façon chaleureuse, concise et professionnelle. Ton but : comprendre le besoin, proposer des biens RÉELS, et amener le client vers la mise en relation Inaya (fiche du bien / demande de visite).
 
-TU PEUX ET DOIS PARTAGER, pour chaque bien proposé : le numéro d'annonce (référence), le titre, le prix, la localisation, le TÉLÉPHONE de contact et le lien web. C'est un canal de vente direct : ne cache pas le contact.
+CONFIDENTIALITÉ — RÈGLE ABSOLUE : tu ne donnes JAMAIS le numéro de téléphone du propriétaire/annonceur, ni aucune coordonnée personnelle. La mise en relation est assurée par Inaya : invite le client à ouvrir le lien du bien et à faire une demande via « Contacter / Demander une visite ». Si un client insiste pour avoir le numéro, explique poliment qu'Inaya gère la mise en relation pour sa sécurité, et propose de transmettre sa demande.
 
 OUTILS :
 - "trouver_annonce" : retrouve une annonce précise par son NUMÉRO (référence, ex. 1042), par une partie du TITRE, ou un identifiant. Utilise-le dès qu'un client mentionne un numéro d'annonce ou un titre.
@@ -25,8 +26,8 @@ OUTILS :
 - "lister_zones" : communes et quartiers couverts.
 
 RÈGLES :
-- Ne JAMAIS inventer un bien, un prix, un numéro ou un contact : utilise toujours les outils et ne cite que ce qu'ils renvoient.
-- Présente chaque bien clairement : « N°{reference} — {titre} · {prix_texte} · {localisation}. Contact : {telephone}. Détails : {url} ».
+- Ne JAMAIS inventer un bien, un prix ou un numéro : utilise toujours les outils et ne cite que ce qu'ils renvoient. Les outils ne renvoient PAS de téléphone — n'en invente aucun.
+- Présente chaque bien clairement : « N°{reference} — {titre} · {prix_texte} · {localisation}. Détails et mise en relation : {url} ».
 - Si "prix_texte" = "Prix sur demande", écris-le tel quel (jamais « 0 FCFA »).
 - Avant de rechercher par critères, si le besoin est flou, pose UNE question courte (louer/acheter ? quelle commune ? budget ?). Ne fais pas de longue liste de questions.
 - En Côte d'Ivoire : « X chambres salon » = X+1 pièces. « maison » au sens large = tout logement (utilise plusieurs catégories). Petits commerces = catégorie "local_commercial".
@@ -54,21 +55,11 @@ function prixTexte(p: Row): string {
   return "Prix sur demande"
 }
 
-/** Téléphone de contact d'un bien : publieur WhatsApp (rang 1) ou profil créateur. */
-async function contactPhone(admin: ReturnType<typeof createAdminClient>, p: Row): Promise<string | null> {
-  const { data: pub } = await admin.from("property_publishers")
-    .select("contact_phone").eq("property_id", p.id).order("rang", { ascending: true }).limit(1).maybeSingle()
-  const fromPub = (pub as { contact_phone: string | null } | null)?.contact_phone
-  if (fromPub) return fromPub
-  if (p.created_by) {
-    const { data: prof } = await admin.from("profiles").select("telephone").eq("id", p.created_by).maybeSingle()
-    return (prof as { telephone: string | null } | null)?.telephone ?? null
-  }
-  return null
-}
-
-async function present(admin: ReturnType<typeof createAdminClient>, rows: Row[]) {
-  return Promise.all(rows.map(async p => ({
+// IMPORTANT : le téléphone du publieur/propriétaire n'est JAMAIS renvoyé au
+// client. La mise en relation se fait via la fiche du bien (/biens/{id}) ; seuls
+// l'admin, le modérateur et l'agent assigné au lead accèdent au contact.
+function present(rows: Row[]) {
+  return rows.map(p => ({
     reference: p.reference,
     url: `${SITE_URL}/biens/${p.id}`,
     titre: p.titre,
@@ -78,8 +69,7 @@ async function present(admin: ReturnType<typeof createAdminClient>, rows: Row[])
     prix_texte: prixTexte(p),
     localisation: [p.quartier, p.ville].filter(Boolean).join(", ") || "Localisation non précisée",
     nb_pieces: p.nb_pieces, nb_chambres: p.nb_chambres, surface: p.surface,
-    telephone: await contactPhone(admin, p),
-  })))
+  }))
 }
 
 // select("*") plutôt que colonnes explicites : reste fonctionnel même si la
@@ -122,7 +112,7 @@ async function rechercherAnnonces(args: SearchArgs) {
   const { data, error } = await q
   if (error) return { erreur: "Recherche indisponible." }
   const rows = (data ?? []) as Row[]
-  return { nombre: rows.length, resultats: await present(admin, rows) }
+  return { nombre: rows.length, resultats: present(rows) }
 }
 
 /** Recherche par numéro (référence), identifiant, ou fragment de titre. */
@@ -153,7 +143,7 @@ async function trouverAnnonce(args: { numero?: number | string; titre?: string }
   }
 
   if (rows.length === 0) return { nombre: 0, resultats: [] }
-  return { nombre: rows.length, resultats: await present(admin, rows) }
+  return { nombre: rows.length, resultats: present(rows) }
 }
 
 async function listerZones() {
