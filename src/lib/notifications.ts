@@ -124,12 +124,27 @@ export async function notifySearcher(args: {
   const db = createAdminClient()
   const lieu = args.quartier ? ` à ${args.quartier}` : ""
   const intro = args.type === "exacte" ? "Un bien correspond à votre recherche" : "Un bien similaire à votre recherche est disponible"
+  const url = absoluteUrl(`/biens/${args.propertyId}`)
+
+  // Numéro court de la requête (« R820 ») pour la commande d'arrêt d'alerte.
+  const { data: reqRow } = await db.from("search_requests").select("reference").eq("id", args.requestId).maybeSingle()
+  const reqRef = (reqRow as { reference: number | null } | null)?.reference ?? null
+  const stopCode = reqRef != null ? `R${reqRef}` : null
+
+  // Deux actions dans l'alerte : « Voir l'annonce » (lien) et « Stop R820 »
+  // (désactive l'alerte de CETTE requête). Le stopCode va aussi dans le payload
+  // pour les boutons du template WhatsApp.
+  const contenu = [
+    `${intro} : « ${args.propertyTitre} »${lieu}.`,
+    `👉 Voir l'annonce : ${url}`,
+    stopCode ? `🔕 Pour arrêter cette alerte, répondez : ${stopCode}` : "",
+  ].filter(Boolean).join("\n")
 
   const base = {
     type: "match_offre",
     titre: "Nouveau bien pour vous",
-    contenu: `${intro} : « ${args.propertyTitre} »${lieu}. Voir : ${absoluteUrl(`/biens/${args.propertyId}`)}`,
-    payload: { property_id: args.propertyId, request_id: args.requestId, match_type: args.type },
+    contenu,
+    payload: { property_id: args.propertyId, request_id: args.requestId, request_ref: reqRef, stop_code: stopCode, url, match_type: args.type },
     lu: false,
     envoye: false,
   }
