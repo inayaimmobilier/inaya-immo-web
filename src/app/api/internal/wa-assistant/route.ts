@@ -63,7 +63,8 @@ function prixTexte(p: Row): string {
 function present(rows: Row[]) {
   return rows.map(p => ({
     reference: p.reference,
-    url: `${SITE_URL}/biens/${p.id}`,
+    // URL courte lisible « /annonces/1664 » (redirige vers la fiche) ; repli UUID.
+    url: p.reference != null ? `${SITE_URL}/annonces/${p.reference}` : `${SITE_URL}/biens/${p.id}`,
     titre: p.titre,
     type_offre: p.type_offre,
     type_libelle: p.type_offre === "residence_meublee" ? "Résidence meublée" : p.type_offre,
