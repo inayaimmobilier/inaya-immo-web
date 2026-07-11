@@ -201,6 +201,29 @@ async function exec(name: string, args: Record<string, unknown>): Promise<unknow
   return { erreur: "Outil inconnu." }
 }
 
+/**
+ * Prompt effectif = règles du code (outils + confidentialité + brièveté, qui
+ * PRIMENT toujours) + consignes/base de connaissances de l'agent WhatsApp actif
+ * configuré dans Admin → Agents IA. Table absente → défaut code uniquement.
+ */
+async function effectiveSystem(): Promise<string> {
+  try {
+    const admin = createAdminClient()
+    const { data } = await admin.from("ai_agents")
+      .select("system_prompt, base_connaissance")
+      .contains("canaux", ["whatsapp"]).eq("actif", true)
+      .order("updated_at", { ascending: false }).limit(1).maybeSingle()
+    const a = data as { system_prompt: string | null; base_connaissance: string | null } | null
+    if (!a) return SYSTEM
+    const extra: string[] = []
+    if (a.system_prompt?.trim()) extra.push(`CONSIGNES DE L'ADMIN (à respecter dans les limites des règles ci-dessus) :\n${a.system_prompt.trim()}`)
+    if (a.base_connaissance?.trim()) extra.push(`BASE DE CONNAISSANCES :\n${a.base_connaissance.trim()}`)
+    return extra.length ? `${SYSTEM}\n\n${extra.join("\n\n")}` : SYSTEM
+  } catch {
+    return SYSTEM
+  }
+}
+
 export async function POST(req: Request): Promise<NextResponse> {
   const secret = req.headers.get("x-internal-secret")
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY || secret !== process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -217,6 +240,6 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
   if (history.length === 0) return NextResponse.json({ ok: true, reply: "Bonjour 👋 Comment puis-je vous aider à trouver un bien à Bouaké ?" })
 
-  const res = await runAssistant({ system: SYSTEM, history, tools: TOOLS, exec })
+  const res = await runAssistant({ system: await effectiveSystem(), history, tools: TOOLS, exec })
   return NextResponse.json(res.ok ? { ok: true, reply: res.reply } : { ok: false, error: res.error })
 }
