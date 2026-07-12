@@ -44,6 +44,18 @@ export async function saveSearch(params: SaveSearchParams): Promise<Result> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
+  // ANTI-SPAM : une recherche SANS AUCUN critère matche 100 % des annonces →
+  // l'utilisateur recevrait une alerte à chaque nouvelle publication (déluge,
+  // risque de ban WhatsApp). On exige au moins un filtre significatif.
+  const hasCriteres = !!(params.type || params.categorie || params.quartier
+    || params.prix_min || params.prix_max || params.pieces_min || params.q)
+  if (!hasCriteres) {
+    return {
+      ok: false,
+      error: "Précisez au moins un critère (type de bien, quartier, budget…) pour activer les alertes.",
+    }
+  }
+
   const criteres = {
     type_offre: (params.type || null) as PropertyType | null,
     categories: params.categorie ? [params.categorie as PropertyCat] : null,
@@ -74,6 +86,11 @@ export async function saveSearch(params: SaveSearchParams): Promise<Result> {
 
     // Client admin : l'insert anonyme est permis par la RLS, mais le SELECT-back
     // ne l'est pas → on passe par le service_role pour récupérer l'id.
+    //
+    // ANTI-SPAM : canal='whatsapp' (et NON 'web') pour les anonymes. mayNotify()
+    // (matching.ts) ne notifie ces requêtes QUE si l'admin a activé
+    // 'alertes_groupe' — par défaut OFF. Sinon, un visiteur saisissant juste son
+    // numéro dans le catalogue déclenchait des alertes pour TOUT, à son insu.
     const admin = createAdminClient()
     const { data, error } = await admin
       .from("search_requests")
@@ -82,7 +99,7 @@ export async function saveSearch(params: SaveSearchParams): Promise<Result> {
         user_id: null,
         contact_telephone: tel,
         contact_nom: params.nom?.trim() || null,
-        canal: "web" as const,
+        canal: "whatsapp" as const,
       } as never)
       .select("id").single()
     if (error) {
