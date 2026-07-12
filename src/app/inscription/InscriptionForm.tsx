@@ -9,6 +9,7 @@ import {
   type AccountType,
 } from "./actions"
 import type { OtpCanal } from "@/lib/otp"
+import { COUNTRIES, DEFAULT_COUNTRY, flagEmoji, type Country } from "@/lib/countries"
 
 const TYPES: { value: AccountType; label: string; desc: string; Icon: typeof Home }[] = [
   { value: "chercheur",    label: "Je cherche un bien", desc: "Louer ou acheter",          Icon: Search },
@@ -51,6 +52,7 @@ export default function InscriptionForm() {
   const [candidatureMessage, setCandidatureMessage] = useState("")
   const [nom, setNom] = useState("")
   const [telephone, setTelephone] = useState("")
+  const [country, setCountry] = useState<Country>(DEFAULT_COUNTRY)
   const [commune, setCommune] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -102,9 +104,14 @@ export default function InscriptionForm() {
     if (password.length < 6) { setError("Le mot de passe doit comporter au moins 6 caractères."); setLoading(false); return }
     if (password !== passwordConfirm) { setError("Les deux mots de passe ne correspondent pas."); setLoading(false); return }
 
+    // Numéro complet = indicatif pays + numéro local saisi (sans son indicatif).
+    const localDigits = telephone.replace(/\D/g, "")
+    if (localDigits.length < 6) { setError("Numéro de téléphone invalide."); setLoading(false); return }
+    const fullPhone = `${country.dial}${localDigits}`
+
     try {
       const res = await registerAccount({
-        type, nom, telephone, commune, password,
+        type, nom, telephone: fullPhone, commune, password,
         passwordConfirm,
         email: email.trim() || null,
         proprietaireType: type === "proprietaire" ? proprietaireType : null,
@@ -243,8 +250,23 @@ export default function InscriptionForm() {
             )}
 
             <input value={nom} onChange={e => setNom(e.target.value)} required placeholder="Nom complet" className={field} />
-            <input value={telephone} onChange={e => setTelephone(e.target.value)} type="tel" required
-              placeholder="Téléphone (WhatsApp)" className={field} />
+            {/* Téléphone : indicatif pays (Côte d'Ivoire en tête) + numéro local */}
+            <div className="flex gap-2">
+              <select value={country.iso} onChange={e => {
+                const next = COUNTRIES.find(c => c.iso === e.target.value)
+                if (next) setCountry(next)
+              }}
+                aria-label="Indicatif pays"
+                className={`${field} flex-shrink-0 w-[38%] cursor-pointer`}>
+                {COUNTRIES.map(c => (
+                  <option key={`${c.iso}-${c.name}`} value={c.iso}>
+                    {flagEmoji(c.iso)} {c.dial} {c.name.length > 16 ? c.name.slice(0, 15) + "…" : c.name}
+                  </option>
+                ))}
+              </select>
+              <input value={telephone} onChange={e => setTelephone(e.target.value)} type="tel" required
+                placeholder="Numéro WhatsApp" className={`${field} flex-1`} />
+            </div>
             <input value={commune} onChange={e => setCommune(e.target.value)} required placeholder="Commune / ville" className={field} />
             <input value={email} onChange={e => setEmail(e.target.value)} type="email" autoComplete="email"
               placeholder="Adresse email (facultatif)" className={field} />
