@@ -144,7 +144,9 @@ export async function notifySearcher(args: {
     type: "match_offre",
     titre: "Nouveau bien pour vous",
     contenu,
-    payload: { property_id: args.propertyId, request_id: args.requestId, request_ref: reqRef, stop_code: stopCode, url, match_type: args.type },
+    // property_desc = variable {{1}} du template WhatsApp `inaya_alerte` (corps à
+    // variables séparées) ; request_ref alimente le bouton « Arrêter » (/a/stop/{ref}).
+    payload: { property_id: args.propertyId, request_id: args.requestId, request_ref: reqRef, stop_code: stopCode, url, match_type: args.type, property_desc: `${args.propertyTitre}${lieu}` },
     lu: false,
     envoye: false,
   }

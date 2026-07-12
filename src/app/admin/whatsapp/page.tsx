@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation"
 import Link from "next/link"
 import { createClient, createAdminClient } from "@/lib/supabase/server"
-import { Smartphone, Plus, AlertTriangle, Wifi, WifiOff, Ban, RefreshCw, ClipboardList } from "lucide-react"
+import { Smartphone, Plus, AlertTriangle, Wifi, WifiOff, Ban, RefreshCw, ClipboardList, Cloud } from "lucide-react"
 import { formatRelativeDate } from "@/lib/utils"
 import type { UserRole, WaEngine, WaStatus } from "@/types/database"
 import WaAccountControls from "./WaAccountControls"
@@ -10,6 +10,7 @@ import GroupsManager from "./GroupsManager"
 import NotifStats from "./NotifStats"
 import WaDiagnostic from "./WaDiagnostic"
 import GupshupStatusCard from "./GupshupStatusCard"
+import GupshupLineToggle from "./GupshupLineToggle"
 import AssistantToggle from "./AssistantToggle"
 import { createWaAccount } from "./actions"
 
@@ -67,15 +68,23 @@ export default async function WhatsAppPage() {
     sent24h: sent24hRes.count ?? 0,
   }
 
-  // Statut Gupshup (config + moteur OTP effectif) — les clés Gupshup ne vivent
-  // que sur Railway (whatsapp-service), d'où l'appel /health plutôt qu'un env local.
-  const gupshupConfigured = await fetch(`${process.env.WA_SERVICE_URL ?? ""}/health`, {
+  // Statut Gupshup (config + moteur OTP effectif + ligne d'envoi active) — les clés
+  // Gupshup ne vivent que sur Railway (whatsapp-service), d'où l'appel /health.
+  const health = await fetch(`${process.env.WA_SERVICE_URL ?? ""}/health`, {
     headers: process.env.WA_HTTP_SECRET ? { "x-inaya-secret": process.env.WA_HTTP_SECRET } : {},
     signal: AbortSignal.timeout(3000), cache: "no-store",
-  }).then(r => r.json()).then(d => (d as { gupshupConfigured?: boolean }).gupshupConfigured ?? false)
-    .catch(() => null as boolean | null)
+  }).then(r => r.json()).then(d => d as {
+    gupshupConfigured?: boolean; gupshupLine?: "principal" | "secours"; gupshupSecoursConfigured?: boolean
+  }).catch(() => null)
+  const gupshupConfigured = health ? (health.gupshupConfigured ?? false) : null
+  const serviceLine = health?.gupshupLine ?? null
+  const secoursConfigured = health?.gupshupSecoursConfigured ?? false
   const otpEngine: "gupshup" | "baileys" =
     process.env.WA_OTP_ENGINE === "baileys" || !gupshupConfigured ? "baileys" : "gupshup"
+
+  // Ligne Gupshup enregistrée (source de vérité DB) — défaut « principal ».
+  const { data: lineSetting } = await adminDb.from("app_settings").select("value").eq("key", "gupshup_line").maybeSingle()
+  const activeLine = (lineSetting as { value: { active?: string } } | null)?.value?.active === "secours" ? "secours" : "principal"
 
   // Réglage de l'assistant IA WhatsApp (pause/actif) — défaut actif si absent.
   const { data: assistantSetting } = await adminDb.from("app_settings").select("value").eq("key", "wa_assistant").maybeSingle()
@@ -106,6 +115,11 @@ export default async function WhatsAppPage() {
 
       {/* Statut moteur Gupshup / OTP */}
       <GupshupStatusCard gupshupConfigured={gupshupConfigured} otpEngine={otpEngine} />
+
+      {/* Bascule numéro d'envoi Gupshup : principal ↔ secours */}
+      {gupshupConfigured && (
+        <GupshupLineToggle active={activeLine} serviceLine={serviceLine} secoursConfigured={secoursConfigured} />
+      )}
 
       {/* Panneau diagnostic notifications */}
       <NotifStats {...notifStats} />
@@ -160,6 +174,10 @@ export default async function WhatsAppPage() {
                 {accounts.map(a => {
                   const meta = STATUS_META[a.status]
                   const zombie = a.reconnexions_count >= ZOMBIE_THRESHOLD
+                  // Moteurs Cloud/API (Gupshup, Twilio) : envoi par clé API, PAS
+                  // d'appairage QR ni de socket → le statut « connecté/déconnecté »
+                  // n'a aucun sens ici. On affiche un état neutre « API Cloud ».
+                  const isCloudApi = a.engine === "api_officielle" || a.engine === "twilio"
                   return (
                     <tr key={a.id} className={`border-t border-gray-50 hover:bg-gray-50/60 transition-colors ${!a.actif ? "opacity-50" : ""}`}>
                       <td className="px-4 py-3">
@@ -167,9 +185,16 @@ export default async function WhatsAppPage() {
                         <p className="text-xs text-gray-400 font-mono">{a.numero}</p>
                       </td>
                       <td className="px-4 py-3">
-                        <span className={`inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full ${meta.cls}`}>
-                          <meta.Icon className="w-3 h-3" /> {meta.label}
-                        </span>
+                        {isCloudApi ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-blue-50 text-blue-700"
+                            title="Envoi par clé API (Gupshup/Twilio) — aucun appairage requis. L'état d'envoi réel est indiqué dans la carte « Moteur d'envoi Gupshup » ci-dessus.">
+                            <Cloud className="w-3 h-3" /> API Cloud
+                          </span>
+                        ) : (
+                          <span className={`inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full ${meta.cls}`}>
+                            <meta.Icon className="w-3 h-3" /> {meta.label}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <GroupsManager
@@ -191,7 +216,13 @@ export default async function WhatsAppPage() {
                         {a.dernier_ping ? formatRelativeDate(a.dernier_ping) : "—"}
                       </td>
                       <td className="px-4 py-3">
-                        <QrDisplay accountId={a.id} initialStatus={a.status} />
+                        {isCloudApi ? (
+                          <span className="text-xs text-gray-400" title="Le numéro Cloud est géré par sa clé API (Gupshup). Pour changer de numéro d'envoi, utilisez la bascule « Numéro d'envoi WhatsApp » ci-dessus.">
+                            Non requis (clé API)
+                          </span>
+                        ) : (
+                          <QrDisplay accountId={a.id} initialStatus={a.status} />
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <WaAccountControls id={a.id} engine={a.engine} actif={a.actif} role={(a.role as "ingestion" | "notifier") ?? "ingestion"} />
