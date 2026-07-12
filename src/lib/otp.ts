@@ -23,6 +23,32 @@ function genCode(): string {
 }
 
 /**
+ * Neutralise les notifications OTP encore en file (envoye=false) pour un compte
+ * donné. Empêche le dispatcher de livrer un code déjà consommé/expiré après que
+ * l'utilisateur a validé (ou épuisé) son code. Best-effort : n'échoue jamais
+ * l'appelant.
+ *
+ * Cible par user_id (comptes connectés) ET par destination (numéro — utile pour
+ * les OTP envoyés à un téléphone qui peut ne pas être rattaché au profil).
+ */
+async function neutralizeOtpNotifications(
+  admin: ReturnType<typeof createAdminClient>,
+  userId: string,
+  raison: string,
+  destination?: string,
+): Promise<void> {
+  const filter = destination
+    ? `user_id.eq.${userId},contact_telephone.eq.${destination}`
+    : `user_id.eq.${userId}`
+  await admin.from("notifications")
+    .update({ envoye: true, envoye_le: new Date().toISOString(), erreur: raison } as never)
+    .eq("type", "otp_verification")
+    .eq("envoye", false)
+    .or(filter)
+    .then(() => {}, (e: unknown) => console.error("INAYA-OTP-NEUTRALIZE", (e as Error).message))
+}
+
+/**
  * Canaux réellement livrables selon la config serveur et le contexte du compte.
  * - WhatsApp : toujours (dispatcher en place) si un numéro existe.
  * - SMS      : si AT_API_KEY est présent.
@@ -153,19 +179,21 @@ export async function verifyOtp(userId: string, code: string): Promise<OtpResult
   if (clean.length !== 6) return { ok: false, error: "Le code doit comporter 6 chiffres." }
 
   const { data: row } = await admin.from("otp_codes")
-    .select("id, code_hash, expires_at, attempts, canal")
+    .select("id, code_hash, expires_at, attempts, canal, destination")
     .eq("user_id", userId).is("consumed_at", null)
     .order("created_at", { ascending: false }).limit(1).maybeSingle()
 
-  const otp = row as { id: string; code_hash: string; expires_at: string; attempts: number; canal: string } | null
+  const otp = row as { id: string; code_hash: string; expires_at: string; attempts: number; canal: string; destination: string } | null
   if (!otp) return { ok: false, error: "Aucun code actif. Demandez un nouveau code." }
 
   if (new Date(otp.expires_at).getTime() < Date.now()) {
     await admin.from("otp_codes").update({ consumed_at: new Date().toISOString() } as never).eq("id", otp.id)
+    await neutralizeOtpNotifications(admin, userId, "code expiré")
     return { ok: false, error: "Code expiré. Demandez un nouveau code." }
   }
   if (otp.attempts >= MAX_ATTEMPTS) {
     await admin.from("otp_codes").update({ consumed_at: new Date().toISOString() } as never).eq("id", otp.id)
+    await neutralizeOtpNotifications(admin, userId, "trop de tentatives")
     return { ok: false, error: "Trop de tentatives. Demandez un nouveau code." }
   }
 
@@ -181,6 +209,12 @@ export async function verifyOtp(userId: string, code: string): Promise<OtpResult
     .eq("id", userId)
   // 42703 = colonnes de vérif absentes (migration 034 non appliquée) → succès quand même.
   if (updErr && updErr.code !== "42703") console.error("INAYA-OTP-003", updErr.message)
+
+  // Anti-spam : neutralise TOUTES les notifications OTP encore en file pour ce
+  // compte. Sans ça, le dispatcher livrait des codes déjà consommés (donc
+  // inutilisables) pendant des minutes après la validation → l'utilisateur
+  // recevait des OTP alors même que son compte était déjà vérifié.
+  await neutralizeOtpNotifications(admin, userId, "compte vérifié — code neutralisé", otp.destination)
 
   return { ok: true }
 }
