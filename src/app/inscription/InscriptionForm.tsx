@@ -9,7 +9,8 @@ import {
   type AccountType,
 } from "./actions"
 import type { OtpCanal } from "@/lib/otp"
-import { COUNTRIES, DEFAULT_COUNTRY, flagEmoji, type Country } from "@/lib/countries"
+import { DEFAULT_COUNTRY, type Country } from "@/lib/countries"
+import CountrySelect from "@/components/shared/CountrySelect"
 
 const TYPES: { value: AccountType; label: string; desc: string; Icon: typeof Home }[] = [
   { value: "chercheur",    label: "Je cherche un bien", desc: "Louer ou acheter",          Icon: Search },
@@ -250,22 +251,13 @@ export default function InscriptionForm() {
             )}
 
             <input value={nom} onChange={e => setNom(e.target.value)} required placeholder="Nom complet" className={field} />
-            {/* Téléphone : indicatif pays (Côte d'Ivoire en tête) + numéro local */}
+            {/* Téléphone : indicatif pays (compact, Côte d'Ivoire en tête) + numéro local.
+                Le sélecteur replié ne montre QUE drapeau + indicatif pour laisser toute
+                la place au champ numéro sur mobile. */}
             <div className="flex gap-2">
-              <select value={country.iso} onChange={e => {
-                const next = COUNTRIES.find(c => c.iso === e.target.value)
-                if (next) setCountry(next)
-              }}
-                aria-label="Indicatif pays"
-                className={`${field} flex-shrink-0 w-[38%] cursor-pointer`}>
-                {COUNTRIES.map(c => (
-                  <option key={`${c.iso}-${c.name}`} value={c.iso}>
-                    {flagEmoji(c.iso)} {c.dial} {c.name.length > 16 ? c.name.slice(0, 15) + "…" : c.name}
-                  </option>
-                ))}
-              </select>
+              <CountrySelect value={country} onChange={setCountry} />
               <input value={telephone} onChange={e => setTelephone(e.target.value)} type="tel" required
-                placeholder="Numéro WhatsApp" className={`${field} flex-1`} />
+                placeholder="Numéro WhatsApp" className={`${field} flex-1 min-w-0`} />
             </div>
             <input value={commune} onChange={e => setCommune(e.target.value)} required placeholder="Commune / ville" className={field} />
             <input value={email} onChange={e => setEmail(e.target.value)} type="email" autoComplete="email"
