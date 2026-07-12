@@ -34,7 +34,10 @@ export async function POST(
   if (!prop) return NextResponse.json({ error: "Annonce introuvable" }, { status: 404 })
 
   const p = prop as { id: string; statut: string; source: string; created_at: string }
-  if (p.source !== "proprietaire" || p.statut !== "en_attente_validation") {
+  // On n'exige PLUS statut=en_attente_validation : la modération IA auto-approuve
+  // souvent l'annonce quasi immédiatement après création, ce qui bloquait l'upload
+  // des photos par le propriétaire. La source 'proprietaire' + fenêtre 2h suffisent.
+  if (p.source !== "proprietaire") {
     return NextResponse.json({ error: "Upload non autorisé" }, { status: 403 })
   }
   if (Date.now() - new Date(p.created_at).getTime() > WINDOW_MS) {
@@ -123,7 +126,7 @@ export async function PUT(
     .select("id, statut, source, created_at").eq("id", propertyId).single()
   const p = prop as { statut: string; source: string; created_at: string } | null
   if (!p) return NextResponse.json({ error: "Annonce introuvable" }, { status: 404 })
-  if (p.source !== "proprietaire" || p.statut !== "en_attente_validation")
+  if (p.source !== "proprietaire")
     return NextResponse.json({ error: "Upload non autorisé" }, { status: 403 })
   if (Date.now() - new Date(p.created_at).getTime() > WINDOW_MS)
     return NextResponse.json({ error: "Délai d'upload expiré (2h)." }, { status: 403 })

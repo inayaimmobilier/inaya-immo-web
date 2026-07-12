@@ -3,6 +3,7 @@ import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
 import { createClient, createAdminClient } from "@/lib/supabase/server"
 import OwnerEditForm, { type EditableProperty } from "@/components/properties/OwnerEditForm"
+import MediaSection from "@/app/admin/annonces/[id]/MediaSection"
 import { updateMyAgentProperty, deleteMyAgentProperty } from "./actions"
 
 export const metadata = { title: "Modifier l'annonce · Inaya Immo" }
@@ -24,6 +25,14 @@ export default async function EditAgentPropertyPage({ params }: { params: Promis
   const property = data as (EditableProperty & { created_by: string | null }) | null
   if (!property || property.created_by !== user.id) notFound()
 
+  // Médias existants (l'agent a le rôle staff → route admin autorisée).
+  const { data: mediaData } = await admin
+    .from("property_media")
+    .select("id, type, url, ordre")
+    .eq("property_id", id)
+    .order("ordre", { ascending: true })
+  const media = (mediaData ?? []) as { id: string; type: "image" | "video"; url: string; ordre: number }[]
+
   return (
     <div className="p-6 max-w-2xl mx-auto space-y-6">
       <Link href="/agent/annonces" className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-blue-700">
@@ -39,6 +48,16 @@ export default async function EditAgentPropertyPage({ params }: { params: Promis
         deleteAction={deleteMyAgentProperty.bind(null, id)}
         redirectAfterDelete="/agent/annonces"
       />
+
+      {/* Gestion des photos / vidéos — l'agent (rôle staff) gère les médias des
+          annonces qu'il traite via la route admin. */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900">Photos &amp; vidéos</h2>
+          <p className="text-sm text-gray-500 mt-0.5">Ajoutez ou retirez les médias de cette annonce.</p>
+        </div>
+        <MediaSection propertyId={id} initialMedia={media} />
+      </div>
     </div>
   )
 }

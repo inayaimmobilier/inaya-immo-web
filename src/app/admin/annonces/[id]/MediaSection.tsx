@@ -15,9 +15,12 @@ interface MediaRow {
 interface Props {
   propertyId: string
   initialMedia: MediaRow[]
+  /** Préfixe des routes d'upload. Défaut : admin (staff). Les propriétaires
+   *  connectés et agents utilisent le même composant avec leur propre préfixe. */
+  routePrefix?: string
 }
 
-export default function MediaSection({ propertyId, initialMedia }: Props) {
+export default function MediaSection({ propertyId, initialMedia, routePrefix = "/api/admin/annonces" }: Props) {
   const [media, setMedia] = useState<MediaRow[]>(initialMedia)
   const [uploading, setUploading] = useState(false)
   const [errors, setErrors] = useState<string[]>([])
@@ -25,6 +28,9 @@ export default function MediaSection({ propertyId, initialMedia }: Props) {
   const [, startTransition] = useTransition()
   const inputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
+  // Base des routes : propriétaire/authentifié utilise /api/annonces (route
+  // publique étendue), le staff utilise /api/admin/annonces.
+  const base = `${routePrefix}/${propertyId}/media`
 
   // Upload DIRECT navigateur → R2 (URL présignée), puis enregistrement en base.
   // Contourne la limite de corps serverless (~4,5 Mo sur Vercel) qui bloquait
@@ -39,7 +45,7 @@ export default function MediaSection({ propertyId, initialMedia }: Props) {
       for (const file of Array.from(files)) {
         try {
           // 1) URL présignée
-          const presignRes = await fetch(`/api/admin/annonces/${propertyId}/media/presign`, {
+          const presignRes = await fetch(`${base}/presign`, {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ files: [{ name: file.name, contentType: file.type, size: file.size }] }),
           })
@@ -66,7 +72,7 @@ export default function MediaSection({ propertyId, initialMedia }: Props) {
 
       // 3) Enregistrement en base des médias uploadés
       if (toRecord.length > 0) {
-        const rec = await fetch(`/api/admin/annonces/${propertyId}/media`, {
+        const rec = await fetch(base, {
           method: "PUT", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ items: toRecord }),
         })
@@ -87,7 +93,7 @@ export default function MediaSection({ propertyId, initialMedia }: Props) {
   async function handleDelete(id: string) {
     setDeletingId(id)
     try {
-      await fetch(`/api/admin/annonces/${propertyId}/media`, {
+      await fetch(base, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mediaId: id }),

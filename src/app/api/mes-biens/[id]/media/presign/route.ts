@@ -1,37 +1,34 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createAdminClient } from "@/lib/supabase/server"
+import { createClient, createAdminClient } from "@/lib/supabase/server"
 import { presignPutUrl, publicUrlForKey, r2Configured } from "@/lib/r2"
 
-// URLs présignées pour l'upload direct navigateur → R2 côté PUBLIC (propriétaire
-// juste après dépôt, sans compte). Mêmes garde-fous que l'upload public : annonce
-// de source 'proprietaire', en attente de validation, créée il y a moins de 2 h.
+// URLs présignées pour l'upload direct navigateur → R2, côté PROPRIÉTAIRE
+// CONNECTÉ (espace /proprietaire/biens/[id]). Authentifié : l'utilisateur doit
+// posséder le bien (property_publishers.publisher_id = son id). Aucune limite
+// de temps (contrairement à la route publique /api/annonces limitée à 2h) : un
+// propriétaire peut gérer les médias de ses biens à vie.
 export const runtime = "nodejs"
 
 const VIDEO_EXTS = new Set(["mp4", "mov", "avi", "webm", "mkv"])
 const MAX_FILE_BYTES = 200 * 1024 * 1024
-const WINDOW_MS = 2 * 60 * 60 * 1000
 
-async function assertUploadable(propertyId: string): Promise<string | null> {
+/** Vérifie l'auth + la propriété du bien. Renvoie l'id user ou une Response d'erreur. */
+async function assertOwner(propertyId: string): Promise<string | NextResponse> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: "Non authentifié" }, { status: 401 })
   const admin = createAdminClient()
-  const { data: prop } = await admin.from("properties")
-    .select("id, statut, source, created_at").eq("id", propertyId).single()
-  const p = prop as { statut: string; source: string; created_at: string } | null
-  if (!p) return "Annonce introuvable"
-  // On n'exige PLUS statut=en_attente_validation : la modération IA auto-approuve
-  // souvent l'annonce quasi immédiatement après création (notamment sans clé API
-  // IA), ce qui faisait passer le statut à 'publie' AVANT que le propriétaire
-  // n'ait eu le temps d'uploader ses photos → upload bloqué à tort.
-  // La source 'proprietaire' + la fenêtre de 2h suffisent à sécuriser l'accès.
-  if (p.source !== "proprietaire") return "Upload non autorisé"
-  if (Date.now() - new Date(p.created_at).getTime() > WINDOW_MS) return "Délai d'upload expiré (2h). Contactez-nous."
-  return null
+  const { data: pub } = await admin
+    .from("property_publishers").select("id").eq("property_id", propertyId).eq("publisher_id", user.id).maybeSingle()
+  if (!pub) return NextResponse.json({ error: "Accès refusé" }, { status: 403 })
+  return user.id
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   if (!r2Configured()) return NextResponse.json({ error: "Stockage non configuré" }, { status: 503 })
   const { id: propertyId } = await params
-  const guard = await assertUploadable(propertyId)
-  if (guard) return NextResponse.json({ error: guard }, { status: guard.includes("introuvable") ? 404 : 403 })
+  const guard = await assertOwner(propertyId)
+  if (guard instanceof NextResponse) return guard
 
   let body: { files?: { name?: string; contentType?: string; size?: number }[] }
   try { body = await req.json() } catch { return NextResponse.json({ error: "Corps invalide" }, { status: 400 }) }
