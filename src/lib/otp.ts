@@ -59,6 +59,18 @@ export async function issueOtp(userId: string, canal: OtpCanal, destination: str
     .update({ consumed_at: new Date().toISOString() } as never)
     .eq("user_id", userId).is("consumed_at", null)
 
+  // Anti-spam OTP : neutralise les anciennes notifications d'OTP non envoyées
+  // pour ce compte/numéro. Sans ça, chaque « Renvoyer le code » empile une ligne
+  // dans la file ; le dispatcher (cycle ~15 s) les livre toutes en cascade, y
+  // compris des codes déjà invalidés ci-dessus → l'utilisateur reçoit un code
+  // mort que verifyOtp refusera. En marquant envoye=true ici, seule la TOUTE
+  // DERNIÈRE notification (créée plus bas) partira réellement.
+  await admin.from("notifications")
+    .update({ envoye: true, erreur: "remplacé par un nouveau code OTP" } as never)
+    .eq("type", "otp_verification")
+    .eq("envoye", false)
+    .or(`user_id.eq.${userId},contact_telephone.eq.${dest}`)
+
   const { error: insErr } = await admin.from("otp_codes").insert({
     user_id: userId, canal, destination: dest, code_hash: hashCode(code), expires_at,
   } as never)
@@ -112,8 +124,11 @@ export async function issueOtp(userId: string, canal: OtpCanal, destination: str
         if (r.ok) return { ok: true }
         // Service joignable mais envoi refusé : aucun compte connecté (503) ou
         // numéro absent de WhatsApp (400). On surface la vraie raison à l'utilisateur.
+        // On NE file PAS la notification : l'échec est explicite, l'utilisateur
+        // relancera lui-même via « Renvoyer le code ». Filer ici créait une
+        // notification fantôme que le dispatcher livrait ensuite (parfois avec un
+        // code déjà invalidé) → source du spam OTP observé.
         const data = (await r.json().catch(() => ({}))) as { error?: string }
-        await enqueue() // trace pour un retry auto quand le notificateur reviendra
         return { ok: false, error: data.error || "Envoi WhatsApp impossible pour le moment." }
       } catch {
         // Service injoignable → file d'attente, le dispatcher réessaiera.

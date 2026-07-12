@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { Loader2, Eye, EyeOff, Search, Home, Wrench, Handshake, ShieldCheck, ArrowLeft, Briefcase } from "lucide-react"
 import Link from "next/link"
@@ -72,6 +72,28 @@ export default function InscriptionForm() {
   const [code, setCode] = useState("")
   const [info, setInfo] = useState<string | null>(null)
   const [agentApplied, setAgentApplied] = useState(false)
+  // Cooldown de renvoi (60 s) anti-spam : empêche les clics répétés sur
+  // « Renvoyer le code » qui empilaient des notifications OTP en base.
+  const RESEND_COOLDOWN_S = 60
+  const [resendIn, setResendIn] = useState(0)
+  const resendTick = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const startResendCooldown = useCallback(() => {
+    setResendIn(RESEND_COOLDOWN_S)
+    if (resendTick.current) clearInterval(resendTick.current)
+    resendTick.current = setInterval(() => {
+      setResendIn(s => {
+        if (s <= 1) {
+          if (resendTick.current) clearInterval(resendTick.current)
+          resendTick.current = null
+          return 0
+        }
+        return s - 1
+      })
+    }, 1000)
+  }, [])
+
+  useEffect(() => () => { if (resendTick.current) clearInterval(resendTick.current) }, [])
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault()
@@ -117,6 +139,7 @@ export default function InscriptionForm() {
       if (!res.ok) { setError(res.error); setLoading(false); return }
       setSent(true)
       setInfo(`Code envoyé par ${CANAL_META[chosenCanal].label}. Saisissez-le ci-dessous.`)
+      startResendCooldown()
       setLoading(false)
     } catch {
       setError("Envoi impossible. Réessayez."); setLoading(false)
@@ -307,8 +330,10 @@ export default function InscriptionForm() {
                       className="w-full flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-green-700 transition-colors disabled:opacity-60">
                       {loading ? <><Loader2 className="w-4 h-4 animate-spin" /> Vérification…</> : "Vérifier"}
                     </button>
-                    <button type="button" onClick={handleSend} disabled={loading}
-                      className="w-full text-xs text-gray-500 hover:text-blue-700">Renvoyer le code</button>
+                    <button type="button" onClick={handleSend} disabled={loading || resendIn > 0}
+                      className="w-full text-xs text-gray-500 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                      {resendIn > 0 ? `Renvoyer dans ${resendIn}s` : "Renvoyer le code"}
+                    </button>
                   </form>
                 )}
               </>

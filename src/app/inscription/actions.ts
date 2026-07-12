@@ -227,6 +227,18 @@ export async function sendVerificationCode(canal: OtpCanal): Promise<Res> {
   if (!user) return { ok: false, error: "Session expirée. Reconnectez-vous." }
 
   const admin = createAdminClient()
+
+  // Anti-abus : limite à un code toutes les 45 s. Le cooldown côté client (60 s)
+  // protège l'UX, mais ce garde-fou serveur empêche tout contournement (appel
+  // direct de la server action) de saturer la file de notifications WhatsApp.
+  const since = new Date(Date.now() - 45_000).toISOString()
+  const { count } = await admin.from("otp_codes")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", user.id)
+    .gte("created_at", since)
+  if ((count ?? 0) > 0) {
+    return { ok: false, error: "Patientez un instant avant de demander un nouveau code." }
+  }
   const { data: prof } = await admin.from("profiles").select("telephone").eq("id", user.id).maybeSingle()
   const phone = (prof as { telephone?: string | null } | null)?.telephone
     ?? (user.user_metadata?.telephone as string | undefined) ?? ""
