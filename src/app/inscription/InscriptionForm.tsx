@@ -54,6 +54,7 @@ export default function InscriptionForm() {
   const [commune, setCommune] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [passwordConfirm, setPasswordConfirm] = useState("")
   const [showPwd, setShowPwd] = useState(false)
 
   const [loading, setLoading] = useState(false)
@@ -99,10 +100,12 @@ export default function InscriptionForm() {
     e.preventDefault()
     setLoading(true); setError(null)
     if (password.length < 6) { setError("Le mot de passe doit comporter au moins 6 caractères."); setLoading(false); return }
+    if (password !== passwordConfirm) { setError("Les deux mots de passe ne correspondent pas."); setLoading(false); return }
 
     try {
       const res = await registerAccount({
         type, nom, telephone, commune, password,
+        passwordConfirm,
         email: email.trim() || null,
         proprietaireType: type === "proprietaire" ? proprietaireType : null,
         metier: type === "prestataire" ? metier : null,
@@ -248,6 +251,14 @@ export default function InscriptionForm() {
             <div className="relative">
               <input value={password} onChange={e => setPassword(e.target.value)} type={showPwd ? "text" : "password"}
                 autoComplete="new-password" required placeholder="Mot de passe" className={`${field} pr-10`} />
+              <button type="button" onClick={() => setShowPwd(!showPwd)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            <div className="relative">
+              <input value={passwordConfirm} onChange={e => setPasswordConfirm(e.target.value)} type={showPwd ? "text" : "password"}
+                autoComplete="new-password" required placeholder="Confirmer le mot de passe" className={`${field} pr-10`} />
               <button type="button" onClick={() => setShowPwd(!showPwd)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                 {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}

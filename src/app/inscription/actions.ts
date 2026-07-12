@@ -74,6 +74,9 @@ export async function registerAccount(input: {
   telephone: string
   commune: string
   password: string
+  /** Confirmation du mot de passe (saisie double côté UI). Défense en profondeur
+   *  côté serveur au cas où la validation client serait contournée. */
+  passwordConfirm?: string
   email?: string | null
   proprietaireType?: "diffuseur" | "gere" | null
   metier?: string | null
@@ -100,6 +103,9 @@ export async function registerAccount(input: {
   if (phoneDigits(telephone).length < 8) return { ok: false, error: "Numéro de téléphone invalide." }
   if (!commune) return { ok: false, error: "Votre commune est requise." }
   if (password.length < 6) return { ok: false, error: "Le mot de passe doit comporter au moins 6 caractères." }
+  if (input.passwordConfirm !== undefined && input.passwordConfirm !== password) {
+    return { ok: false, error: "Les deux mots de passe ne correspondent pas." }
+  }
   if (realEmail && !realEmail.includes("@")) return { ok: false, error: "Adresse e-mail invalide." }
   if (input.type === "prestataire" && !(input.metier ?? "").trim()) return { ok: false, error: "Indiquez votre métier (plomberie, électricité…)." }
 
