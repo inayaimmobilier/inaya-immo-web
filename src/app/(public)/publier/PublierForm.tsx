@@ -6,17 +6,7 @@ import {
   CheckCircle2, Loader2, AlertCircle, Upload, X,
   ImageIcon, Film, ArrowRight, Plus, Pencil,
 } from "lucide-react"
-
-const CATEGORIES = [
-  { value: "maison", label: "Maison" },
-  { value: "appartement", label: "Appartement" },
-  { value: "studio", label: "Studio" },
-  { value: "terrain", label: "Terrain" },
-  { value: "local_commercial", label: "Local commercial" },
-  { value: "bureau", label: "Bureau" },
-  { value: "magasin", label: "Magasin" },
-  { value: "autre", label: "Autre" },
-]
+import { usePropertyTypes } from "@/hooks/usePropertyTypes"
 
 interface Zone { id: string; nom: string }
 
@@ -261,6 +251,10 @@ export default function PublierForm({
     async (_prev: unknown, fd: FormData) => publierAnnonce(fd),
     null,
   )
+  // Types de biens gérés par l'admin (dynamiques — ex. « Villa » si ajouté),
+  // + « Autre » en fin de liste pour les biens hors catégories standards.
+  const { options: adminCats } = usePropertyTypes()
+  const CATEGORIES = [...adminCats, { value: "autre", label: "Autre" }]
   const [mediaUploaded, setMediaUploaded] = useState(false)
   const [villeId, setVilleId] = useState(villes[0]?.id ?? "")
   const [villeNom, setVilleNom] = useState(villes[0]?.nom ?? "")

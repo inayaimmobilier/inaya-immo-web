@@ -4,22 +4,13 @@ import { useActionState, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { Pencil, X, Save, CheckCircle, XCircle, Clock, RefreshCw, Trash2 } from "lucide-react"
 import { updateProperty, changeStatut, deleteProperty } from "./actions"
+import { usePropertyTypes } from "@/hooks/usePropertyTypes"
 
 const TYPE_OPTIONS = [
   { value: "location", label: "Location" },
   { value: "vente",    label: "Vente" },
   { value: "cession",  label: "Cession de biens" },
   { value: "residence_meublee", label: "Résidence meublée" },
-]
-const CATEGORIE_OPTIONS = [
-  { value: "maison", label: "Maison" },
-  { value: "appartement", label: "Appartement" },
-  { value: "studio", label: "Studio" },
-  { value: "terrain", label: "Terrain" },
-  { value: "local_commercial", label: "Local commercial" },
-  { value: "bureau", label: "Bureau" },
-  { value: "magasin", label: "Magasin" },
-  { value: "autre", label: "Autre" },
 ]
 
 interface Props {
@@ -54,6 +45,10 @@ const STATUS_ACTIONS = [
 
 export default function PropertyEditForm({ propertyId, initial }: Props) {
   const router = useRouter()
+  // Types de biens gérés par l'admin (dynamiques) + « Autre » pour les biens
+  // hors catégories standards.
+  const { options: adminCats } = usePropertyTypes()
+  const CATEGORIE_OPTIONS = [...adminCats, { value: "autre", label: "Autre" }]
   const [editing, setEditing] = useState(false)
   const [statusLoading, setStatusLoading] = useState<string | null>(null)
   const [statusMsg, setStatusMsg] = useState<string | null>(null)

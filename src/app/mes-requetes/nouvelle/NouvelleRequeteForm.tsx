@@ -4,16 +4,7 @@ import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { BellPlus, Loader2, Check, MessageCircle } from "lucide-react"
 import { saveSearchFull } from "./actions"
-
-const CATEGORIES = [
-  { value: "maison",          label: "Maison" },
-  { value: "appartement",     label: "Appartement" },
-  { value: "studio",          label: "Studio" },
-  { value: "terrain",         label: "Terrain" },
-  { value: "local_commercial",label: "Local commercial" },
-  { value: "bureau",          label: "Bureau" },
-  { value: "magasin",         label: "Magasin" },
-]
+import { usePropertyTypes } from "@/hooks/usePropertyTypes"
 
 const PIECES_MIN = [
   { value: "", label: "Peu importe" },
@@ -39,6 +30,7 @@ export default function NouvelleRequeteForm({
   isAuthenticated: boolean
 }) {
   const router = useRouter()
+  const { options: CATEGORIES } = usePropertyTypes()
   const [pending, start] = useTransition()
   const [done, setDone] = useState(false)
   const [error, setError] = useState<string | null>(null)

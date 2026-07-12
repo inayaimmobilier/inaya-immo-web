@@ -3,21 +3,12 @@
 import { useActionState, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { Loader2, AlertCircle, CheckCircle2, Trash2, Save } from "lucide-react"
+import { usePropertyTypes } from "@/hooks/usePropertyTypes"
 
 const TYPE_OPTIONS = [
   { value: "location", label: "Location", desc: "Maison, studio, appartement…" },
   { value: "vente", label: "Vente", desc: "Terrain, maison, local…" },
   { value: "cession", label: "Cession", desc: "Fonds de commerce, bail à céder…" },
-]
-const CATEGORIES = [
-  { value: "maison", label: "Maison" },
-  { value: "appartement", label: "Appartement" },
-  { value: "studio", label: "Studio" },
-  { value: "terrain", label: "Terrain" },
-  { value: "local_commercial", label: "Local commercial" },
-  { value: "bureau", label: "Bureau" },
-  { value: "magasin", label: "Magasin" },
-  { value: "autre", label: "Autre" },
 ]
 
 const inputCls = "w-full px-4 py-3 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
@@ -59,6 +50,9 @@ export default function OwnerEditForm({
   redirectAfterDelete: string
 }) {
   const router = useRouter()
+  // Types de biens gérés par l'admin (dynamiques) + « Autre ».
+  const { options: adminCats } = usePropertyTypes()
+  const CATEGORIES = [...adminCats, { value: "autre", label: "Autre" }]
   const [typeOffre, setTypeOffre] = useState(property.type_offre)
   const [state, action, pending] = useActionState(updateAction, null)
 
