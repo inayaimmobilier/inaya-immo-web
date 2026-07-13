@@ -148,13 +148,12 @@ export async function issueOtp(userId: string, canal: OtpCanal, destination: str
           signal: AbortSignal.timeout(9000),
         })
         if (r.ok) return { ok: true }
-        // Service joignable mais envoi refusé : aucun compte connecté (503) ou
-        // numéro absent de WhatsApp (400). On surface la vraie raison à l'utilisateur.
-        // On NE file PAS la notification : l'échec est explicite, l'utilisateur
-        // relancera lui-même via « Renvoyer le code ». Filer ici créait une
-        // notification fantôme que le dispatcher livrait ensuite (parfois avec un
-        // code déjà invalidé) → source du spam OTP observé.
+        // Service joignable mais envoi refusé (503 aucun compte, 400 mauvais numéro,
+        // 502 Gupshup HS…). On enfile quand même dans notifications : le dispatcher
+        // retry au prochain cycle (utile si Gupshup/Baileys revient). L'anti-spam
+        // (neutralisation des anciens OTP, correctif A) empêche l'accumulation.
         const data = (await r.json().catch(() => ({}))) as { error?: string }
+        await enqueue() // filet de sécurité : ne jamais perdre l'OTP
         return { ok: false, error: data.error || "Envoi WhatsApp impossible pour le moment." }
       } catch {
         // Service injoignable → file d'attente, le dispatcher réessaiera.
