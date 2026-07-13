@@ -256,29 +256,44 @@ export async function deleteUser(targetId: string): Promise<ActionResult> {
   }
 
   // Détache les références SANS ON DELETE CASCADE (sinon la suppression échoue par
-  // violation de clé étrangère). Best-effort : on ignore table/colonne absente.
+  // violation de clé étrangère). Best-effort : on ignore table/colonne absente
+  // (migration non appliquée, etc.). On couvre TOUTES les FK vers profiles(id)
+  // recensées dans le schéma — une seule oubliée bloque la suppression.
   const detach = async (table: string, col: string) => {
     try { await admin.from(table).update({ [col]: null } as never).eq(col, targetId) } catch { /* ignore */ }
   }
   const purge = async (table: string, col: string) => {
     try { await admin.from(table).delete().eq(col, targetId) } catch { /* ignore */ }
   }
-  // Contenu conservé mais désassocié (on garde l'annonce, on retire l'auteur).
+  // Contenu conservé mais désassocié (on garde l'annonce/la règle, on retire l'auteur).
   await detach("properties", "created_by")
   await detach("properties", "validated_by")
   await detach("leads", "client_id")
   await detach("leads", "agent_id")
   await detach("transactions", "agent_id")
   await detach("transactions", "created_by")
-  // Données strictement personnelles → supprimées.
+  await detach("property_publishers", "publisher_id")
+  await detach("conversations", "user_id")
+  await detach("moderation_logs", "decide_par")
+  await detach("audit_logs", "user_id")
+  await detach("commission_rules_history", "modifie_par")
+  await detach("signalements", "traite_par")
+  await detach("app_settings", "updated_by")
+  await detach("agent_applications", "decided_by")
+  // Données strictement personnelles ou logs de suivi → supprimées.
   await purge("search_requests", "user_id")
   await purge("notifications", "user_id")
   await purge("otp_codes", "user_id")
+  await purge("lead_followups", "agent_id")   // NOT NULL sans cascade → bloquait les agents
+  await purge("signalements", "user_id")
+  await purge("favorites", "user_id")
 
   const { error: delErr } = await admin.auth.admin.deleteUser(targetId)
   if (delErr) {
     console.error("INAYA-USER-030", delErr)
-    return { ok: false, error: "Échec de la suppression du compte." }
+    // Message détaillé : une FK oubliée ou un souci Supabase doit être visible,
+    // pas masqué derrière un message générique qui empêche tout diagnostic.
+    return { ok: false, error: `Échec de la suppression du compte : ${delErr.message}` }
   }
   // Filet de sécurité si la cascade n'a pas retiré le profil.
   await admin.from("profiles").delete().eq("id", targetId)
