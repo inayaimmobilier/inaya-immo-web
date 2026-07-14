@@ -144,7 +144,7 @@ export async function issueOtp(userId: string, canal: OtpCanal, destination: str
             "Content-Type": "application/json",
             ...(process.env.WA_HTTP_SECRET ? { "x-inaya-secret": process.env.WA_HTTP_SECRET } : {}),
           },
-          body: JSON.stringify({ to: dest, text: texte, engine }),
+          body: JSON.stringify({ to: dest, text: texte, engine, type: "otp_verification" }),
           signal: AbortSignal.timeout(9000),
         })
         if (r.ok) return { ok: true }
