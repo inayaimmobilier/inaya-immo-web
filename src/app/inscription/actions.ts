@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { createClient, createAdminClient } from "@/lib/supabase/server"
 import { issueOtp, verifyOtp, availableCanaux, type OtpCanal } from "@/lib/otp"
+import { phoneMatchCandidates } from "@/lib/phone"
 
 // Adresse interne quand l'utilisateur ne fournit pas de vrai e-mail (email facultatif).
 const SYNTH_EMAIL_DOMAIN = "auto.inaya-immo.ci"
@@ -141,9 +142,11 @@ export async function registerAccount(input: {
     return { ok: true }
   }
 
-  // Profil déjà rattaché à ce numéro ?
-  const { data: existProf } = await admin.from("profiles").select("id, verifie, role").eq("telephone", telephone).maybeSingle()
-  const existing = existProf as { id: string; verifie?: boolean; role?: string } | null
+  // Profil déjà rattaché à ce numéro ? (matching tolérant local ⇄ +225 pour ne
+  // pas créer un doublon quand un ancien compte est enregistré sans indicatif.)
+  const { data: existRows } = await admin.from("profiles")
+    .select("id, verifie, role").in("telephone", phoneMatchCandidates(telephone)).limit(1)
+  const existing = ((existRows ?? []) as { id: string; verifie?: boolean; role?: string }[])[0] ?? null
 
   // ── Cas A : correction d'une inscription en attente, DANS LA MÊME PAGE.
   // On ne réutilise JAMAIS un compte déduit du seul état de session (un compte

@@ -2,8 +2,8 @@
 
 import { useState, useTransition } from "react"
 import Link from "next/link"
-import { Loader2, Check, Settings2 } from "lucide-react"
-import { updateUserRole, updateUserStatus } from "./actions"
+import { Loader2, Check, Settings2, ShieldCheck } from "lucide-react"
+import { updateUserRole, updateUserStatus, setUserVerified } from "./actions"
 import { ROLE_LABEL, ROLE_COLOR, USER_STATUS_LABEL, USER_STATUS_COLOR, formatRelativeDate } from "@/lib/utils"
 import type { UserRole, UserStatus } from "@/types/database"
 
@@ -42,6 +42,7 @@ const STAFF_ROLES: UserRole[] = ["agent", "moderateur", "admin", "super_admin"]
 export default function UserRow({ user, myRole, isSelf, botUsername, selectable, checked, onToggle }: Props) {
   const [role, setRole] = useState<UserRole>(user.role)
   const [status, setStatus] = useState<UserStatus>(user.status)
+  const [verifie, setVerifie] = useState<boolean>(user.verifie)
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
@@ -73,6 +74,14 @@ export default function UserRow({ user, myRole, isSelf, botUsername, selectable,
     })
   }
 
+  function onVerify() {
+    setError(null)
+    startTransition(async () => {
+      const res = await setUserVerified(user.id, true)
+      if (!res.ok) { setError(res.error) } else { setVerifie(true); flashSaved() }
+    })
+  }
+
   const nomComplet = `${user.prenom || ""} ${user.nom || ""}`.trim() || "—"
   const roleOptions = myRole === "super_admin" ? ROLES : ROLES.filter(r => r !== "super_admin")
 
@@ -95,10 +104,21 @@ export default function UserRow({ user, myRole, isSelf, botUsername, selectable,
             <p className="text-sm font-medium text-gray-900">
               {nomComplet}
               {isSelf && <span className="ml-1.5 text-xs text-blue-600 font-normal">(vous)</span>}
-              {!user.verifie && !isSelf && (
+              {!verifie && !isSelf && (
                 <span className="ml-1.5 text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-100 px-1.5 py-0.5 rounded-full align-middle">Non vérifié</span>
               )}
+              {verifie && !user.verifie && (
+                <span className="ml-1.5 text-[10px] font-medium text-green-700 bg-green-50 border border-green-100 px-1.5 py-0.5 rounded-full align-middle">Validé ✓</span>
+              )}
             </p>
+            {/* Validation manuelle : débloque un compte qui n'a pas reçu son OTP. */}
+            {!verifie && !isSelf && canEdit && (
+              <button onClick={onVerify} disabled={pending}
+                title="Valider ce compte sans OTP (l'utilisateur pourra accéder à la plateforme)"
+                className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-green-700 border border-green-200 hover:bg-green-50 rounded-lg px-2 py-0.5 disabled:opacity-50">
+                <ShieldCheck className="w-3 h-3" /> Valider le compte
+              </button>
+            )}
             <p className="text-xs text-gray-400">{user.email || "—"}</p>
           </div>
         </div>

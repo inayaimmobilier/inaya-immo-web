@@ -3,6 +3,7 @@ import Link from "next/link"
 import { createClient, createAdminClient } from "@/lib/supabase/server"
 import Navbar from "@/components/shared/Navbar"
 import ContactForm from "./ContactForm"
+import QuickContactButtons from "./QuickContactButtons"
 import FavoriteButton from "./FavoriteButton"
 import ReportButton from "./ReportButton"
 import ShareButton from "./ShareButton"
@@ -96,6 +97,16 @@ export default async function BienDetailPage({ params }: PageProps) {
       email: (await isRealEmail(user.email)) ? user.email : null,
     }
   }
+
+  // Contact IMMÉDIAT (WhatsApp/appel) : numéro Inaya (mise en relation médiée —
+  // coordonnées du propriétaire confidentielles) + message pré-rempli avec la réf.
+  const { data: contactSetting } = await createAdminClient()
+    .from("app_settings").select("value").eq("key", "contact_support").maybeSingle()
+  const supportPhone = ((contactSetting as { value?: unknown } | null)?.value as string | undefined)?.trim() || null
+  const refNum = (property as unknown as { reference?: number | null }).reference ?? null
+  const refLabel = refNum != null ? String(refNum) : `INA-${property.id.replace(/-/g, "").slice(0, 6).toUpperCase()}`
+  const listingUrl = absoluteUrl(`/biens/${property.id}`)
+  const quickMessage = `Bonjour, je suis intéressé par l'annonce N° ${refLabel} — « ${property.titre} »${property.quartier ? ` à ${property.quartier}` : ""}. Est-elle toujours disponible ?`
 
   // Déduplication des médias : un même fichier reposté sur WhatsApp est ré-uploadé
   // sous une URL R2 différente mais garde la MÊME taille → doublons visuels. On
@@ -388,8 +399,30 @@ export default async function BienDetailPage({ params }: PageProps) {
                     </Link>
                   </div>
                 ) : (
-                  <ContactForm propertyId={property.id} initial={contactInitial} isResidence={isResidence}
-                  residence={isResidence ? { prix: property.prix, periode: residPeriode ?? "nuit", forfaits } : undefined} />
+                  <div className="space-y-4">
+                    {/* Contact immédiat : WhatsApp / Appel à propos de cette annonce */}
+                    <div className="space-y-2">
+                      <h3 className="font-semibold text-gray-900 text-sm">Contacter maintenant</h3>
+                      <QuickContactButtons
+                        propertyId={property.id} phone={supportPhone}
+                        message={quickMessage} listingUrl={listingUrl}
+                        contact={contactInitial}
+                      />
+                      <p className="text-[11px] text-gray-400 text-center leading-relaxed">
+                        Message ou appel à propos de l&apos;annonce N° {refLabel} — un agent Inaya vous répond.
+                      </p>
+                    </div>
+
+                    {/* Séparateur « ou » */}
+                    <div className="flex items-center gap-3">
+                      <span className="h-px flex-1 bg-gray-100" />
+                      <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">ou</span>
+                      <span className="h-px flex-1 bg-gray-100" />
+                    </div>
+
+                    <ContactForm propertyId={property.id} initial={contactInitial} isResidence={isResidence}
+                    residence={isResidence ? { prix: property.prix, periode: residPeriode ?? "nuit", forfaits } : undefined} />
+                  </div>
                 )}
               </div>
             </div>

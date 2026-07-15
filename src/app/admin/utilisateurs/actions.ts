@@ -319,6 +319,30 @@ export async function bulkDeleteUsers(ids: string[]): Promise<{ ok: true; delete
   return { ok: true, deleted, failed }
 }
 
+/**
+ * Valide (ou dévalide) manuellement un compte en attente de vérification OTP —
+ * met `verifie` à true/false. Débloque un utilisateur qui n'a pas pu recevoir
+ * son code (WhatsApp/SMS/e-mail indisponibles) : sans ça, le middleware le
+ * renvoie indéfiniment vers /verifier. Réservé aux administrateurs.
+ */
+export async function setUserVerified(targetId: string, verifie: boolean): Promise<ActionResult> {
+  const me = await currentProfile()
+  if (!me) return { ok: false, error: "Non authentifié." }
+  if (me.role !== "super_admin" && me.role !== "admin")
+    return { ok: false, error: "Action réservée aux administrateurs." }
+
+  const admin = createAdminClient()
+  const { error } = await admin.from("profiles").update({ verifie } as never).eq("id", targetId)
+  if (error) {
+    console.error("INAYA-USER-050", error)
+    if (error.code === "42703") return { ok: false, error: "Colonne « verifie » absente : appliquez la migration OTP." }
+    return { ok: false, error: "Échec de la validation du compte." }
+  }
+  revalidatePath("/admin/utilisateurs")
+  revalidatePath(`/admin/utilisateurs/${targetId}`)
+  return { ok: true }
+}
+
 /** Modifie le statut d'un utilisateur (actif / suspendu / banni). */
 export async function updateUserStatus(targetId: string, status: UserStatus): Promise<ActionResult> {
   if (!STATUSES.includes(status)) return { ok: false, error: "Statut invalide." }

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { createClient, createAdminClient } from "@/lib/supabase/server"
+import { normalizePhone, phoneDigits, phoneMatchCandidates } from "@/lib/phone"
 
 // Domaine interne utilisé quand le client ne fournit pas de vraie adresse e-mail.
 // Supabase exige un e-mail pour l'auth par mot de passe : on en synthétise un à
@@ -10,12 +11,6 @@ const SYNTH_EMAIL_DOMAIN = "auto.inaya-immo.ci"
 
 type Res = { ok: true } | { ok: false; error: string }
 
-function normalizePhone(raw: string): string {
-  return raw.replace(/[^\d+]/g, "")
-}
-function phoneDigits(raw: string): string {
-  return raw.replace(/\D/g, "")
-}
 function synthEmail(phone: string): string {
   return `${phoneDigits(phone)}@${SYNTH_EMAIL_DOMAIN}`
 }
@@ -46,10 +41,11 @@ export async function quickSignup(input: {
   const email = realEmail ?? synthEmail(telephone)
   const admin = createAdminClient()
 
-  // Anti-doublon sur le téléphone (le téléphone est unique en base).
+  // Anti-doublon sur le téléphone (tolérant local ⇄ +225 pour ne pas créer un
+  // doublon quand l'ancien compte a été enregistré sans indicatif).
   const { data: existing } = await admin
-    .from("profiles").select("id").eq("telephone", telephone).maybeSingle()
-  if (existing) return { ok: false, error: "Un compte existe déjà avec ce numéro. Connectez-vous." }
+    .from("profiles").select("id").in("telephone", phoneMatchCandidates(telephone)).limit(1)
+  if (existing && existing.length > 0) return { ok: false, error: "Un compte existe déjà avec ce numéro. Connectez-vous." }
 
   const { data: created, error: createErr } = await admin.auth.admin.createUser({
     email,
@@ -109,12 +105,14 @@ export async function signInFlexible(identifier: string, password: string): Prom
   let email = id
 
   if (!id.includes("@")) {
-    const phone = normalizePhone(id)
     const admin = createAdminClient()
-    const { data: prof } = await admin
-      .from("profiles").select("id").eq("telephone", phone).maybeSingle()
+    // Recherche tolérante : local (0707…) ⇄ international (+225 0707…).
+    const candidates = phoneMatchCandidates(id)
+    const { data: profs } = await admin
+      .from("profiles").select("id, telephone").in("telephone", candidates).limit(2)
+    const prof = ((profs ?? []) as { id: string }[])[0]
     if (!prof) return { ok: false, error: "Aucun compte trouvé avec ce numéro." }
-    const { data: u } = await admin.auth.admin.getUserById((prof as { id: string }).id)
+    const { data: u } = await admin.auth.admin.getUserById(prof.id)
     email = u.user?.email ?? ""
     if (!email) return { ok: false, error: "Compte invalide. Contactez le support." }
   }
