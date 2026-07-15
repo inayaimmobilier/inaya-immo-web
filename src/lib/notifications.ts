@@ -396,6 +396,18 @@ export async function notifyAgentAssignment(args: {
 
   const contenu = lines.join("\n")
   const contenuCourt = `Nouvelle tâche : ${clientNom} pour « ${propTitre} »${creneau ? ` · créneau : ${creneau}` : ""}`
+  // Référence courte de la tâche : identifie /t/{ref}, /tc/{ref} (confirmer) et
+  // /tr/{ref} (transférer). Déterministe depuis l'id du lead — la même que celle
+  // du lead_followups créé plus bas.
+  const ref = makeRef(args.leadId)
+  // Contexte COURT = variable {{1}} du template WhatsApp `inaya_tache`. Un template
+  // n'accepte pas un pavé de 600+ caractères : les détails complets restent sur la
+  // page ouverte par les boutons.
+  const tacheContexte = [
+    `${propTitre}${prop?.quartier ? ` · ${prop.quartier}` : ""}`,
+    `Client : ${clientNom}`,
+    creneau ? `Créneau : ${creneau}` : "",
+  ].filter(Boolean).join(" — ")
   const payload = { lead_id: args.leadId, property_id: args.propertyId }
 
   const rows: Record<string, unknown>[] = [
@@ -404,11 +416,14 @@ export async function notifyAgentAssignment(args: {
       user_id: args.agentId, canal: "push" as NotifCanal, type: "tache_assignee",
       titre: "Tâche assignée", contenu: contenuCourt, payload, lu: false, envoye: false,
     },
-    // 2. WhatsApp — message complet avec tous les détails
+    // 2. WhatsApp — template `inaya_tache` (boutons Confirmer / Transférer) : le
+    //    dispatcher utilise payload.ref + payload.tache_contexte. `contenu` (message
+    //    complet) sert de repli quand l'envoi ne passe pas par un template.
     {
       user_id: args.agentId, contact_telephone: tel,
       canal: "whatsapp" as NotifCanal, type: "tache_assignee",
-      titre: "Inaya Immo — tâche assignée", contenu, payload: { lead_id: args.leadId }, lu: false, envoye: false,
+      titre: "Inaya Immo — tâche assignée", contenu,
+      payload: { lead_id: args.leadId, ref, tache_contexte: tacheContexte }, lu: false, envoye: false,
     },
     // 3. Telegram groupe staff interne
     {
@@ -425,7 +440,7 @@ export async function notifyAgentAssignment(args: {
   const { error: fErr } = await db.from("lead_followups").insert({
     lead_id: args.leadId,
     agent_id: args.agentId,
-    ref: makeRef(args.leadId),
+    ref,
     statut_avant: "nouveau",
     awaiting_confirmation: true,
     confirmation_code: confirmCode,
