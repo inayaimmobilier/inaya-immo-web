@@ -75,10 +75,12 @@ export default async function WhatsAppPage() {
     signal: AbortSignal.timeout(3000), cache: "no-store",
   }).then(r => r.json()).then(d => d as {
     gupshupConfigured?: boolean; gupshupLine?: "principal" | "secours"; gupshupSecoursConfigured?: boolean
+    dispatchEngine?: string
   }).catch(() => null)
   const gupshupConfigured = health ? (health.gupshupConfigured ?? false) : null
   const serviceLine = health?.gupshupLine ?? null
   const secoursConfigured = health?.gupshupSecoursConfigured ?? false
+  const dispatchEngine = health?.dispatchEngine ?? null
   const otpEngine: "gupshup" | "baileys" =
     process.env.WA_OTP_ENGINE === "baileys" || !gupshupConfigured ? "baileys" : "gupshup"
 
@@ -114,7 +116,7 @@ export default async function WhatsAppPage() {
       <AssistantToggle initialActif={assistantActif} />
 
       {/* Statut moteur Gupshup / OTP */}
-      <GupshupStatusCard gupshupConfigured={gupshupConfigured} otpEngine={otpEngine} />
+      <GupshupStatusCard gupshupConfigured={gupshupConfigured} otpEngine={otpEngine} dispatchEngine={dispatchEngine} />
 
       {/* Bascule numéro d'envoi Gupshup : principal ↔ secours */}
       {gupshupConfigured && (
