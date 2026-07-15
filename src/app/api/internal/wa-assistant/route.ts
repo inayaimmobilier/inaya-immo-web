@@ -17,7 +17,9 @@ import { toWhatsAppFormat } from "@/lib/whatsapp-format"
 
 export const dynamic = "force-dynamic"
 
-const SYSTEM = `Tu es *Miss Maryam*, l'assistante WhatsApp d'Inaya Immo (immobilier à Bouaké, Côte d'Ivoire). Ton rôle : CONSEILLER brièvement, MOTIVER, et REDIRIGER vers le site inaya.ci. Réponds en français.
+const SYSTEM = `Tu es *Miss Maryam*, l'assistante WhatsApp d'Inaya Immo (immobilier en Côte d'Ivoire). Ton rôle : CONSEILLER brièvement, MOTIVER, et REDIRIGER vers le site inaya.ci. Réponds en français.
+
+COUVERTURE GÉOGRAPHIQUE — RÈGLE IMPORTANTE : Inaya Immo n'est PAS limité à Bouaké : nous couvrons plusieurs villes de Côte d'Ivoire. Ne SUPPOSE JAMAIS que le client cherche à Bouaké. Ne cite une ville que si LE CLIENT l'a déjà précisée. Ne dis jamais « à Bouaké » de toi-même. Si tu ne connais pas encore la ville, demande simplement « Dans quelle ville/commune cherchez-vous ? » (au besoin, appuie-toi sur "lister_zones").
 
 IDENTITÉ : tu t'appelles Maryam. Quand tu te présentes (premier message, ou si on te demande qui tu es), dis « Miss Maryam, votre conseillère Inaya Immo ». Ne te présente pas à chaque message : une seule fois suffit. Tu es une femme, chaleureuse et professionnelle.
 
@@ -50,6 +52,7 @@ RÈGLES :
 - Si "prix_texte" = "Prix sur demande", écris-le tel quel (jamais « 0 FCFA »).
 - Avant de rechercher par critères, si le besoin est flou, pose UNE question courte (louer/acheter ? quelle commune ? budget ?). Ne fais pas de longue liste de questions.
 - En Côte d'Ivoire : « X chambres salon » = X+1 pièces. « maison » au sens large = tout logement (utilise plusieurs catégories). Petits commerces = catégorie "local_commercial".
+- « ENTRÉE COUCHÉE » (jargon ivoirien, s'écrit de multiples façons : « entré couché », « entrer coucher », « entrée-couchée »…) = logement d'UNE SEULE pièce, SANS toilettes ni cuisine dédiées — les sanitaires sont COMMUNS, partagés avec d'autres logements. C'est le logement le plus économique. Pour en chercher, passe l'expression dans "mots_cles" de "rechercher_annonces" (toutes les graphies sont couvertes automatiquement). Si un client demande une entrée couchée, ne lui propose pas un studio équipé sans le préciser : ce n'est pas la même chose (un studio a ses propres toilettes/cuisine).
 - Résidences meublées : court séjour, prix par nuit ; univers séparé (type_offre="residence_meublee").
 - Si aucun résultat, dis-le franchement et propose d'élargir. Montants en FCFA.`
 
@@ -99,11 +102,29 @@ const SELECT = "*"
 type SearchArgs = {
   type_offre?: string; categorie?: string; categories?: string[]; commune?: string; quartier?: string
   prix_min?: number; prix_max?: number; chambres_min?: number; tri?: "recent" | "prix_asc" | "prix_desc"
+  mots_cles?: string
 }
 
 // Retire les accents et échappe les caractères cassant la syntaxe .or().
 const stripAccents = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "")
 const cleanTerm = (s: string) => s.replace(/[(),]/g, " ").trim()
+
+/**
+ * « Entrée couchée » : jargon ivoirien pour un logement d'UNE pièce, sans toilettes
+ * ni cuisine dédiées (sanitaires communs). L'expression s'écrit de multiples façons
+ * (« entré couché », « entrer coucher », « entrée-couchée », « entree couchee »…),
+ * et les annonces issues de WhatsApp reprennent n'importe laquelle. On détecte donc
+ * l'expression sur les RADICAUX, une fois les accents retirés.
+ */
+const ENTREE_COUCHEE_RE = /entr[a-z]*[\s-]*couch/i
+
+/** Motifs ilike pour une recherche plein texte tolérante aux graphies. */
+function keywordPatterns(term: string): string[] {
+  const plain = stripAccents(term)
+  // Radicaux « entr…couch… » : couvre TOUTES les variantes d'« entrée couchée ».
+  if (ENTREE_COUCHEE_RE.test(plain)) return ["%entr%couch%"]
+  return Array.from(new Set([term, plain])).map(v => `%${v}%`)
+}
 
 async function rechercherAnnonces(args: SearchArgs) {
   const admin = createAdminClient()
@@ -121,6 +142,13 @@ async function rechercherAnnonces(args: SearchArgs) {
     if (term) {
       const variants = Array.from(new Set([term, stripAccents(term)]))
       q = q.or(variants.flatMap(v => [`quartier.ilike.%${v}%`, `titre.ilike.%${v}%`, `description.ilike.%${v}%`]).join(","))
+    }
+  }
+  // Mots-clés libres (ex. « entrée couchée ») cherchés sur titre + description.
+  if (args.mots_cles) {
+    const term = cleanTerm(args.mots_cles)
+    if (term) {
+      q = q.or(keywordPatterns(term).flatMap(p => [`titre.ilike.${p}`, `description.ilike.${p}`]).join(","))
     }
   }
   if (typeof args.prix_min === "number") q = q.gte("prix", args.prix_min)
@@ -204,6 +232,7 @@ const TOOLS: ToolSpec[] = [
         categorie: { type: "string", enum: ["maison", "appartement", "studio", "terrain", "local_commercial", "bureau", "magasin", "autre"] },
         categories: { type: "array", items: { type: "string", enum: ["maison", "appartement", "studio", "terrain", "local_commercial", "bureau", "magasin", "autre"] } },
         commune: { type: "string" }, quartier: { type: "string" },
+        mots_cles: { type: "string", description: "Mots-clés cherchés dans le titre/la description (ex. « entrée couchée », « meublé », « ACD »). Toutes les graphies d'« entrée couchée » sont couvertes." },
         prix_min: { type: "number" }, prix_max: { type: "number" }, chambres_min: { type: "number" },
         tri: { type: "string", enum: ["recent", "prix_asc", "prix_desc"] },
       },
@@ -256,7 +285,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   } catch {
     return NextResponse.json({ ok: false, error: "invalid_json" }, { status: 400 })
   }
-  if (history.length === 0) return NextResponse.json({ ok: true, reply: "Bonjour 👋 Je suis *Miss Maryam*, votre conseillère Inaya Immo. Comment puis-je vous aider à trouver un bien à Bouaké ?" })
+  if (history.length === 0) return NextResponse.json({ ok: true, reply: "Bonjour 👋 Je suis *Miss Maryam*, votre conseillère Inaya Immo. Comment puis-je vous aider à trouver votre bien ?" })
 
   const res = await runAssistant({ system: await effectiveSystem(), history, tools: TOOLS, exec })
   // Filet déterministe : même si le LLM retombe sur du Markdown standard (**gras**,
