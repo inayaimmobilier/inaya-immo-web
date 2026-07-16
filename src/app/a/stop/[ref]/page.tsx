@@ -5,9 +5,9 @@ export const metadata = { title: "Arrêter une alerte · Inaya Immo", robots: { 
 
 export default async function StopAlertPage({ params }: { params: Promise<{ ref: string }> }) {
   const { ref } = await params
-  // Accepte « R820 » ou « 820 ».
-  const refNum = Number(String(ref).replace(/\D/g, ""))
-  const valid = Number.isFinite(refNum) && refNum > 0
+  // Jeton = numéro court « R820 » OU UUID de la requête (voie robuste sans migration).
+  const token = String(ref).trim()
+  const valid = token.length > 0
 
   return (
     <main className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
@@ -21,7 +21,7 @@ export default async function StopAlertPage({ params }: { params: Promise<{ ref:
         </div>
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
           {valid ? (
-            <StopConfirm refNum={refNum} />
+            <StopConfirm token={token} />
           ) : (
             <p className="text-sm text-gray-500 text-center">Numéro d&apos;alerte invalide.</p>
           )}

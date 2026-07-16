@@ -5,7 +5,7 @@ import Link from "next/link"
 import { BellOff, Check, Loader2 } from "lucide-react"
 import { stopAlert } from "./actions"
 
-export default function StopConfirm({ refNum }: { refNum: number }) {
+export default function StopConfirm({ token }: { token: string }) {
   const [done, setDone] = useState<null | "ok" | "already">(null)
   const [err, setErr] = useState<string | null>(null)
   const [pending, start] = useTransition()
@@ -13,7 +13,7 @@ export default function StopConfirm({ refNum }: { refNum: number }) {
   function confirm() {
     setErr(null)
     start(async () => {
-      const res = await stopAlert(refNum)
+      const res = await stopAlert(token)
       if (!res.ok) { setErr(res.error); return }
       setDone(res.already ? "already" : "ok")
     })
@@ -26,7 +26,7 @@ export default function StopConfirm({ refNum }: { refNum: number }) {
           <Check className="w-7 h-7 text-green-600" />
         </div>
         <p className="font-semibold text-gray-900">
-          {done === "already" ? `L'alerte R${refNum} était déjà désactivée.` : `Alerte R${refNum} désactivée.`}
+          {done === "already" ? "Cette alerte était déjà désactivée." : "Alerte désactivée."}
         </p>
         <p className="text-sm text-gray-500">Vous ne recevrez plus de biens pour cette recherche.</p>
         <Link href="/biens" className="inline-block mt-2 text-sm font-medium text-blue-700 hover:text-blue-800">
@@ -42,7 +42,7 @@ export default function StopConfirm({ refNum }: { refNum: number }) {
         <BellOff className="w-7 h-7 text-amber-600" />
       </div>
       <div>
-        <p className="font-semibold text-gray-900">Arrêter l&apos;alerte R{refNum} ?</p>
+        <p className="font-semibold text-gray-900">Arrêter cette alerte ?</p>
         <p className="text-sm text-gray-500 mt-1">Vous ne recevrez plus de notifications pour cette recherche sauvegardée.</p>
       </div>
       {err && <p className="text-sm text-red-600">{err}</p>}

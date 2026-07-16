@@ -126,19 +126,23 @@ export async function notifySearcher(args: {
   const intro = args.type === "exacte" ? "Un bien correspond à votre recherche" : "Un bien similaire à votre recherche est disponible"
   const url = absoluteUrl(`/biens/${args.propertyId}`)
 
-  // Numéro court de la requête (« R820 ») pour la commande d'arrêt d'alerte.
+  // Jeton d'arrêt PROPRE À CETTE recherche : le numéro court « 820 » si la colonne
+  // `reference` existe (migration 041), sinon l'UUID de la requête — qui fonctionne
+  // SANS migration et garantit qu'on arrête bien CETTE recherche (jamais une autre).
+  // Fini le « R77 pour tout le monde » : chaque alerte a son propre lien d'arrêt.
   const { data: reqRow } = await db.from("search_requests").select("reference").eq("id", args.requestId).maybeSingle()
   const reqRef = (reqRow as { reference: number | null } | null)?.reference ?? null
-  const stopCode = reqRef != null ? `R${reqRef}` : null
+  const stopToken = reqRef != null ? String(reqRef) : args.requestId
+  const stopUrl = absoluteUrl(`/a/stop/${stopToken}`)
 
-  // Deux actions dans l'alerte : « Voir l'annonce » (lien) et « Stop R820 »
-  // (désactive l'alerte de CETTE requête). Le stopCode va aussi dans le payload
-  // pour les boutons du template WhatsApp.
+  // Le lien du bien ET le lien d'arrêt sont DANS le texte (auto-cliquables par
+  // WhatsApp). On n'utilise plus de boutons URL dynamiques de template : mal
+  // configurés côté Meta, ils cassaient les liens (/biens/{}) et figeaient l'arrêt.
   const contenu = [
     `${intro} : « ${args.propertyTitre} »${lieu}.`,
     `👉 Voir l'annonce : ${url}`,
-    stopCode ? `🔕 Pour arrêter cette alerte, répondez : ${stopCode}` : "",
-  ].filter(Boolean).join("\n")
+    `🔕 Ne plus recevoir d'alertes pour CETTE recherche : ${stopUrl}`,
+  ].join("\n")
 
   const base = {
     type: "match_offre",
@@ -146,7 +150,7 @@ export async function notifySearcher(args: {
     contenu,
     // property_desc = variable {{1}} du template WhatsApp `inaya_alerte` (corps à
     // variables séparées) ; request_ref alimente le bouton « Arrêter » (/a/stop/{ref}).
-    payload: { property_id: args.propertyId, request_id: args.requestId, request_ref: reqRef, stop_code: stopCode, url, match_type: args.type, property_desc: `${args.propertyTitre}${lieu}` },
+    payload: { property_id: args.propertyId, request_id: args.requestId, request_ref: reqRef, stop_url: stopUrl, url, match_type: args.type, property_desc: `${args.propertyTitre}${lieu}` },
     lu: false,
     envoye: false,
   }
