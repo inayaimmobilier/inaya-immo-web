@@ -53,11 +53,17 @@ function mayNotify(req: MatchableRequest, allowGroupAlerts: boolean): boolean {
   return allowGroupAlerts                                  // demande de groupe → seulement si activé
 }
 
+/**
+ * Les demandes ingérées d'un groupe WhatsApp peuvent-elles être démarchées ?
+ * Politique DG (2026-07-16) : OUI par défaut — on contacte tous les demandeurs.
+ * `app_settings.alertes_groupe = false` reste un INTERRUPTEUR D'ARRÊT d'urgence
+ * (ex. si le numéro est menacé de restriction).
+ */
 async function groupAlertsEnabled(db: ReturnType<typeof createAdminClient>): Promise<boolean> {
   try {
     const { data } = await db.from("app_settings").select("value").eq("key", "alertes_groupe").maybeSingle()
-    return (data as { value?: unknown } | null)?.value === true
-  } catch { return false }
+    return (data as { value?: unknown } | null)?.value !== false
+  } catch { return true }
 }
 
 export interface MatchScore { type: MatchType; score: number }
