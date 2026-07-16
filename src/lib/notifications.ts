@@ -150,7 +150,10 @@ export async function notifySearcher(args: {
     contenu,
     // property_desc = variable {{1}} du template WhatsApp `inaya_alerte` (corps à
     // variables séparées) ; request_ref alimente le bouton « Arrêter » (/a/stop/{ref}).
-    payload: { property_id: args.propertyId, request_id: args.requestId, request_ref: reqRef, stop_url: stopUrl, url, match_type: args.type, property_desc: `${args.propertyTitre}${lieu}` },
+    // stop_token = jeton d'arrêt PAR-REQUÊTE (référence ou UUID) : alimente le
+    // postback du bouton « Arrêter les alertes » du template Gupshup, et le lien
+    // texte (repli Baileys). property_desc = variable {{1}} du corps du template.
+    payload: { property_id: args.propertyId, request_id: args.requestId, request_ref: reqRef, stop_token: stopToken, stop_url: stopUrl, url, match_type: args.type, property_desc: `${args.propertyTitre}${lieu}` },
     lu: false,
     envoye: false,
   }
