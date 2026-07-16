@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { Search, SlidersHorizontal } from "lucide-react"
 import MultiSelect from "@/components/shared/MultiSelect"
 import { DEFAULT_PROPERTY_TYPES } from "@/lib/property-types"
+import { fbTrack } from "@/lib/analytics"
 
 const csv = (s: string | null) => (s ? s.split(",").map(x => x.trim()).filter(Boolean) : [])
 
@@ -169,7 +170,7 @@ export default function PropertyFilters() {
         </div>
         <button
           type="button"
-          onClick={() => update("q", qRef.current?.value ?? "")}
+          onClick={() => { const q = qRef.current?.value ?? ""; fbTrack("Search", { search_string: q || params.toString() }); update("q", q) }}
           className="shrink-0 inline-flex items-center gap-2 bg-blue-700 hover:bg-blue-600 text-white px-5 rounded-xl text-sm font-semibold transition-colors"
         >
           <Search className="w-4 h-4" /> Rechercher

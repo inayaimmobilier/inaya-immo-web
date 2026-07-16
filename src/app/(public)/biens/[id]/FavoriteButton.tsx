@@ -4,6 +4,7 @@ import { useState, useTransition } from "react"
 import { Heart, Loader2 } from "lucide-react"
 import { toggleFavorite } from "@/app/client/actions"
 import QuickSignupModal from "./QuickSignupModal"
+import { fbTrack } from "@/lib/analytics"
 
 export default function FavoriteButton({ propertyId, initialActive, loggedIn }: {
   propertyId: string; initialActive: boolean; loggedIn: boolean
@@ -16,6 +17,8 @@ export default function FavoriteButton({ propertyId, initialActive, loggedIn }: 
   function save() {
     const next = !active
     setActive(next)
+    // Conversion Pixel Meta : ajout aux favoris (pas au retrait).
+    if (next) fbTrack("AddToWishlist", { content_ids: [propertyId], content_type: "product" })
     startTransition(async () => {
       const res = await toggleFavorite(propertyId)
       if (!res.ok) setActive(!next)
@@ -33,6 +36,8 @@ export default function FavoriteButton({ propertyId, initialActive, loggedIn }: 
     setSignupOpen(false)
     setAuthed(true)
     setActive(true)
+    fbTrack("CompleteRegistration", { content_category: "quick_signup" })
+    fbTrack("AddToWishlist", { content_ids: [propertyId], content_type: "product" })
     startTransition(async () => {
       const res = await toggleFavorite(propertyId)
       if (!res.ok) setActive(false)

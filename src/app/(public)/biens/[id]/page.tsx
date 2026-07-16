@@ -4,6 +4,7 @@ import { createClient, createAdminClient } from "@/lib/supabase/server"
 import Navbar from "@/components/shared/Navbar"
 import ContactForm from "./ContactForm"
 import QuickContactButtons from "./QuickContactButtons"
+import PixelViewContent from "@/components/shared/PixelViewContent"
 import FavoriteButton from "./FavoriteButton"
 import ReportButton from "./ReportButton"
 import ShareButton from "./ShareButton"
@@ -193,6 +194,7 @@ export default async function BienDetailPage({ params }: PageProps) {
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <PixelViewContent id={property.id} value={property.prix} category={property.categorie} />
       <Navbar />
       <main className="min-h-screen bg-gray-50">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">

@@ -10,6 +10,7 @@ import {
 } from "./actions"
 import type { OtpCanal } from "@/lib/otp"
 import { DEFAULT_COUNTRY, type Country } from "@/lib/countries"
+import { fbTrack } from "@/lib/analytics"
 import CountrySelect from "@/components/shared/CountrySelect"
 
 const TYPES: { value: AccountType; label: string; desc: string; Icon: typeof Home }[] = [
@@ -169,6 +170,8 @@ export default function InscriptionForm() {
       const res = await confirmVerificationCode(code)
       setLoading(false)
       if (!res.ok) { setError(res.error); return }
+      // Conversion Pixel Meta : inscription vérifiée = compte finalisé.
+      fbTrack("CompleteRegistration", { content_category: type, status: true })
       if (type === "agent") { setAgentApplied(true); return }
       goToSpace()
     } catch {

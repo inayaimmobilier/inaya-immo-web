@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react"
 import { BellPlus, Loader2, Check, MessageCircle } from "lucide-react"
 import { saveSearch, type SaveSearchParams } from "./saveSearch"
+import { fbTrack } from "@/lib/analytics"
 
 export default function SaveSearchButton({ params }: { params: SaveSearchParams }) {
   const [pending, startTransition] = useTransition()
@@ -23,6 +24,8 @@ export default function SaveSearchButton({ params }: { params: SaveSearchParams 
         return
       }
       if (!res.ok) { setMsg(res.error); return }
+      // Conversion Pixel Meta : abonnement à une alerte de recherche.
+      fbTrack("Subscribe")
       setSaved(true)
       setAskPhone(false)
       setMsg(res.matches > 0

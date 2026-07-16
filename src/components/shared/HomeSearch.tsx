@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { Search } from "lucide-react"
 import MultiSelect from "@/components/shared/MultiSelect"
 import { DEFAULT_PROPERTY_TYPES } from "@/lib/property-types"
+import { fbTrack } from "@/lib/analytics"
 
 interface Zone { id: string; nom: string }
 
@@ -63,6 +64,7 @@ export default function HomeSearch({ villes }: { villes: Zone[] }) {
     if (selCats.length) p.set("categorie", selCats.join(","))
     if (piecesMin) p.set("pieces_min", piecesMin)
     if (prixMax.trim()) p.set("prix_max", prixMax.trim())
+    fbTrack("Search", { search_string: p.toString(), content_category: type || undefined })
     router.push(`/biens?${p.toString()}`)
   }
 
