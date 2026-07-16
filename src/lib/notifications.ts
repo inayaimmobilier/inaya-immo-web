@@ -168,6 +168,23 @@ export async function notifySearcher(args: {
     rows.push({ ...base, contact_telephone: args.contactTel, canal: "whatsapp" as NotifCanal })
   }
 
+  // Alerte AUSSI le staff qui a créé la recherche au nom du client (created_by) :
+  // il suit ses clients. Requête isolée + best-effort (colonne absente = migration
+  // 042 non appliquée → 42703 → data null → on ignore simplement).
+  const { data: creatorRow } = await db.from("search_requests").select("created_by").eq("id", args.requestId).maybeSingle()
+  const creatorId = (creatorRow as { created_by: string | null } | null)?.created_by ?? null
+  if (creatorId && creatorId !== args.userId) {
+    const { data: creatorProf } = await db.from("profiles").select("telephone").eq("id", creatorId).single()
+    const cTel = (creatorProf as { telephone: string | null } | null)?.telephone?.trim()
+    const creatorBase = {
+      ...base,
+      titre: "Bien trouvé pour votre client",
+      contenu: `Un bien correspond à la recherche que vous suivez pour ${args.contactTel ?? "un client"} : « ${args.propertyTitre} »${lieu}.\n👉 ${url}`,
+    }
+    rows.push({ ...creatorBase, user_id: creatorId, canal: "push" as NotifCanal })
+    if (cTel) rows.push({ ...creatorBase, user_id: creatorId, contact_telephone: cTel, canal: "whatsapp" as NotifCanal })
+  }
+
   if (rows.length === 0) return
   const { error } = await db.from("notifications").insert(rows as never)
   if (error) console.error("INAYA-NOTIF-003", error.message)
