@@ -46,11 +46,27 @@ export default function PropertyFilters() {
   const communeValue = params.get("ville") || communes.find(v => v.id === params.get("ville_id"))?.nom || ""
   const selectedVilleId = params.get("ville_id") || communes.find(v => v.nom === communeValue)?.id || ""
 
+  // Une commune est-elle demandée dans l'URL ? (son id peut n'être pas encore résolu :
+  // l'URL porte le NOM « ville=Bouaké » et la liste des communes charge en asynchrone.)
+  const villeDemandee = !!(params.get("ville") || params.get("ville_id"))
+
   // Charge les quartiers de la commune sélectionnée (ou tous si aucune commune).
   useEffect(() => {
+    // Commune demandée mais id pas encore résolu → ON ATTEND. Sinon on chargeait
+    // « tous les quartiers » (Marcory à Abidjan alors que la commune est Bouaké…),
+    // puis la requête filtrée partait ensuite : la réponse la plus LENTE — la liste
+    // complète — écrasait la liste filtrée (course entre les deux requêtes).
+    if (villeDemandee && !selectedVilleId) return
+
+    let cancelled = false
     const url = selectedVilleId ? `/api/zones/quartiers?ville_id=${selectedVilleId}` : "/api/zones/quartiers"
-    fetch(url).then(r => r.json()).then(d => setQuartiers(d as Zone[])).catch(() => {})
-  }, [selectedVilleId])
+    fetch(url)
+      .then(r => r.json())
+      .then(d => { if (!cancelled) setQuartiers(d as Zone[]) })
+      .catch(() => {})
+    // Garde anti-course : une réponse périmée ne doit jamais écraser la liste courante.
+    return () => { cancelled = true }
+  }, [selectedVilleId, villeDemandee])
 
   const update = useCallback(
     (key: string, value: string) => {
