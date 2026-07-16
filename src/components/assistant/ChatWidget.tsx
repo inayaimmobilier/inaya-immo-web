@@ -19,24 +19,63 @@ const SUGGESTIONS = [
   "Terrain à vendre",
 ]
 
-// Rend un texte avec liens markdown [libellé](url) cliquables (liens internes uniquement).
-// onLinkClick : appelé au clic sur une annonce → ferme l'assistant pour laisser
-// place à la page du bien.
-function renderText(text: string, onLinkClick?: () => void) {
-  const parts: React.ReactNode[] = []
-  const re = /\[([^\]]+)\]\((\/[^)]+)\)/g
-  let last = 0, m: RegExpExecArray | null, key = 0
+/**
+ * Normalise l'URL d'un lien vers un CHEMIN INTERNE, ou renvoie null si le lien
+ * n'est pas interne. Tolérant : le modèle produit tantôt « /biens/{id} », tantôt
+ * « biens/{id} » (sans « / »), tantôt une URL complète « https://…/biens/{id} ».
+ */
+function internalPath(raw: string): string | null {
+  let u = raw.trim()
+  let wasFullUrl = false
+  try { if (/^https?:\/\//i.test(u)) { const p = new URL(u); u = p.pathname + p.search; wasFullUrl = true } } catch { /* ignore */ }
+  if (/^\/?(biens|annonces)\//i.test(u)) return u.startsWith("/") ? u : `/${u}`
+  // Chemin interne relatif (ex. « /residences ») — mais PAS une URL externe dont
+  // on aurait juste retiré le domaine.
+  if (!wasFullUrl && u.startsWith("/")) return u
+  return null
+}
+
+/** Rend le **gras** markdown (déterministe : le modèle en produit souvent). */
+function renderBold(text: string, keyBase: string): React.ReactNode[] {
+  const out: React.ReactNode[] = []
+  const re = /\*\*([^*]+)\*\*/g
+  let last = 0, m: RegExpExecArray | null, k = 0
   while ((m = re.exec(text)) !== null) {
-    if (m.index > last) parts.push(text.slice(last, m.index))
-    parts.push(
-      <Link key={key++} href={m[2]} onClick={onLinkClick}
-        className="text-blue-700 font-medium underline underline-offset-2 hover:text-blue-800">
-        {m[1]}
-      </Link>,
-    )
+    if (m.index > last) out.push(text.slice(last, m.index))
+    out.push(<strong key={`${keyBase}-b${k++}`}>{m[1]}</strong>)
     last = m.index + m[0].length
   }
-  if (last < text.length) parts.push(text.slice(last))
+  if (last < text.length) out.push(text.slice(last))
+  return out
+}
+
+/**
+ * Rend le texte de l'assistant : liens markdown [libellé](url) cliquables (liens
+ * internes uniquement, URL normalisée) + **gras**. Robuste face aux variations du
+ * modèle (« / » manquant, domaine ajouté). onLinkClick ferme l'assistant au clic.
+ */
+function renderText(text: string, onLinkClick?: () => void) {
+  const parts: React.ReactNode[] = []
+  const re = /\[([^\]]+)\]\(([^)]+)\)/g
+  let last = 0, m: RegExpExecArray | null, key = 0
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) parts.push(...renderBold(text.slice(last, m.index), `t${key}`))
+    const href = internalPath(m[2])
+    const label = renderBold(m[1], `l${key}`)
+    if (href) {
+      parts.push(
+        <Link key={`k${key++}`} href={href} onClick={onLinkClick}
+          className="text-blue-700 font-medium underline underline-offset-2 hover:text-blue-800">
+          {label}
+        </Link>,
+      )
+    } else {
+      // Lien non interne (ne devrait pas arriver) : on affiche au moins le libellé.
+      parts.push(<span key={`s${key++}`}>{label}</span>)
+    }
+    last = m.index + m[0].length
+  }
+  if (last < text.length) parts.push(...renderBold(text.slice(last), `t${key}`))
   return parts
 }
 
