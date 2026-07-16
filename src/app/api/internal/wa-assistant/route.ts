@@ -23,6 +23,12 @@ COUVERTURE GÉOGRAPHIQUE — RÈGLE IMPORTANTE : Inaya Immo n'est PAS limité à
 
 IDENTITÉ : tu t'appelles Maryama. Quand tu te présentes (premier message, ou si on te demande qui tu es), dis « Miss Maryama, votre conseillère Inaya Immo ». Ne te présente pas à chaque message : une seule fois suffit. Tu es une femme, chaleureuse et professionnelle.
 
+FIL DE LA CONVERSATION — RÈGLE MAJEURE : tu reçois TOUT l'historique. Relis-le avant CHAQUE réponse et tiens compte du dernier message du client.
+- Ne redemande JAMAIS une information déjà donnée (ville, quartier, budget, type de bien, nombre de chambres) — même dite plusieurs messages plus haut, même en passant (« un studio à Bouaké », « 40 000 »). Mémorise-la et sers-t'en.
+- Ne pose jamais deux fois la même question. Si le client vient de répondre, avance : n'ignore pas sa réponse.
+- Ne demande QUE l'information qui manque réellement. Dès que tu as le minimum (type + zone OU budget), LANCE la recherche au lieu de poser une question de plus.
+- Les critères s'ACCUMULENT au fil des messages : « un studio » + « à Bouaké » + « 40 000 » = un studio à Bouaké à 40 000 F. Ne repars jamais de zéro.
+
 STYLE — RÈGLE N°1 : messages TRÈS COURTS (2-4 lignes max), chaleureux, allant droit au but. Pas de longs paragraphes. Une seule question à la fois. Termine souvent en invitant à ouvrir le bien sur inaya.ci. (Exception : une liste d'annonces suit le FORMAT DES LISTES ci-dessous.)
 
 FORMATAGE WHATSAPP — IMPÉRATIF : WhatsApp n'utilise PAS le Markdown standard.
@@ -71,6 +77,10 @@ RÈGLES :
 - « ENTRÉE COUCHÉE » (jargon ivoirien, s'écrit de multiples façons : « entré couché », « entrer coucher », « entrée-couchée »…) = logement d'UNE SEULE pièce, SANS toilettes ni cuisine dédiées — les sanitaires sont COMMUNS, partagés avec d'autres logements. C'est le logement le plus économique. Pour en chercher, passe l'expression dans "mots_cles" de "rechercher_annonces" (toutes les graphies sont couvertes automatiquement). Si un client demande une entrée couchée, ne lui propose pas un studio équipé sans le préciser : ce n'est pas la même chose (un studio a ses propres toilettes/cuisine).
 - Résidences meublées : court séjour, prix par nuit ; univers séparé (type_offre="residence_meublee").
 - Si aucun résultat, dis-le franchement et propose d'élargir. Montants en FCFA.`
+
+// Injecté UNIQUEMENT lors de la seconde chance, quand le modèle a cité un numéro
+// qui ne provenait d'aucun outil de ce tour.
+const NUDGE_OUTIL = `RAPPEL IMPÉRATIF : dans ta dernière réponse tu as cité un numéro d'annonce qui ne provient d'AUCUN résultat d'outil. C'est interdit : un numéro vu plus haut dans la conversation correspond à d'AUTRES biens. Si le client cherche un bien, appelle MAINTENANT "rechercher_annonces" (ou "trouver_annonce") et ne cite que les numéros renvoyés par cet appel. Si tu n'as aucun résultat, dis-le simplement et propose d'élargir — SANS redemander une information que le client a déjà donnée.`
 
 type Row = {
   id: string; reference: number | null; titre: string; description: string | null
@@ -337,38 +347,54 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
   if (history.length === 0) return NextResponse.json({ ok: true, reply: "Bonjour 👋 Je suis *Miss Maryama*, votre conseillère Inaya Immo. Comment puis-je vous aider à trouver votre bien ?" })
 
-  // On mémorise ce que les outils ont RÉELLEMENT renvoyé pendant ce tour, pour
-  // pouvoir vérifier la réponse du modèle ensuite.
-  const seenRefs = new Set<number>()
-  let lastResults: Presented[] = []
-  const execTracked = async (name: string, args: Record<string, unknown>): Promise<unknown> => {
-    const out = await exec(name, args)
-    const r = out as { resultats?: Presented[] }
-    if (Array.isArray(r?.resultats)) {
-      lastResults = r.resultats
-      for (const x of r.resultats) if (typeof x.reference === "number") seenRefs.add(x.reference)
+  const baseSystem = await effectiveSystem()
+
+  // Un tour complet : on mémorise ce que les outils ont RÉELLEMENT renvoyé, pour
+  // pouvoir vérifier ensuite les numéros cités par le modèle.
+  const runTour = async (system: string) => {
+    const seenRefs = new Set<number>()
+    let lastResults: Presented[] = []
+    const execTracked = async (name: string, args: Record<string, unknown>): Promise<unknown> => {
+      const out = await exec(name, args)
+      const r = out as { resultats?: Presented[] }
+      if (Array.isArray(r?.resultats)) {
+        lastResults = r.resultats
+        for (const x of r.resultats) if (typeof x.reference === "number") seenRefs.add(x.reference)
+      }
+      return out
     }
-    return out
+    const res = await runAssistant({ system, history, tools: TOOLS, exec: execTracked })
+    if (!res.ok) return { ok: false as const, error: res.error }
+    // Filet déterministe : le LLM retombe régulièrement sur du Markdown standard.
+    const reply = toWhatsAppFormat(res.reply)
+    const invented = citedRefs(reply).filter(r => !seenRefs.has(r))
+    return { ok: true as const, reply, invented, lastResults }
   }
 
-  const res = await runAssistant({ system: await effectiveSystem(), history, tools: TOOLS, exec: execTracked })
-  if (!res.ok) return NextResponse.json({ ok: false, error: res.error })
+  let tour = await runTour(baseSystem)
+  if (!tour.ok) return NextResponse.json({ ok: false, error: tour.error })
 
-  // Filet déterministe : même si le LLM retombe sur du Markdown standard (**gras**,
-  // ## titres), on convertit au format WhatsApp natif avant l'envoi.
-  let reply = toWhatsAppFormat(res.reply)
+  // Le modèle a cité un numéro qui ne vient d'aucun outil de ce tour (il recopie
+  // une annonce vue plus haut). On lui donne UNE seconde chance en exigeant l'appel
+  // de l'outil : bien plus utile que de couper la conversation par un message
+  // générique — ce qui faisait perdre le fil et reposait la même question en boucle.
+  if (tour.invented.length > 0) {
+    const retry = await runTour(`${baseSystem}\n\n${NUDGE_OUTIL}`)
+    if (retry.ok) tour = retry
+  }
 
-  // Vérification anti-invention : tout numéro cité DOIT venir d'un outil de ce tour.
-  const invented = citedRefs(reply).filter(r => !seenRefs.has(r))
-  if (invented.length > 0) {
-    console.error("INAYA-ASSIST-HALLU numéros inventés par le modèle", {
-      invented, reels: [...seenRefs],
-    })
+  if (tour.ok && tour.invented.length > 0) {
+    console.error("INAYA-ASSIST-HALLU numéros inventés (après seconde chance)", { invented: tour.invented })
     // On ne laisse JAMAIS partir un lien qui ne correspond pas au bien annoncé.
-    reply = lastResults.length > 0
-      ? buildSafeList(lastResults)
-      : "Je n'ai pas trouvé d'annonce correspondant à votre demande. Pouvez-vous préciser la ville, le quartier et votre budget ?"
+    // À défaut de résultats, on propose d'ÉLARGIR — sans redemander ce que le
+    // client a déjà dit.
+    return NextResponse.json({
+      ok: true,
+      reply: tour.lastResults.length > 0
+        ? buildSafeList(tour.lastResults)
+        : "Je n'ai pas trouvé d'annonce correspondant exactement à ce que vous cherchez. Voulez-vous que j'élargisse — un quartier voisin, ou un budget un peu plus haut ?",
+    })
   }
 
-  return NextResponse.json({ ok: true, reply })
+  return NextResponse.json({ ok: true, reply: tour.reply })
 }
