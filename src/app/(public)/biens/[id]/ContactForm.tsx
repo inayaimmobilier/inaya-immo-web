@@ -5,6 +5,7 @@ import { Loader2, CheckCircle2, ShieldCheck, Send, Receipt } from "lucide-react"
 import { createLead } from "./actions"
 import DateSelect from "./DateSelect"
 import { estimateSejour } from "@/lib/residence-pricing"
+import { fbTrack } from "@/lib/analytics"
 
 const fmt = (n: number) => Math.round(n).toLocaleString("fr-FR")
 
@@ -46,7 +47,11 @@ export default function ContactForm({ propertyId, initial, isResidence = false, 
     startTransition(async () => {
       const res = await createLead(form)
       if (!res.ok) setErr(res.error)
-      else setDone(true)
+      else {
+        // Conversion Pixel Meta : demande de visite / réservation = un Lead.
+        fbTrack("Lead", { content_category: isResidence ? "reservation" : "visite", content_ids: [propertyId] })
+        setDone(true)
+      }
     })
   }
 

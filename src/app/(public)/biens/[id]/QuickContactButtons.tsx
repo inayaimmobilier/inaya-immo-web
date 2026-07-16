@@ -2,6 +2,7 @@
 
 import { MessageCircle, Phone } from "lucide-react"
 import { createContactLead } from "./contacter/actions"
+import { fbTrack } from "@/lib/analytics"
 
 // Normalise un numéro ivoirien pour wa.me / tel: (international sans « + »).
 function intlNumber(raw: string): string {
@@ -45,7 +46,9 @@ export default function QuickContactButtons({
 
   // Trace un lead si on connaît déjà le contact (visiteur connecté). Fire-and-forget :
   // on n'attend pas la réponse pour ne pas retarder l'ouverture de WhatsApp/l'appel.
-  function trackLead() {
+  function trackLead(channel: "whatsapp" | "call") {
+    // Conversion Pixel Meta : prise de contact sur une annonce.
+    fbTrack("Contact", { content_category: channel, content_ids: [propertyId] })
     const nom = contact?.nom?.trim()
     const digits = (contact?.telephone ?? "").replace(/\D/g, "")
     if (nom && digits.length >= 8) {
@@ -57,11 +60,11 @@ export default function QuickContactButtons({
 
   return (
     <div className="grid grid-cols-2 gap-2">
-      <a href={wa} target="_blank" rel="noopener noreferrer" onClick={trackLead}
+      <a href={wa} target="_blank" rel="noopener noreferrer" onClick={() => trackLead("whatsapp")}
         className={`${base} bg-green-600 hover:bg-green-700`}>
         <MessageCircle className="w-4 h-4" /> WhatsApp
       </a>
-      <a href={tel} onClick={trackLead}
+      <a href={tel} onClick={() => trackLead("call")}
         className={`${base} bg-blue-700 hover:bg-blue-600`}>
         <Phone className="w-4 h-4" /> Appeler
       </a>

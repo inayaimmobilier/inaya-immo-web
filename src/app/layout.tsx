@@ -4,6 +4,7 @@ import "./globals.css"
 import ChatWidget from "@/components/assistant/ChatWidget"
 import VisitTracker from "@/components/shared/VisitTracker"
 import MetaPixel from "@/components/shared/MetaPixel"
+import CookieConsent from "@/components/shared/CookieConsent"
 import { unstable_cache } from "next/cache"
 import { createAdminClient } from "@/lib/supabase/server"
 import { SITE_URL, SITE_NAME, SITE_DESCRIPTION, absoluteUrl } from "@/lib/site"
@@ -93,6 +94,7 @@ export default async function RootLayout({
         <ChatWidget />
         <VisitTracker />
         <MetaPixel pixelId={metaPixelId} />
+        <CookieConsent />
       </body>
     </html>
   )
