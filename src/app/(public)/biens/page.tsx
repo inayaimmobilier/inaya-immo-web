@@ -94,6 +94,8 @@ async function PropertiesList({ searchParams }: PageProps) {
 
   // Normalisation : minuscules + suppression des accents. « Bouaké » → « bouake ».
   const norm = (s: unknown) => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
+  // Un code de type vient de la config admin : on l'échappe avant tout usage en regex.
+  const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
   type Row = {
     reference?: number | null
     quartier?: string | null; ville?: string | null; titre?: string | null; description?: string | null
@@ -132,7 +134,19 @@ async function PropertiesList({ searchParams }: PageProps) {
       if (COMMERCE_CATS.includes(cat)) return true
       return reCommerce.test(hay(r))
     }
-    return norm(r.categorie) === c || (!norm(r.categorie) && hay(r).includes(c))
+    const cat = norm(r.categorie)
+    if (cat === c) return true
+    // Catégorie absente → repli sur le texte de l'annonce.
+    if (!cat) return hay(r).includes(c)
+    // SOUS-TYPE non stocké en base : l'admin propose des types (« villa »,
+    // « entrepot ») qu'AUCUNE annonce ne porte en catégorie — une villa est
+    // enregistrée en `maison` avec « Villa … » dans le TITRE. Sans ce repli, le
+    // filtre « Villa » ne renvoyait jamais rien. On élargit donc au titre, mais
+    // UNIQUEMENT à l'intérieur de la même famille : « Terrain de 800 m² avec
+    // villa inachevée » est un TERRAIN et ne doit pas remonter comme une villa.
+    const famille = RESIDENTIEL.includes(c) ? RESIDENTIEL : COMMERCE_CATS.includes(c) ? COMMERCE_CATS : null
+    if (famille?.includes(cat)) return new RegExp(`\\b${escapeRe(c)}`).test(norm(r.titre))
+    return false
   }
   // Plusieurs types possibles → l'annonce passe si elle correspond à AU MOINS UN.
   if (categorieList.length) {
