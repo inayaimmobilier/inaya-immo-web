@@ -1,10 +1,40 @@
-import { createClient } from "@/lib/supabase/server"
-import { Home, MessageSquare, Wallet, Clock, AlertCircle } from "lucide-react"
+import { createClient, createAdminClient } from "@/lib/supabase/server"
+import { Home, MessageSquare, Wallet, Clock, AlertCircle, Eye, Users } from "lucide-react"
 import { formatPrix } from "@/lib/utils"
 import AutoRefresh from "@/components/shared/AutoRefresh"
 
 // Données temps réel (ingestion WhatsApp) : jamais de cache, toujours frais.
 export const dynamic = "force-dynamic"
+
+/**
+ * Fréquentation du site (visiteurs uniques + pages vues) sur 24 h / 7 j / 30 j.
+ * Lecture via le client ADMIN (la table page_views est en RLS, aucune lecture
+ * publique). Best-effort : table absente (migration 043) → tout à zéro.
+ */
+async function getVisitStats() {
+  const empty = { j1: { v: 0, p: 0 }, j7: { v: 0, p: 0 }, j30: { v: 0, p: 0 } }
+  try {
+    const admin = createAdminClient()
+    const since30 = new Date(Date.now() - 30 * 86400_000).toISOString()
+    const { data } = await admin.from("page_views")
+      .select("visitor_id, created_at").gte("created_at", since30).limit(50000)
+    const rows = (data ?? []) as { visitor_id: string; created_at: string }[]
+    if (rows.length === 0) return empty
+    const now = Date.now()
+    const agg = (ms: number) => {
+      const cut = now - ms
+      const set = new Set<string>()
+      let p = 0
+      for (const r of rows) {
+        if (new Date(r.created_at).getTime() >= cut) { set.add(r.visitor_id); p++ }
+      }
+      return { v: set.size, p }
+    }
+    return { j1: agg(86400_000), j7: agg(7 * 86400_000), j30: agg(30 * 86400_000) }
+  } catch {
+    return empty
+  }
+}
 
 async function getDashboardStats() {
   const supabase = await createClient()
@@ -80,7 +110,7 @@ const STATUT_LABEL_DASH: Record<string, string> = {
 }
 
 export default async function DashboardPage() {
-  const stats = await getDashboardStats()
+  const [stats, visits] = await Promise.all([getDashboardStats(), getVisitStats()])
 
   const kpis = [
     {
@@ -128,6 +158,31 @@ export default async function DashboardPage() {
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
         <p className="text-sm text-gray-500 mt-1">Vue d&apos;ensemble de la plateforme Inaya Immo</p>
+      </div>
+
+      {/* Fréquentation du site */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+            <Eye className="w-4 h-4 text-blue-600" /> Fréquentation du site
+          </h2>
+          <span className="text-[11px] text-gray-400">Visiteurs uniques · Pages vues</span>
+        </div>
+        <div className="grid grid-cols-3 gap-4">
+          {([
+            { label: "Aujourd'hui (24 h)", d: visits.j1 },
+            { label: "7 derniers jours", d: visits.j7 },
+            { label: "30 derniers jours", d: visits.j30 },
+          ]).map(({ label, d }) => (
+            <div key={label} className="text-center">
+              <p className="text-2xl font-bold text-gray-900 flex items-center justify-center gap-1.5">
+                <Users className="w-5 h-5 text-blue-500" /> {d.v.toLocaleString("fr-FR")}
+              </p>
+              <p className="text-xs text-gray-500 mt-1">{d.p.toLocaleString("fr-FR")} pages vues</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">{label}</p>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* KPI cards */}

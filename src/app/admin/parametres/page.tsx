@@ -100,6 +100,13 @@ export default async function ParametresPage({ searchParams }: PageProps) {
               <label className={label}>Contact support</label>
               <input name="contact_support" defaultValue={get("contact_support")} placeholder="+225…" className={field} />
             </div>
+            <div className="sm:col-span-2">
+              <label className={label}>Pixel Meta (Facebook) — ID</label>
+              <input name="meta_pixel_id" defaultValue={get("meta_pixel_id")} inputMode="numeric" placeholder="ex. 1234567890123456" className={field} />
+              <p className="text-xs text-gray-400 mt-1">
+                Depuis Meta Events Manager → votre Pixel → ID (16 chiffres). Laissez vide pour désactiver le suivi Meta.
+              </p>
+            </div>
           </div>
         </section>
 

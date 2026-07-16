@@ -79,6 +79,7 @@ export async function saveSettings(form: FormData): Promise<ActionResult> {
     { key: "devise", value: str("devise") || "XOF" },
     { key: "delai_expiration_jours", value: Number(str("delai_expiration_jours")) || 30 },
     { key: "contact_support", value: str("contact_support") },
+    { key: "meta_pixel_id", value: str("meta_pixel_id").replace(/\D/g, "") },
     { key: "commission_residence_pct", value: Number(str("commission_residence_pct")) || 10 },
     { key: "notif_canaux", value: canaux },
     { key: "followup_frequency_hours", value: Number(str("followup_frequency_hours")) || 24 },
