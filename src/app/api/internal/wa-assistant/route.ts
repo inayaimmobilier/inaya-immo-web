@@ -56,6 +56,7 @@ OUTILS :
 
 RÈGLES :
 - Ne JAMAIS inventer un bien, un prix ou un numéro : utilise toujours les outils et ne cite que ce qu'ils renvoient. Les outils ne renvoient PAS de téléphone — n'en invente aucun.
+- NUMÉROS ET LIENS — RÈGLE CRITIQUE : le numéro (reference), le titre, le prix et l'url d'un bien viennent TOUJOURS de la MÊME ligne de résultat. Ne mélange JAMAIS le titre d'un bien avec le numéro ou le lien d'un autre. N'utilise JAMAIS un numéro vu plus tôt dans la conversation (une recherche précédente portait sur d'autres biens) : seuls comptent les résultats de la recherche EN COURS. Si tu n'as pas le numéro exact renvoyé par l'outil pour ce bien, ne le cite pas du tout.
 - Présente chaque bien clairement : « N°{reference} — {titre} · {prix_texte} · {localisation}. Détails et mise en relation : {url} ».
 - Si "prix_texte" = "Prix sur demande", écris-le tel quel (jamais « 0 FCFA »).
 - Avant de rechercher par critères, si le besoin est flou, pose UNE question courte (louer/acheter ? quelle commune ? budget ?). Ne fais pas de longue liste de questions.
@@ -256,6 +257,40 @@ async function exec(name: string, args: Record<string, unknown>): Promise<unknow
   return { erreur: "Outil inconnu." }
 }
 
+// ── Garde-fou anti-invention ────────────────────────────────────────────────
+// Un LLM peut recoller un titre d'annonce à un numéro vu PLUS TÔT dans la
+// conversation : le message paraît crédible mais les liens pointent vers de tout
+// autres biens (incident constaté : « Chambre salon Nimbo » → N°2712 = terrain à
+// Yamoussoukro). Aucune consigne de prompt ne garantit l'absence de ce mélange.
+// On VÉRIFIE donc, côté serveur, que chaque numéro cité a réellement été renvoyé
+// par un outil DANS CE TOUR ; sinon on remplace la réponse par une liste
+// reconstruite à partir des vraies données.
+
+type Presented = ReturnType<typeof present>[number]
+
+/** Numéros d'annonce cités dans un message (« N°1042 » et « …/annonces/1042 »). */
+function citedRefs(text: string): number[] {
+  const out = new Set<number>()
+  for (const m of text.matchAll(/N°\s*(\d{1,7})/gi)) out.add(Number(m[1]))
+  for (const m of text.matchAll(/annonces\/(\d{1,7})/gi)) out.add(Number(m[1]))
+  return [...out]
+}
+
+/** Liste WhatsApp déterministe, construite UNIQUEMENT depuis les résultats réels. */
+function buildSafeList(rows: Presented[]): string {
+  const blocs = rows.slice(0, 5).map(r => {
+    const lieu = r.localisation ? ` · 📍 ${r.localisation}` : ""
+    return `*N°${r.reference}* — ${r.titre}\n💰 ${r.prix_texte}${lieu}\n🔗 ${r.url}`
+  })
+  return [
+    blocs.length > 1 ? "Voici ce que j'ai trouvé 👇" : "Voici ce que j'ai trouvé 👇",
+    "",
+    blocs.join("\n\n"),
+    "",
+    "Ouvre le lien qui t'intéresse et clique sur *Demander une visite* 😊",
+  ].join("\n")
+}
+
 /**
  * Prompt effectif = règles du code (outils + confidentialité + brièveté, qui
  * PRIMENT toujours) + consignes/base de connaissances de l'agent WhatsApp actif
@@ -295,8 +330,38 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
   if (history.length === 0) return NextResponse.json({ ok: true, reply: "Bonjour 👋 Je suis *Miss Maryama*, votre conseillère Inaya Immo. Comment puis-je vous aider à trouver votre bien ?" })
 
-  const res = await runAssistant({ system: await effectiveSystem(), history, tools: TOOLS, exec })
+  // On mémorise ce que les outils ont RÉELLEMENT renvoyé pendant ce tour, pour
+  // pouvoir vérifier la réponse du modèle ensuite.
+  const seenRefs = new Set<number>()
+  let lastResults: Presented[] = []
+  const execTracked = async (name: string, args: Record<string, unknown>): Promise<unknown> => {
+    const out = await exec(name, args)
+    const r = out as { resultats?: Presented[] }
+    if (Array.isArray(r?.resultats)) {
+      lastResults = r.resultats
+      for (const x of r.resultats) if (typeof x.reference === "number") seenRefs.add(x.reference)
+    }
+    return out
+  }
+
+  const res = await runAssistant({ system: await effectiveSystem(), history, tools: TOOLS, exec: execTracked })
+  if (!res.ok) return NextResponse.json({ ok: false, error: res.error })
+
   // Filet déterministe : même si le LLM retombe sur du Markdown standard (**gras**,
   // ## titres), on convertit au format WhatsApp natif avant l'envoi.
-  return NextResponse.json(res.ok ? { ok: true, reply: toWhatsAppFormat(res.reply) } : { ok: false, error: res.error })
+  let reply = toWhatsAppFormat(res.reply)
+
+  // Vérification anti-invention : tout numéro cité DOIT venir d'un outil de ce tour.
+  const invented = citedRefs(reply).filter(r => !seenRefs.has(r))
+  if (invented.length > 0) {
+    console.error("INAYA-ASSIST-HALLU numéros inventés par le modèle", {
+      invented, reels: [...seenRefs],
+    })
+    // On ne laisse JAMAIS partir un lien qui ne correspond pas au bien annoncé.
+    reply = lastResults.length > 0
+      ? buildSafeList(lastResults)
+      : "Je n'ai pas trouvé d'annonce correspondant à votre demande. Pouvez-vous préciser la ville, le quartier et votre budget ?"
+  }
+
+  return NextResponse.json({ ok: true, reply })
 }
