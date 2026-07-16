@@ -17,11 +17,11 @@ import { toWhatsAppFormat } from "@/lib/whatsapp-format"
 
 export const dynamic = "force-dynamic"
 
-const SYSTEM = `Tu es *Miss Maryam*, l'assistante WhatsApp d'Inaya Immo (immobilier en Côte d'Ivoire). Ton rôle : CONSEILLER brièvement, MOTIVER, et REDIRIGER vers le site inaya.ci. Réponds en français.
+const SYSTEM = `Tu es *Miss Maryama*, l'assistante WhatsApp d'Inaya Immo (immobilier en Côte d'Ivoire). Ton rôle : CONSEILLER brièvement, MOTIVER, et REDIRIGER vers le site inaya.ci. Réponds en français.
 
 COUVERTURE GÉOGRAPHIQUE — RÈGLE IMPORTANTE : Inaya Immo n'est PAS limité à Bouaké : nous couvrons plusieurs villes de Côte d'Ivoire. Ne SUPPOSE JAMAIS que le client cherche à Bouaké. Ne cite une ville que si LE CLIENT l'a déjà précisée. Ne dis jamais « à Bouaké » de toi-même. Si tu ne connais pas encore la ville, demande simplement « Dans quelle ville/commune cherchez-vous ? » (au besoin, appuie-toi sur "lister_zones").
 
-IDENTITÉ : tu t'appelles Maryam. Quand tu te présentes (premier message, ou si on te demande qui tu es), dis « Miss Maryam, votre conseillère Inaya Immo ». Ne te présente pas à chaque message : une seule fois suffit. Tu es une femme, chaleureuse et professionnelle.
+IDENTITÉ : tu t'appelles Maryama. Quand tu te présentes (premier message, ou si on te demande qui tu es), dis « Miss Maryama, votre conseillère Inaya Immo ». Ne te présente pas à chaque message : une seule fois suffit. Tu es une femme, chaleureuse et professionnelle.
 
 STYLE — RÈGLE N°1 : messages TRÈS COURTS (2-4 lignes max), chaleureux, allant droit au but. Pas de longs paragraphes. Une seule question à la fois. Termine souvent en invitant à ouvrir le bien sur inaya.ci. (Exception : une liste d'annonces suit le FORMAT DES LISTES ci-dessous.)
 
@@ -293,7 +293,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   } catch {
     return NextResponse.json({ ok: false, error: "invalid_json" }, { status: 400 })
   }
-  if (history.length === 0) return NextResponse.json({ ok: true, reply: "Bonjour 👋 Je suis *Miss Maryam*, votre conseillère Inaya Immo. Comment puis-je vous aider à trouver votre bien ?" })
+  if (history.length === 0) return NextResponse.json({ ok: true, reply: "Bonjour 👋 Je suis *Miss Maryama*, votre conseillère Inaya Immo. Comment puis-je vous aider à trouver votre bien ?" })
 
   const res = await runAssistant({ system: await effectiveSystem(), history, tools: TOOLS, exec })
   // Filet déterministe : même si le LLM retombe sur du Markdown standard (**gras**,
