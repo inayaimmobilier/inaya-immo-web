@@ -111,7 +111,10 @@ async function PropertiesList({ searchParams }: PageProps) {
   // (appartement, studio, villa, immeuble, duplex, chambre…). Les autres catégories
   // restent exactes, avec repli sur le titre si la colonne catégorie est vide.
   const RESIDENTIEL = ["maison", "appartement", "studio", "villa", "immeuble", "duplex", "chambre", "residence", "logement"]
-  const reResid = new RegExp(RESIDENTIEL.join("|"))
+  // Marqueurs d'HABITATION dans un titre. Au-delà des catégories, on reconnaît le
+  // vocabulaire ivoirien : « chambre salon » (2 pièces), « entrée couchée » (1 pièce,
+  // sanitaires communs — toutes graphies : entré couché, entrer coucher…).
+  const reResid = new RegExp(`${RESIDENTIEL.join("|")}|entr[a-z]*[\\s-]*couch`)
   // « Local / espace commercial » est GÉNÉRIQUE : tout petit commerce à céder ou
   // à louer (cave, salon de coiffure, quincaillerie, salle de jeux, kiosque,
   // maquis, lavage auto, pressing, restaurant, gargote, boulangerie, garage,
@@ -126,7 +129,11 @@ async function PropertiesList({ searchParams }: PageProps) {
     if (c === "maison") {
       const cat = norm(r.categorie)
       if (RESIDENTIEL.includes(cat)) return true
-      if (!cat) return reResid.test(norm(r.titre))
+      // Catégorie absente OU fourre-tout « autre » : on tranche sur le TITRE.
+      // Les annonces ingérées depuis WhatsApp atterrissent souvent en « autre »
+      // alors que ce sont des logements (vérifié : « Entrée couchée à louer… »
+      // en categorie='autre'). Sans ça, une recherche « maison » les rate.
+      if (!cat || cat === "autre") return reResid.test(norm(r.titre))
       return false
     }
     if (c === "local_commercial") {
