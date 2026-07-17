@@ -73,22 +73,43 @@ function MediaUploadStep({ propertyId, onDone }: { propertyId: string; onDone: (
     const errs: string[] = []
     const toRecord: { key: string; type: "image" | "video" }[] = []
     try {
+      const PROXY_MAX = 4 * 1024 * 1024 // repli serveur limité (plafond de corps Vercel)
       for (const pf of files) {
         try {
-          const presignRes = await fetch(`/api/annonces/${propertyId}/media/presign`, {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ files: [{ name: pf.file.name, contentType: pf.file.type, size: pf.file.size }] }),
-          })
-          const presign = await presignRes.json().catch(() => null) as
-            { items?: { key: string; uploadUrl: string; type: "image" | "video"; contentType: string }[]; errors?: string[] } | null
-          if (!presignRes.ok || !presign) { errs.push(`${pf.file.name} : préparation de l'envoi impossible.`); continue }
-          if (presign.errors?.length) errs.push(...presign.errors)
-          const item = presign.items?.[0]
-          if (!item) continue
+          let uploaded = false
 
-          const put = await fetch(item.uploadUrl, { method: "PUT", headers: { "Content-Type": item.contentType }, body: pf.file })
-          if (!put.ok) { errs.push(`${pf.file.name} : envoi vers le stockage refusé (${put.status}).`); continue }
-          toRecord.push({ key: item.key, type: item.type })
+          // 1) Voie normale : upload DIRECT navigateur → R2 (gère les vidéos lourdes).
+          try {
+            const presignRes = await fetch(`/api/annonces/${propertyId}/media/presign`, {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ files: [{ name: pf.file.name, contentType: pf.file.type, size: pf.file.size }] }),
+            })
+            const presign = await presignRes.json().catch(() => null) as
+              { items?: { key: string; uploadUrl: string; type: "image" | "video"; contentType: string }[]; errors?: string[] } | null
+            if (presignRes.ok && presign) {
+              if (presign.errors?.length) errs.push(...presign.errors)
+              const item = presign.items?.[0]
+              if (item) {
+                const put = await fetch(item.uploadUrl, { method: "PUT", headers: { "Content-Type": item.contentType }, body: pf.file })
+                if (put.ok) { toRecord.push({ key: item.key, type: item.type }); uploaded = true }
+              }
+            }
+          } catch { /* PUT direct bloqué (CORS R2 non configuré) → repli proxy ci-dessous */ }
+
+          // 2) Repli PROXY (navigateur → notre serveur → R2), sans CORS. Réservé aux
+          //    PHOTOS ≤ 4 Mo (plafond Vercel). Les vidéos exigent le CORS R2 + le direct.
+          if (!uploaded) {
+            if (pf.file.size > PROXY_MAX) {
+              errs.push(`${pf.file.name} : envoi impossible (fichier trop lourd — les vidéos nécessitent la configuration du stockage).`)
+            } else {
+              const fd = new FormData()
+              fd.append("file", pf.file)
+              const up = await fetch(`/api/annonces/${propertyId}/media/upload`, { method: "POST", body: fd })
+              const j = await up.json().catch(() => null) as { key?: string; type?: "image" | "video"; error?: string } | null
+              if (up.ok && j?.key && j.type) toRecord.push({ key: j.key, type: j.type })
+              else errs.push(`${pf.file.name} : ${j?.error ?? "envoi impossible."}`)
+            }
+          }
         } catch (e) {
           errs.push(`${pf.file.name} : ${(e as Error).message}`)
         }
