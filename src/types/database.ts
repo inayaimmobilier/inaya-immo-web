@@ -126,6 +126,10 @@ export interface Database {
           fingerprint: string | null
           publishers_count: number
           dedup_status: "unique" | "canonical" | "merged"
+          proprietaire_nom: string | null
+          proprietaire_telephone: string | null
+          proprietaire_email: string | null
+          proprietaire_notes: string | null
           created_at: string
           updated_at: string
         }

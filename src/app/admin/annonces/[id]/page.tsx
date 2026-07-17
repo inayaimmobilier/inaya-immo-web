@@ -21,6 +21,8 @@ interface Prop {
   statut: string; dedup_status: string; publishers_count: number; created_at: string
   mois_caution: number | null; mois_avance: number | null; mois_agence: number | null
   cout_cession: number | null; loyer_cession: number | null; conditions_acquisition: string | null
+  proprietaire_nom: string | null; proprietaire_telephone: string | null
+  proprietaire_email: string | null; proprietaire_notes: string | null
 }
 interface MediaRow {
   id: string; type: "image" | "video"; url: string; ordre: number
@@ -225,6 +227,55 @@ export default async function AdminBienDetail({ params }: PageProps) {
           Ordre = chronologie de publication. Ces informations restent internes : jamais exposées au client.
         </p>
       </section>
+
+      {/* Propriétaire réel du bien (saisi par le staff — interne) */}
+      {(prop.proprietaire_nom || prop.proprietaire_telephone || prop.proprietaire_email || prop.proprietaire_notes) && (() => {
+        const tel = prop.proprietaire_telephone?.replace(/\D/g, "") ?? ""
+        return (
+          <section className="bg-white rounded-2xl border border-teal-100 overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
+              <User className="w-4 h-4 text-teal-600" />
+              <h2 className="text-sm font-semibold text-gray-900">Propriétaire du bien</h2>
+              <span className="text-[11px] text-gray-400">interne</span>
+            </div>
+            <div className="px-5 py-4 space-y-2">
+              {prop.proprietaire_nom && <p className="text-sm font-semibold text-gray-900">{prop.proprietaire_nom}</p>}
+              {prop.proprietaire_telephone && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  {canSeeOwnerPhone ? (
+                    <>
+                      <span className="inline-flex items-center gap-1 text-xs text-gray-600"><Phone className="w-3 h-3" /> {prop.proprietaire_telephone}</span>
+                      {tel && (
+                        <a href={`https://wa.me/${tel}`} target="_blank" rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-[11px] font-medium bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded-lg">
+                          <MessageSquare className="w-3 h-3" /> WhatsApp
+                        </a>
+                      )}
+                      <a href={`tel:${prop.proprietaire_telephone}`}
+                        className="inline-flex items-center gap-1 text-[11px] font-medium bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 py-1 rounded-lg">
+                        <Phone className="w-3 h-3" /> Appeler
+                      </a>
+                    </>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-xs text-gray-400" title="Réservé aux administrateurs">
+                      <Phone className="w-3 h-3" /> •••• (réservé admin)
+                    </span>
+                  )}
+                </div>
+              )}
+              {prop.proprietaire_email && canSeeOwnerPhone && (
+                <p className="text-xs text-gray-500">{prop.proprietaire_email}</p>
+              )}
+              {prop.proprietaire_notes && (
+                <p className="text-xs text-gray-500 whitespace-pre-line">{prop.proprietaire_notes}</p>
+              )}
+            </div>
+            <p className="text-[11px] text-gray-400 px-5 py-3 border-t border-gray-50">
+              Coordonnées du propriétaire réel, saisies au moment de la publication. Jamais exposées au client.
+            </p>
+          </section>
+        )
+      })()}
 
       {/* Candidats doublons */}
       <section className="bg-white rounded-2xl border border-gray-100 overflow-hidden">

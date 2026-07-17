@@ -264,9 +264,9 @@ interface InitialContact { nom: string | null; telephone: string | null }
 
 // ── Formulaire principal ───────────────────────────────────────────────────
 export default function PublierForm({
-  villes, residence = false, initialContact = null,
+  villes, residence = false, initialContact = null, isStaff = false,
 }: {
-  villes: Zone[]; residence?: boolean; initialContact?: InitialContact | null
+  villes: Zone[]; residence?: boolean; initialContact?: InitialContact | null; isStaff?: boolean
 }) {
   const [state, action, pending] = useActionState(
     async (_prev: unknown, fd: FormData) => publierAnnonce(fd),
@@ -556,10 +556,48 @@ export default function PublierForm({
           className={`${inputCls} resize-none`} maxLength={2000} />
       </div>
 
+      {/* Coordonnées du PROPRIÉTAIRE réel — réservé au staff qui publie pour le compte
+          d'un propriétaire. Distinct du publieur (compte connecté). Interne. */}
+      {isStaff && (
+        <div className="bg-teal-50 border border-teal-100 rounded-2xl p-5 space-y-4">
+          <div>
+            <p className="text-sm font-semibold text-teal-900 mb-0.5">
+              Propriétaire {residence ? "de la résidence" : "du bien"} <span className="text-gray-400 font-normal">(interne)</span>
+            </p>
+            <p className="text-xs text-teal-700">
+              Coordonnées du <strong>vrai propriétaire</strong> du bien, distinctes de vous (le publieur).
+              Elles restent strictement internes et ne sont jamais montrées aux clients.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="proprietaire_nom" className="block text-xs text-teal-800 font-medium mb-1.5">Nom et prénom du propriétaire</label>
+              <input id="proprietaire_nom" name="proprietaire_nom" type="text"
+                placeholder="Ex : Koffi Aya" className={inputCls} maxLength={120} />
+            </div>
+            <div>
+              <label htmlFor="proprietaire_telephone" className="block text-xs text-teal-800 font-medium mb-1.5">Téléphone / WhatsApp du propriétaire</label>
+              <input id="proprietaire_telephone" name="proprietaire_telephone" type="tel"
+                placeholder="+225 07 00 00 00 00" className={inputCls} maxLength={40} />
+            </div>
+            <div>
+              <label htmlFor="proprietaire_email" className="block text-xs text-teal-800 font-medium mb-1.5">E-mail <span className="text-teal-500 font-normal">(facultatif)</span></label>
+              <input id="proprietaire_email" name="proprietaire_email" type="email"
+                placeholder="proprietaire@email.com" className={inputCls} maxLength={120} />
+            </div>
+            <div>
+              <label htmlFor="proprietaire_notes" className="block text-xs text-teal-800 font-medium mb-1.5">Autres informations <span className="text-teal-500 font-normal">(facultatif)</span></label>
+              <input id="proprietaire_notes" name="proprietaire_notes" type="text"
+                placeholder="2ᵉ numéro, gérant, disponibilité…" className={inputCls} maxLength={300} />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Contact propriétaire — déjà connu si compte connecté, pas besoin de redemander */}
       <div className="bg-amber-50 border border-amber-100 rounded-2xl p-5 space-y-4">
         <div>
-          <p className="text-sm font-semibold text-amber-900 mb-0.5">Vos coordonnées <span className="text-red-500">*</span></p>
+          <p className="text-sm font-semibold text-amber-900 mb-0.5">{isStaff ? "Vos coordonnées (publieur)" : "Vos coordonnées"} <span className="text-red-500">*</span></p>
           <p className="text-xs text-amber-700">
             {hasKnownContact && !editContact
               ? "Déjà enregistrées sur votre compte. Elles restent strictement confidentielles."

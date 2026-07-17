@@ -11,19 +11,21 @@ async function getVilles() {
   return (data ?? []) as { id: string; nom: string }[]
 }
 
-/** Coordonnées du compte connecté — évite de redemander nom/téléphone. */
-async function getInitialContact() {
+/** Coordonnées du compte connecté (+ s'il fait partie du staff, pour proposer la
+ *  saisie des coordonnées du propriétaire réel). Évite de redemander nom/téléphone. */
+async function getPublisherContext() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return null
-  const { data: prof } = await supabase.from("profiles").select("nom, prenom, telephone").eq("id", user.id).maybeSingle()
-  const p = prof as { nom: string | null; prenom: string | null; telephone: string | null } | null
+  if (!user) return { contact: null, isStaff: false }
+  const { data: prof } = await supabase.from("profiles").select("nom, prenom, telephone, role").eq("id", user.id).maybeSingle()
+  const p = prof as { nom: string | null; prenom: string | null; telephone: string | null; role: string | null } | null
   const nom = `${p?.prenom || ""} ${p?.nom || ""}`.trim() || null
-  return { nom, telephone: p?.telephone || null }
+  const isStaff = ["super_admin", "admin", "moderateur", "agent"].includes(p?.role ?? "")
+  return { contact: { nom, telephone: p?.telephone || null }, isStaff }
 }
 
 export default async function PublierPage() {
-  const [villes, initialContact] = await Promise.all([getVilles(), getInitialContact()])
+  const [villes, { contact: initialContact, isStaff }] = await Promise.all([getVilles(), getPublisherContext()])
   return (
     <>
       <Navbar />
@@ -62,7 +64,7 @@ export default async function PublierPage() {
         {/* Formulaire */}
         <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10">
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 md:p-8">
-            <PublierForm villes={villes} initialContact={initialContact} />
+            <PublierForm villes={villes} initialContact={initialContact} isStaff={isStaff} />
           </div>
 
           {/* Commission info */}

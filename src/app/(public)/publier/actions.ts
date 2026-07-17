@@ -22,6 +22,12 @@ export async function publierAnnonce(fd: FormData): Promise<PublierResult> {
   const contact_nom = (fd.get("contact_nom") as string | null)?.trim()
   const contact_phone = (fd.get("contact_phone") as string | null)?.trim()
 
+  // ── Coordonnées du propriétaire réel (saisies par le staff pour son compte) ──
+  const proprietaire_nom = (fd.get("proprietaire_nom") as string | null)?.trim() || null
+  const proprietaire_telephone = (fd.get("proprietaire_telephone") as string | null)?.trim() || null
+  const proprietaire_email = (fd.get("proprietaire_email") as string | null)?.trim() || null
+  const proprietaire_notes = (fd.get("proprietaire_notes") as string | null)?.trim() || null
+
   if (!type_offre || !categorie || !prix_raw || !contact_nom || !contact_phone) {
     return { ok: false, error: "Veuillez remplir tous les champs obligatoires." }
   }
@@ -94,6 +100,7 @@ export async function publierAnnonce(fd: FormData): Promise<PublierResult> {
     forfaits: isResidence ? forfaits : null,
     mois_caution, mois_avance, mois_agence,
     cout_cession, loyer_cession, conditions_acquisition,
+    proprietaire_nom, proprietaire_telephone, proprietaire_email, proprietaire_notes,
     statut: "en_attente_validation",
     source: "proprietaire",
   }
@@ -107,6 +114,7 @@ export async function publierAnnonce(fd: FormData): Promise<PublierResult> {
       tarif_periode: _tp, forfaits: _f,
       mois_caution: _mc, mois_avance: _ma, mois_agence: _mg,
       cout_cession: _cc, loyer_cession: _lc, conditions_acquisition: _ca,
+      proprietaire_nom: _pn, proprietaire_telephone: _pt, proprietaire_email: _pe, proprietaire_notes: _pnotes,
       ...base
     } = insertPayload
     // On reverse les champs perdus dans la description en repli, pour ne rien perdre.
@@ -118,6 +126,9 @@ export async function publierAnnonce(fd: FormData): Promise<PublierResult> {
     if (cout_cession != null) lost.push(`Pas de porte / coût de cession : ${cout_cession} FCFA.`)
     if (loyer_cession != null) lost.push(`Loyer après reprise : ${loyer_cession} FCFA/mois.`)
     if (conditions_acquisition) lost.push(`Conditions d'acquisition : ${conditions_acquisition}`)
+    if (proprietaire_nom || proprietaire_telephone || proprietaire_email || proprietaire_notes) {
+      lost.push(`Propriétaire (interne) : ${[proprietaire_nom, proprietaire_telephone, proprietaire_email, proprietaire_notes].filter(Boolean).join(" · ")}`)
+    }
     if (lost.length) base.description = [base.description, ...lost].filter(Boolean).join("\n\n")
     const retry = await admin.from("properties").insert(base as never).select("id").single()
     prop = retry.data; propErr = retry.error
