@@ -24,7 +24,11 @@ export async function POST(req: NextRequest) {
   const { nom } = (await req.json()) as { nom: string }
   if (!nom?.trim()) return NextResponse.json({ error: "Nom requis" }, { status: 400 })
   const admin = createAdminClient()
-  const { data, error } = await admin.from("villes").insert({ nom: nom.trim() } as never).select("id,nom,actif,ordre").single()
+  // Nouvelle commune ajoutée EN FIN de liste (ordre = max + 1) : elle apparaît
+  // partout de façon cohérente et l'admin la remonte ensuite si besoin.
+  const { data: last } = await admin.from("villes").select("ordre").order("ordre", { ascending: false }).limit(1).maybeSingle()
+  const nextOrdre = ((last as { ordre: number | null } | null)?.ordre ?? -1) + 1
+  const { data, error } = await admin.from("villes").insert({ nom: nom.trim(), ordre: nextOrdre } as never).select("id,nom,actif,ordre").single()
   if (error) return NextResponse.json({ error: error.message }, { status: 409 })
   return NextResponse.json(data)
 }

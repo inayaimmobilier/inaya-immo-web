@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { MapPin, Plus, Trash2, RefreshCw, Eye, EyeOff, ChevronRight } from "lucide-react"
+import { MapPin, Plus, Trash2, RefreshCw, Eye, EyeOff, ChevronRight, ChevronUp, ChevronDown } from "lucide-react"
 
 interface Ville { id: string; nom: string; actif: boolean; ordre: number }
 interface Quartier { id: string; nom: string; actif: boolean; ordre: number }
@@ -51,6 +51,26 @@ export default function ZonesManager({ initial }: { initial: Ville[] }) {
       setNewVille("")
     }
     setSaving(false)
+  }
+
+  // Réordonne les communes. On réindexe TOUTE la liste (ordre = 0,1,2…) pour être
+  // robuste même si les ordres existants sont à 0/dupliqués, et on ne persiste que
+  // les communes dont l'ordre a réellement changé. L'ordre est ensuite respecté
+  // PARTOUT (publier, recherche, filtres, assistant) car tout trie par `ordre`.
+  function moveVille(index: number, dir: -1 | 1) {
+    const j = index + dir
+    if (j < 0 || j >= villes.length) return
+    const next = [...villes]
+    ;[next[index], next[j]] = [next[j], next[index]]
+    const before = villes
+    const reindexed = next.map((v, i) => ({ ...v, ordre: i }))
+    setVilles(reindexed)   // maj optimiste immédiate
+    for (const v of reindexed) {
+      if ((before.find(o => o.id === v.id)?.ordre ?? -1) === v.ordre) continue
+      void fetch(`/api/admin/zones/villes/${v.id}`, {
+        method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ ordre: v.ordre }),
+      })
+    }
   }
 
   async function toggleVille(v: Ville) {
@@ -117,11 +137,24 @@ export default function ZonesManager({ initial }: { initial: Ville[] }) {
           {villes.length === 0 && (
             <li className="px-5 py-6 text-sm text-gray-400 text-center">Aucune ville configurée.</li>
           )}
-          {villes.map(v => (
+          {villes.map((v, i) => (
             <li key={v.id}
               onClick={() => setSelected(v)}
-              className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors group
+              className={`flex items-center gap-2 px-4 py-3 cursor-pointer transition-colors group
                 ${selected?.id === v.id ? "bg-blue-50" : "hover:bg-gray-50"}`}>
+              {/* Réordonnancement */}
+              <div className="flex flex-col -my-1">
+                <button onClick={e => { e.stopPropagation(); moveVille(i, -1) }} disabled={i === 0}
+                  className="p-0.5 rounded text-gray-300 hover:text-blue-600 disabled:opacity-30 disabled:hover:text-gray-300"
+                  title="Monter">
+                  <ChevronUp className="w-3.5 h-3.5" />
+                </button>
+                <button onClick={e => { e.stopPropagation(); moveVille(i, 1) }} disabled={i === villes.length - 1}
+                  className="p-0.5 rounded text-gray-300 hover:text-blue-600 disabled:opacity-30 disabled:hover:text-gray-300"
+                  title="Descendre">
+                  <ChevronDown className="w-3.5 h-3.5" />
+                </button>
+              </div>
               <ChevronRight className={`w-4 h-4 flex-shrink-0 transition-colors ${selected?.id === v.id ? "text-blue-600" : "text-gray-300"}`} />
               <span className={`flex-1 text-sm font-medium ${v.actif ? "text-gray-900" : "text-gray-400 line-through"}`}>
                 {v.nom}
