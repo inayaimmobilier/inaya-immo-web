@@ -122,6 +122,37 @@ export async function retryFailedNotifications(): Promise<ActionResult & { count
 }
 
 /**
+ * Annule les alertes de biens « Nouveau bien pour vous » (match_offre) EN ATTENTE :
+ * elles ne partiront pas. Anti-ban : sert à vider un backlog d'alertes de match qui
+ * s'est emballé (ingestion massive × demandes actives). On ne touche QUE les
+ * match_offre WhatsApp en attente — jamais les OTP, tâches ou autres notifications.
+ * Neutralisation propre : envoye=true SANS envoye_le → sort de « en attente » sans
+ * compter comme « envoyée » (24h) ni « en erreur ».
+ */
+export async function cancelPendingMatchAlerts(): Promise<ActionResult & { count?: number }> {
+  const admin = await requireAdmin()
+  if (!admin) return { ok: false, error: "Action réservée aux administrateurs." }
+
+  const db = createAdminClient()
+  const { count } = await db
+    .from("notifications")
+    .select("id", { count: "exact", head: true })
+    .eq("canal", "whatsapp").eq("type", "match_offre")
+    .eq("envoye", false).is("code_erreur", null)
+  const { error } = await db
+    .from("notifications")
+    .update({ envoye: true, erreur: "annulée (anti-spam)" } as never)
+    .eq("canal", "whatsapp").eq("type", "match_offre")
+    .eq("envoye", false).is("code_erreur", null)
+  if (error) {
+    console.error("INAYA-NOTIF-041", error)
+    return { ok: false, error: "Échec de l'annulation." }
+  }
+  revalidatePath("/admin/whatsapp")
+  return { ok: true, count: count ?? 0 }
+}
+
+/**
  * Désigne un compte comme notificateur INAYA (identité officielle pour l'envoi des messages).
  * Tous les autres comptes repassent en rôle « ingestion ».
  */

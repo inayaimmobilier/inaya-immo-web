@@ -107,10 +107,45 @@ export async function notifyUser(
   if (error) console.error("INAYA-NOTIF-005", error.message)
 }
 
+// Anti-ban / anti-spam des alertes de match : un numéro ne reçoit qu'UNE alerte
+// WhatsApp « Nouveau bien pour vous » par fenêtre, et JAMAIS deux fois le même bien.
+// Sans ce plafond, une salve d'ingestion (N biens × M demandes) crée des milliers de
+// messages « à froid » — et le même numéro en reçoit plusieurs d'affilée (motif qui
+// fait bannir le numéro WhatsApp). Les notifications PUSH in-app ne sont PAS bornées.
+const MATCH_ALERT_COOLDOWN_H = 6
+
+/**
+ * Une alerte match_offre WhatsApp est-elle autorisée pour ce destinataire ?
+ * NON si : (a) il a déjà reçu/en file une alerte de match récente (cooldown), ou
+ * (b) une alerte pour CE bien précis existe déjà. On compte AUSSI les notifications
+ * en attente (envoye=false) pour dédupliquer une même salve avant tout envoi.
+ */
+async function waMatchAlertAllowed(
+  db: ReturnType<typeof createAdminClient>,
+  key: { waNumber?: string | null; userId?: string | null; propertyId: string },
+): Promise<boolean> {
+  if (!key.waNumber && !key.userId) return true
+  const base = () => {
+    let q = db.from("notifications").select("id", { count: "exact", head: true })
+      .eq("canal", "whatsapp").eq("type", "match_offre")
+    q = key.waNumber ? q.eq("contact_telephone", key.waNumber) : q.eq("user_id", key.userId!)
+    return q
+  }
+  const cutoff = new Date(Date.now() - MATCH_ALERT_COOLDOWN_H * 3_600_000).toISOString()
+  const { count: recent } = await base().gte("created_at", cutoff)
+  if ((recent ?? 0) > 0) return false
+  const { count: dup } = await base().filter("payload->>property_id", "eq", key.propertyId)
+  if ((dup ?? 0) > 0) return false
+  return true
+}
+
 /**
  * Alerte un chercheur qu'un bien correspond à sa requête (§6.9).
  * Connecté → notification push (in-app). Anonyme (WhatsApp) → canal whatsapp
  * sur son numéro. L'identité/contact du propriétaire n'est jamais inclus.
+ *
+ * Anti-ban : le canal WhatsApp est PLAFONNÉ par contact (voir waMatchAlertAllowed) ;
+ * la notification push in-app, elle, reste systématique pour les comptes connectés.
  */
 export async function notifySearcher(args: {
   userId: string | null
@@ -161,18 +196,21 @@ export async function notifySearcher(args: {
   const rows: Record<string, unknown>[] = []
 
   if (args.userId) {
-    // Connecté : notification push in-app…
+    // Connecté : notification push in-app (TOUJOURS — jamais bornée)…
     rows.push({ ...base, user_id: args.userId, canal: "push" as NotifCanal })
-    // …+ WhatsApp sur le numéro de son profil s'il existe (recontact direct).
+    // …+ WhatsApp sur le numéro de son profil, SEULEMENT si le plafond anti-ban
+    // l'autorise (≤ 1 alerte / COOLDOWN, jamais 2× le même bien).
     const { data: prof } = await db
       .from("profiles").select("telephone").eq("id", args.userId).single()
     const tel = (prof as { telephone: string | null } | null)?.telephone?.trim()
-    if (tel) {
+    if (tel && await waMatchAlertAllowed(db, { waNumber: tel, userId: args.userId, propertyId: args.propertyId })) {
       rows.push({ ...base, user_id: args.userId, contact_telephone: tel, canal: "whatsapp" as NotifCanal })
     }
   } else if (args.contactTel) {
-    // Anonyme : WhatsApp sur le numéro fourni lors de la sauvegarde.
-    rows.push({ ...base, contact_telephone: args.contactTel, canal: "whatsapp" as NotifCanal })
+    // Anonyme : WhatsApp sur le numéro fourni, sous plafond anti-ban.
+    if (await waMatchAlertAllowed(db, { waNumber: args.contactTel, propertyId: args.propertyId })) {
+      rows.push({ ...base, contact_telephone: args.contactTel, canal: "whatsapp" as NotifCanal })
+    }
   }
 
   // Alerte AUSSI le staff qui a créé la recherche au nom du client (created_by) :
@@ -189,7 +227,9 @@ export async function notifySearcher(args: {
       contenu: `Un bien correspond à la recherche que vous suivez pour ${args.contactTel ?? "un client"} : « ${args.propertyTitre} »${lieu}.\n👉 ${url}`,
     }
     rows.push({ ...creatorBase, user_id: creatorId, canal: "push" as NotifCanal })
-    if (cTel) rows.push({ ...creatorBase, user_id: creatorId, contact_telephone: cTel, canal: "whatsapp" as NotifCanal })
+    if (cTel && await waMatchAlertAllowed(db, { waNumber: cTel, userId: creatorId, propertyId: args.propertyId })) {
+      rows.push({ ...creatorBase, user_id: creatorId, contact_telephone: cTel, canal: "whatsapp" as NotifCanal })
+    }
   }
 
   if (rows.length === 0) return

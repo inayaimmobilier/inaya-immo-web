@@ -1,8 +1,8 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { Bell, RefreshCw, CheckCircle2, AlertCircle, Clock, Loader2, Zap } from "lucide-react"
-import { retryFailedNotifications } from "./actions"
+import { Bell, RefreshCw, CheckCircle2, AlertCircle, Clock, Loader2, Zap, Ban } from "lucide-react"
+import { retryFailedNotifications, cancelPendingMatchAlerts } from "./actions"
 import NotifDetails from "./NotifDetails"
 
 interface Props {
@@ -24,6 +24,21 @@ export default function NotifStats({ pending, errored, sent24h }: Props) {
         setMsg(res.count === 0
           ? "Aucune notification bloquée à remettre."
           : `${res.count} notification(s) remises en file d'attente.`)
+      } else {
+        setMsg(res.error)
+      }
+    })
+  }
+
+  function cancelMatchAlerts() {
+    if (!confirm("Annuler toutes les alertes de biens « Nouveau bien pour vous » en attente ? Elles ne seront pas envoyées. (Sans effet sur les OTP, tâches et autres notifications.)")) return
+    setMsg(null)
+    startTransition(async () => {
+      const res = await cancelPendingMatchAlerts()
+      if (res.ok) {
+        setMsg(res.count === 0
+          ? "Aucune alerte de bien en attente à annuler."
+          : `${res.count} alerte(s) de biens annulée(s) — elles ne partiront pas.`)
       } else {
         setMsg(res.error)
       }
@@ -79,11 +94,19 @@ export default function NotifStats({ pending, errored, sent24h }: Props) {
               Si le service tourne et qu&apos;un compte est connecté, les détails ci-dessous révèlent l&apos;erreur exacte.
             </span>
           </div>
-          <button onClick={dispatchNow} disabled={dispatching}
-            className="flex items-center gap-1.5 text-xs font-medium text-amber-700 border border-amber-300 rounded-lg px-3 py-1.5 hover:bg-amber-100 transition-colors disabled:opacity-50">
-            {dispatching ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
-            Forcer l&apos;envoi maintenant
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={dispatchNow} disabled={dispatching || isPending}
+              className="flex items-center gap-1.5 text-xs font-medium text-amber-700 border border-amber-300 rounded-lg px-3 py-1.5 hover:bg-amber-100 transition-colors disabled:opacity-50">
+              {dispatching ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
+              Forcer l&apos;envoi maintenant
+            </button>
+            <button onClick={cancelMatchAlerts} disabled={isPending || dispatching}
+              className="flex items-center gap-1.5 text-xs font-medium text-red-700 border border-red-300 rounded-lg px-3 py-1.5 hover:bg-red-100 transition-colors disabled:opacity-50"
+              title="Annule les alertes « Nouveau bien pour vous » en attente (anti-spam). Sans effet sur les OTP et tâches.">
+              {isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Ban className="w-3 h-3" />}
+              Annuler les alertes de biens en attente
+            </button>
+          </div>
           <NotifDetails initialCount={pending} />
         </div>
       )}
