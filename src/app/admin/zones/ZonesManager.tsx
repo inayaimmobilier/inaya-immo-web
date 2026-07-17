@@ -109,6 +109,23 @@ export default function ZonesManager({ initial }: { initial: Ville[] }) {
     setSaving(false)
   }
 
+  // Réordonne les quartiers de la commune sélectionnée (même logique que les villes).
+  function moveQuartier(index: number, dir: -1 | 1) {
+    const j = index + dir
+    if (j < 0 || j >= quartiers.length) return
+    const next = [...quartiers]
+    ;[next[index], next[j]] = [next[j], next[index]]
+    const before = quartiers
+    const reindexed = next.map((q, i) => ({ ...q, ordre: i }))
+    setQuartiers(reindexed)
+    for (const q of reindexed) {
+      if ((before.find(o => o.id === q.id)?.ordre ?? -1) === q.ordre) continue
+      void fetch(`/api/admin/zones/quartiers/${q.id}`, {
+        method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ ordre: q.ordre }),
+      })
+    }
+  }
+
   async function toggleQuartier(q: Quartier) {
     const res = await fetch(`/api/admin/zones/quartiers/${q.id}`, {
       method: "PATCH",
@@ -204,8 +221,20 @@ export default function ZonesManager({ initial }: { initial: Ville[] }) {
               {quartiers.length === 0 && !loadingQ && (
                 <li className="px-5 py-6 text-sm text-gray-400 text-center">Aucun quartier pour cette ville.</li>
               )}
-              {quartiers.map(q => (
-                <li key={q.id} className="flex items-center gap-3 px-4 py-2.5 group hover:bg-gray-50">
+              {quartiers.map((q, i) => (
+                <li key={q.id} className="flex items-center gap-2 px-4 py-2.5 group hover:bg-gray-50">
+                  <div className="flex flex-col -my-1">
+                    <button onClick={() => moveQuartier(i, -1)} disabled={i === 0}
+                      className="p-0.5 rounded text-gray-300 hover:text-blue-600 disabled:opacity-30 disabled:hover:text-gray-300"
+                      title="Monter">
+                      <ChevronUp className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={() => moveQuartier(i, 1)} disabled={i === quartiers.length - 1}
+                      className="p-0.5 rounded text-gray-300 hover:text-blue-600 disabled:opacity-30 disabled:hover:text-gray-300"
+                      title="Descendre">
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                   <span className={`flex-1 text-sm ${q.actif ? "text-gray-800" : "text-gray-400 line-through"}`}>
                     {q.nom}
                   </span>

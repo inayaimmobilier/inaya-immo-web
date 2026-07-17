@@ -15,7 +15,7 @@ async function checkAdmin() {
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const err = await checkAdmin(); if (err) return err
   const { id } = await params
-  const body = (await req.json()) as { actif?: boolean }
+  const body = (await req.json()) as { actif?: boolean; ordre?: number }
   const admin = createAdminClient()
   const { error } = await admin.from("quartiers").update(body as never).eq("id", id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

@@ -28,7 +28,11 @@ export async function POST(req: NextRequest) {
   const { ville_id, nom } = (await req.json()) as { ville_id: string; nom: string }
   if (!ville_id || !nom?.trim()) return NextResponse.json({ error: "ville_id et nom requis" }, { status: 400 })
   const admin = createAdminClient()
-  const { data, error } = await admin.from("quartiers").insert({ ville_id, nom: nom.trim() } as never).select("id,nom,actif,ordre").single()
+  // Nouveau quartier en FIN de liste de sa commune (ordre = max + 1).
+  const { data: last } = await admin.from("quartiers").select("ordre").eq("ville_id", ville_id)
+    .order("ordre", { ascending: false }).limit(1).maybeSingle()
+  const nextOrdre = ((last as { ordre: number | null } | null)?.ordre ?? -1) + 1
+  const { data, error } = await admin.from("quartiers").insert({ ville_id, nom: nom.trim(), ordre: nextOrdre } as never).select("id,nom,actif,ordre").single()
   if (error) return NextResponse.json({ error: error.message }, { status: 409 })
   return NextResponse.json(data)
 }
