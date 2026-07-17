@@ -8,11 +8,14 @@ import { notifyClientDecision } from "@/lib/notifications"
 // WhatsApp. Le token fait office d'autorisation (capability) — pas de login.
 async function decide(token: string, confirme: boolean): Promise<void> {
   const admin = createAdminClient()
-  const { data } = await admin
-    .from("leads")
-    .select("id, contact_telephone, validation_proprietaire, properties(titre)")
-    .eq("validation_token", token)
-    .maybeSingle()
+  const sel = "id, contact_telephone, validation_proprietaire, properties(titre)"
+  // Résout par ID (nouveaux liens) OU validation_token (liens déjà envoyés).
+  let { data } = await admin.from("leads").select(sel)
+    .or(`id.eq.${token},validation_token.eq.${token}`).maybeSingle()
+  if (!data) {
+    const byId = await admin.from("leads").select(sel).eq("id", token).maybeSingle()
+    data = byId.data
+  }
 
   const lead = data as {
     id: string; contact_telephone: string | null; validation_proprietaire: string

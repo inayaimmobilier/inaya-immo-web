@@ -68,9 +68,7 @@ export async function createLead(form: FormData): Promise<LeadResult> {
   let { data: leadData, error } = await db.from("leads").insert(payload as never).select("id").single()
 
   // 42703 = colonne récente absente (migrations 018/022 non appliquées) → réessai sans.
-  let hasToken = true
   if (error?.code === "42703") {
-    hasToken = false
     const { validation_token: _t, sejour_nuits: _n, montant_estime: _m, ...base } = payload
     const retry = await db.from("leads").insert(base as never).select("id").single()
     leadData = retry.data; error = retry.error
@@ -79,6 +77,8 @@ export async function createLead(form: FormData): Promise<LeadResult> {
     console.error("INAYA-DB-030", error)
     return { ok: false, error: "Échec de l'envoi de la demande. Réessayez." }
   }
+
+  const leadId = (leadData as unknown as { id: string }).id
 
   // Notifications (best-effort : n'échouent jamais la demande du client).
   try {
@@ -89,7 +89,7 @@ export async function createLead(form: FormData): Promise<LeadResult> {
       contactNom: nom,
       contactTel: tel,
       creneau: creneau || null,
-      leadId: (leadData as unknown as { id: string }).id,
+      leadId,
       propertyId,
     })
 
@@ -112,7 +112,10 @@ export async function createLead(form: FormData): Promise<LeadResult> {
         propertyTitre: prop.titre,
         quartier: prop.quartier,
         creneau: creneau || null,
-        validationUrl: hasToken ? `${APP_URL}/rdv/${token}` : `${APP_URL}/admin/leads`,
+        // Lien basé sur l'ID du lead (UUID aléatoire = capability, TOUJOURS présent
+        // et unique). La page /rdv résout aussi bien par id que par validation_token
+        // → plus de 404 même si le token a été régénéré/absent (migrations partielles).
+        validationUrl: `${APP_URL}/rdv/${leadId}`,
         reservation,
       })
     }

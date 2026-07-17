@@ -21,11 +21,15 @@ interface LeadRow {
 export default async function ValidationRdvPage({ params }: PageProps) {
   const { token } = await params
   const admin = createAdminClient()
-  const { data } = await admin
-    .from("leads")
-    .select("id, contact_nom, message, creneaux, validation_proprietaire, properties(titre, quartier, ville)")
-    .eq("validation_token", token)
-    .maybeSingle()
+  const sel = "id, contact_nom, message, creneaux, validation_proprietaire, properties(titre, quartier, ville)"
+  // Résout le lead par ID (nouveaux liens) OU par validation_token (liens déjà
+  // envoyés). Repli sur l'ID seul si la colonne validation_token n'existe pas encore.
+  let { data } = await admin.from("leads").select(sel)
+    .or(`id.eq.${token},validation_token.eq.${token}`).maybeSingle()
+  if (!data) {
+    const byId = await admin.from("leads").select(sel).eq("id", token).maybeSingle()
+    data = byId.data
+  }
 
   const lead = data as LeadRow | null
   if (!lead) notFound() // lien invalide ou expiré
