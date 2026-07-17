@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/server"
 import { runAssistant, type ToolSpec, type ChatTurn } from "@/lib/llm"
+import { searchProperties, type SearchArgs, type ScoredProperty } from "@/lib/property-search"
 
 // ============================================================================
 // Assistant client Inaya : un LLM (modèle choisi par l'admin) avec accès en
@@ -31,7 +32,9 @@ RÈGLES IMPÉRATIVES :
 - PETITS COMMERCES = « LOCAL COMMERCIAL » : il n'existe PAS de catégorie dédiée par métier. Toute demande de cave, salon de coiffure, quincaillerie, salle de jeux, kiosque, maquis, lavage auto, pressing, restaurant, gargote/garbadrome, boulangerie, garage, point mobile money (Orange Money, Wave, MTN Money…), boutique, cyber café, bar, ou plus généralement tout petit commerce/fonds de commerce à céder ou à louer, relève de categorie="local_commercial". NE réponds JAMAIS « nous n'avons pas cette catégorie » pour ces demandes : recherche directement avec categorie="local_commercial" (affine avec le quartier/budget), le nom du commerce (cave, maquis…) figure généralement dans le titre ou la description du bien.
 - RÉSIDENCES MEUBLÉES (distinction importante) : ce sont des logements MEUBLÉS loués en court/moyen séjour, facturés par NUIT/semaine/mois — un univers À PART des annonces classiques (location longue durée, vente, cession). Quand le client demande une « résidence meublée », un « meublé », un logement « pour quelques nuits / un court séjour / une réservation », appelle l'outil avec type_offre="residence_meublee" (et NE le mélange PAS avec les locations classiques). À l'inverse, une demande de location/vente classique ne renvoie PAS de résidences meublées (l'outil les exclut automatiquement). Les résidences renvoyées sont meublées (meuble=true) et leur prix est « par nuit » : présente-les ainsi et invite à « Réserver » (et non « Demander une visite »).
 - Ne révèle JAMAIS le contact du propriétaire/annonceur. La mise en relation se fait via le bouton « Demander une visite » (annonces) ou « Réserver » (résidences meublées) sur la fiche du bien.
-- Si l'outil ne renvoie réellement aucun résultat, dis-le franchement et propose d'élargir les critères (ou "lister_zones" pour les communes/quartiers couverts).
+- RECHERCHE LARGE — l'outil renvoie des biens EXACTS et des biens SIMILAIRES (champ "correspondance" = "exacte" ou "similaire"), avec "nombre_exact" et "nombre_similaire". Ne réponds « aucun bien » QUE si "nombre" = 0. S'il n'y a que des similaires, présente-les en le disant clairement : « Je n'ai pas de correspondance exacte, mais voici des biens proches : … » — puis liste-les. Présente toujours les exacts en premier.
+- POUR MAXIMISER LES RÉSULTATS : passe TOUS les quartiers cités par le client dans "quartier" (séparés par des virgules), et mets le nombre de chambres dans "chambres_min" (« 2 chambres salon » → chambres_min:2). N'aie pas peur d'un budget : l'outil inclut aussi les biens légèrement au-dessus, marqués « similaire ».
+- Si l'outil ne renvoie réellement AUCUN résultat (nombre = 0), dis-le franchement et propose d'élargir (quartier voisin, budget un peu plus haut) ou "lister_zones" pour les communes/quartiers couverts.
 - Réponds en français, de façon concise, chaleureuse et professionnelle. Montants en FCFA.`
 
 const TOOLS: ToolSpec[] = [
@@ -60,10 +63,11 @@ const TOOLS: ToolSpec[] = [
           description: "Plusieurs catégories à la fois. Pour une demande générique de « maison » / « logement », utilise ['maison','appartement','studio'].",
         },
         commune: { type: "string", description: "Ville / commune, ex: Bouaké" },
-        quartier: { type: "string" },
+        quartier: { type: "string", description: "Un ou PLUSIEURS quartiers (sépare-les par des virgules, ex. « Nimbo, Air France, Broukro »). La recherche cherche le quartier dans le titre/description aussi." },
         prix_min: { type: "number" },
         prix_max: { type: "number" },
-        chambres_min: { type: "number" },
+        chambres_min: { type: "number", description: "Nombre minimum de chambres. « 2 chambres salon » = chambres_min:2. Les annonces dont les chambres figurent dans le titre sont bien prises en compte." },
+        mots_cles: { type: "string", description: "Mots-clés cherchés dans le titre/la description (ex. « entrée couchée », « meublé », « ACD », nom d'un commerce)." },
         tri: {
           type: "string",
           enum: ["recent", "prix_asc", "prix_desc"],
@@ -79,64 +83,20 @@ const TOOLS: ToolSpec[] = [
   },
 ]
 
-type Args = {
-  type_offre?: string; categorie?: string; categories?: string[]; commune?: string; quartier?: string
-  prix_min?: number; prix_max?: number; chambres_min?: number
-  tri?: "recent" | "prix_asc" | "prix_desc"
-}
-
-// Retire les accents (« Tchêlekro » → « Tchelekro ») pour élargir les correspondances.
-const stripAccents = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "")
-// Échappe les caractères qui casseraient la syntaxe PostgREST .or() (virgules, parenthèses).
-const cleanTerm = (s: string) => s.replace(/[(),]/g, " ").trim()
-
-async function rechercherAnnonces(args: Args): Promise<unknown> {
-  const admin = createAdminClient()
-  const wantResidence = args.type_offre === "residence_meublee"
-  let q = admin
-    .from("properties")
-    .select("*")
-    .eq("statut", "publie")
-    .limit(12)
-
-  if (wantResidence) {
-    // Résidences meublées uniquement (court/moyen séjour, meublées par définition).
-    q = q.eq("type_offre", "residence_meublee")
-  } else if (args.type_offre) {
-    q = q.eq("type_offre", args.type_offre)
-  } else {
-    // Recherche classique : on exclut les résidences (elles ont leur propre univers).
-    q = q.neq("type_offre", "residence_meublee")
+async function rechercherAnnonces(args: SearchArgs): Promise<unknown> {
+  let rows: ScoredProperty[]
+  try {
+    rows = await searchProperties(args, { limit: 12 })
+  } catch {
+    return { erreur: "Recherche indisponible pour le moment." }
   }
-
-  if (args.categories?.length) q = q.in("categorie", args.categories)
-  else if (args.categorie) q = q.eq("categorie", args.categorie)
-  if (args.commune) q = q.ilike("ville", `%${args.commune}%`)
-  // Quartier : beaucoup d'annonces (ingérées via WhatsApp) ont le quartier dans
-  // le TITRE ou la DESCRIPTION, pas dans la colonne quartier. On cherche donc le
-  // terme sur ces 3 champs à la fois, avec ET sans accents (recall élevé).
-  if (args.quartier) {
-    const term = cleanTerm(args.quartier)
-    if (term) {
-      const variants = Array.from(new Set([term, stripAccents(term)]))
-      const or = variants.flatMap(v => [`quartier.ilike.%${v}%`, `titre.ilike.%${v}%`, `description.ilike.%${v}%`]).join(",")
-      q = q.or(or)
-    }
+  const nb_exact = rows.filter(r => r.correspondance === "exacte").length
+  return {
+    nombre: rows.length,
+    nombre_exact: nb_exact,
+    nombre_similaire: rows.length - nb_exact,
+    resultats: rows.map(r => formatProperty(r, r.correspondance)),
   }
-  if (typeof args.prix_min === "number") q = q.gte("prix", args.prix_min)
-  if (typeof args.prix_max === "number") q = q.lte("prix", args.prix_max)
-  if (typeof args.chambres_min === "number") q = q.gte("nb_chambres", args.chambres_min)
-
-  // Tri : par prix (croissant/décroissant) ou par date. Pour « le moins cher »,
-  // on exclut les biens à prix 0/inconnu qui fausseraient le classement.
-  if (args.tri === "prix_asc") q = q.gt("prix", 0).order("prix", { ascending: true })
-  else if (args.tri === "prix_desc") q = q.order("prix", { ascending: false })
-  else q = q.order("created_at", { ascending: false })
-
-  const { data, error } = await q
-  if (error) return { erreur: "Recherche indisponible pour le moment." }
-  const rows = (data ?? []) as PropRow[]
-  return { nombre: rows.length, resultats: rows.map(formatProperty) }
 }
 
 // Formatage partagé d'un bien pour le modèle (évite les valeurs brutes « null »/« 0 »).
@@ -148,7 +108,7 @@ type PropRow = {
 }
 const fmtNum = (n: number) => n.toLocaleString("fr-FR")
 const PERIODE_TXT: Record<string, string> = { nuit: "/nuit", semaine: "/semaine", mois: "/mois" }
-function formatProperty(p: PropRow) {
+function formatProperty(p: PropRow, correspondance?: "exacte" | "similaire") {
   const isResid = p.type_offre === "residence_meublee"
   const localisation = [p.quartier, p.ville].filter(Boolean).join(", ") || "Localisation non précisée"
   let prix_texte: string
@@ -170,6 +130,7 @@ function formatProperty(p: PropRow) {
     meuble: isResid ? true : !!p.meuble,
     prix_texte, localisation,
     nb_pieces: p.nb_pieces, nb_chambres: p.nb_chambres, surface: p.surface,
+    ...(correspondance ? { correspondance } : {}),
   }
 }
 
@@ -195,7 +156,7 @@ async function trouverAnnonce(args: { numero?: number | string; titre?: string }
       .or(`titre.ilike.%${term}%,description.ilike.%${term}%`).limit(4)
     rows.push(...((data ?? []) as PropRow[]))
   }
-  return { nombre: rows.length, resultats: rows.map(formatProperty) }
+  return { nombre: rows.length, resultats: rows.map(r => formatProperty(r)) }
 }
 
 async function listerZones(): Promise<unknown> {
@@ -217,7 +178,7 @@ async function listerZones(): Promise<unknown> {
 
 async function exec(name: string, args: Record<string, unknown>): Promise<unknown> {
   if (name === "trouver_annonce") return trouverAnnonce(args as { numero?: string; titre?: string })
-  if (name === "rechercher_annonces") return rechercherAnnonces(args as Args)
+  if (name === "rechercher_annonces") return rechercherAnnonces(args as SearchArgs)
   if (name === "lister_zones") return listerZones()
   return { erreur: "Outil inconnu." }
 }

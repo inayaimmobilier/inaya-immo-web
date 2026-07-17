@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/server"
 import { runAssistant, type ToolSpec, type ChatTurn } from "@/lib/llm"
 import { SITE_URL } from "@/lib/site"
 import { toWhatsAppFormat } from "@/lib/whatsapp-format"
+import { searchProperties, type SearchArgs, type ScoredProperty } from "@/lib/property-search"
 
 // ============================================================================
 // Assistant IA WhatsApp (interne) — appelé par le whatsapp-service pour répondre
@@ -76,7 +77,9 @@ RÈGLES :
 - Petits commerces = catégorie "local_commercial".
 - « ENTRÉE COUCHÉE » (jargon ivoirien, s'écrit de multiples façons : « entré couché », « entrer coucher », « entrée-couchée »…) = logement d'UNE SEULE pièce, SANS toilettes ni cuisine dédiées — les sanitaires sont COMMUNS, partagés avec d'autres logements. C'est le logement le plus économique. Pour en chercher, passe l'expression dans "mots_cles" de "rechercher_annonces" (toutes les graphies sont couvertes automatiquement). Si un client demande une entrée couchée, ne lui propose pas un studio équipé sans le préciser : ce n'est pas la même chose (un studio a ses propres toilettes/cuisine).
 - Résidences meublées : court séjour, prix par nuit ; univers séparé (type_offre="residence_meublee").
-- Si aucun résultat, dis-le franchement et propose d'élargir. Montants en FCFA.`
+- RECHERCHE LARGE — l'outil renvoie des biens EXACTS et des biens SIMILAIRES (champ "correspondance"), avec "nombre_exact" et "nombre_similaire". Ne dis « aucun bien » QUE si "nombre" vaut 0. S'il n'y a que des similaires, présente-les en le disant : « Pas de correspondance exacte, mais voici des biens proches 👇 » puis la liste. Exacts d'abord.
+- POUR TROUVER LE MAXIMUM : passe TOUS les quartiers cités (dans "quartier", séparés par des virgules) et le nombre de chambres dans "chambres_min" (« 2 chambres salon » → chambres_min:2). Ne conclus jamais « rien » sans avoir lancé "rechercher_annonces" avec ces critères.
+- Si l'outil renvoie vraiment 0, dis-le franchement et propose d'élargir. Montants en FCFA.`
 
 // Injecté UNIQUEMENT lors de la seconde chance, quand le modèle a cité un numéro
 // qui ne provenait d'aucun outil de ce tour.
@@ -87,7 +90,7 @@ type Row = {
   type_offre: string; categorie: string; prix: number | null; prix_m2: number | null
   surface: number | null; nb_pieces: number | null; nb_chambres: number | null
   quartier: string | null; ville: string | null; meuble: boolean | null; tarif_periode: string | null
-  created_by: string | null
+  created_by?: string | null
 }
 
 const fmt = (n: number) => n.toLocaleString("fr-FR")
@@ -106,7 +109,7 @@ function prixTexte(p: Row): string {
 // IMPORTANT : le téléphone du publieur/propriétaire n'est JAMAIS renvoyé au
 // client. La mise en relation se fait via la fiche du bien (/biens/{id}) ; seuls
 // l'admin, le modérateur et l'agent assigné au lead accèdent au contact.
-function present(rows: Row[]) {
+function present(rows: (Row & { correspondance?: "exacte" | "similaire" })[]) {
   return rows.map(p => ({
     reference: p.reference,
     // URL courte lisible « /annonces/1664 » (redirige vers la fiche) ; repli UUID.
@@ -118,6 +121,7 @@ function present(rows: Row[]) {
     prix_texte: prixTexte(p),
     localisation: [p.quartier, p.ville].filter(Boolean).join(", ") || "Localisation non précisée",
     nb_pieces: p.nb_pieces, nb_chambres: p.nb_chambres, surface: p.surface,
+    ...(p.correspondance ? { correspondance: p.correspondance } : {}),
   }))
 }
 
@@ -125,68 +129,23 @@ function present(rows: Row[]) {
 // colonne "reference" (migration 039) n'est pas encore appliquée (→ undefined).
 const SELECT = "*"
 
-type SearchArgs = {
-  type_offre?: string; categorie?: string; categories?: string[]; commune?: string; quartier?: string
-  prix_min?: number; prix_max?: number; chambres_min?: number; tri?: "recent" | "prix_asc" | "prix_desc"
-  mots_cles?: string
-}
-
-// Retire les accents et échappe les caractères cassant la syntaxe .or().
-const stripAccents = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "")
-const cleanTerm = (s: string) => s.replace(/[(),]/g, " ").trim()
-
-/**
- * « Entrée couchée » : jargon ivoirien pour un logement d'UNE pièce, sans toilettes
- * ni cuisine dédiées (sanitaires communs). L'expression s'écrit de multiples façons
- * (« entré couché », « entrer coucher », « entrée-couchée », « entree couchee »…),
- * et les annonces issues de WhatsApp reprennent n'importe laquelle. On détecte donc
- * l'expression sur les RADICAUX, une fois les accents retirés.
- */
-const ENTREE_COUCHEE_RE = /entr[a-z]*[\s-]*couch/i
-
-/** Motifs ilike pour une recherche plein texte tolérante aux graphies. */
-function keywordPatterns(term: string): string[] {
-  const plain = stripAccents(term)
-  // Radicaux « entr…couch… » : couvre TOUTES les variantes d'« entrée couchée ».
-  if (ENTREE_COUCHEE_RE.test(plain)) return ["%entr%couch%"]
-  return Array.from(new Set([term, plain])).map(v => `%${v}%`)
-}
-
+// Recherche tolérante PARTAGÉE avec l'assistant web (@/lib/property-search) :
+// pré-filtre large + scoring en mémoire → tolère les colonnes nulles, gère les
+// quartiers multiples et renvoie les biens EXACTS et SIMILAIRES.
 async function rechercherAnnonces(args: SearchArgs) {
-  const admin = createAdminClient()
-  let q = admin.from("properties").select(SELECT).eq("statut", "publie").limit(12)
-  if (args.type_offre === "residence_meublee") q = q.eq("type_offre", "residence_meublee")
-  else if (args.type_offre) q = q.eq("type_offre", args.type_offre)
-  else q = q.neq("type_offre", "residence_meublee")
-  if (args.categories?.length) q = q.in("categorie", args.categories)
-  else if (args.categorie) q = q.eq("categorie", args.categorie)
-  if (args.commune) q = q.ilike("ville", `%${args.commune}%`)
-  // Quartier cherché sur titre + description + quartier (beaucoup d'annonces WhatsApp
-  // ont le quartier dans le titre), avec et sans accents.
-  if (args.quartier) {
-    const term = cleanTerm(args.quartier)
-    if (term) {
-      const variants = Array.from(new Set([term, stripAccents(term)]))
-      q = q.or(variants.flatMap(v => [`quartier.ilike.%${v}%`, `titre.ilike.%${v}%`, `description.ilike.%${v}%`]).join(","))
-    }
+  let rows: ScoredProperty[]
+  try {
+    rows = await searchProperties(args, { limit: 12 })
+  } catch {
+    return { erreur: "Recherche indisponible." }
   }
-  // Mots-clés libres (ex. « entrée couchée ») cherchés sur titre + description.
-  if (args.mots_cles) {
-    const term = cleanTerm(args.mots_cles)
-    if (term) {
-      q = q.or(keywordPatterns(term).flatMap(p => [`titre.ilike.${p}`, `description.ilike.${p}`]).join(","))
-    }
+  const nb_exact = rows.filter(r => r.correspondance === "exacte").length
+  return {
+    nombre: rows.length,
+    nombre_exact: nb_exact,
+    nombre_similaire: rows.length - nb_exact,
+    resultats: present(rows),
   }
-  if (typeof args.prix_min === "number") q = q.gte("prix", args.prix_min)
-  if (typeof args.prix_max === "number") q = q.lte("prix", args.prix_max)
-  if (typeof args.chambres_min === "number") q = q.gte("nb_chambres", args.chambres_min)
-  if (args.tri === "prix_asc") q = q.gt("prix", 0).order("prix", { ascending: true })
-  else if (args.tri === "prix_desc") q = q.order("prix", { ascending: false })
-  else q = q.order("created_at", { ascending: false })
-  const { data, error } = await q
-  if (error) return { erreur: "Recherche indisponible." }
-  const rows = (data ?? []) as Row[]
-  return { nombre: rows.length, resultats: present(rows) }
 }
 
 /** Recherche par numéro (référence), identifiant, ou fragment de titre. */
@@ -257,9 +216,11 @@ const TOOLS: ToolSpec[] = [
         type_offre: { type: "string", enum: ["location", "vente", "cession", "residence_meublee"] },
         categorie: { type: "string", enum: ["maison", "appartement", "studio", "terrain", "local_commercial", "bureau", "magasin", "autre"] },
         categories: { type: "array", items: { type: "string", enum: ["maison", "appartement", "studio", "terrain", "local_commercial", "bureau", "magasin", "autre"] } },
-        commune: { type: "string" }, quartier: { type: "string" },
+        commune: { type: "string" },
+        quartier: { type: "string", description: "Un ou PLUSIEURS quartiers, séparés par des virgules (ex. « Nimbo, Air France, Broukro »). Cherché aussi dans le titre/description." },
         mots_cles: { type: "string", description: "Mots-clés cherchés dans le titre/la description (ex. « entrée couchée », « meublé », « ACD »). Toutes les graphies d'« entrée couchée » sont couvertes." },
-        prix_min: { type: "number" }, prix_max: { type: "number" }, chambres_min: { type: "number" },
+        prix_min: { type: "number" }, prix_max: { type: "number" },
+        chambres_min: { type: "number", description: "Nombre minimum de chambres. « 2 chambres salon » → chambres_min:2. Les annonces dont les chambres figurent seulement dans le titre sont bien prises en compte." },
         tri: { type: "string", enum: ["recent", "prix_asc", "prix_desc"] },
       },
     },
