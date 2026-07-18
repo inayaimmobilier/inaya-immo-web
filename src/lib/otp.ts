@@ -18,6 +18,17 @@ const MAX_ATTEMPTS = 5
 function hashCode(code: string): string {
   return createHash("sha256").update(code).digest("hex")
 }
+
+/**
+ * SÉCURITÉ : la destination (téléphone/e-mail, saisie utilisateur) est interpolée
+ * dans un filtre PostgREST .or(). On retire les caractères de syntaxe « ( ) , »
+ * — sinon une destination forgée (ex. « x,user_id.not.is.null ») élargirait le
+ * filtre et neutraliserait les OTP d'AUTRES comptes (déni de service). Aucun
+ * téléphone ni e-mail légitime ne contient ces caractères.
+ */
+function safeFilterValue(v: string): string {
+  return v.replace(/[(),]/g, "")
+}
 function genCode(): string {
   return String(randomInt(0, 1_000_000)).padStart(6, "0")
 }
@@ -38,7 +49,7 @@ async function neutralizeOtpNotifications(
   destination?: string,
 ): Promise<void> {
   const filter = destination
-    ? `user_id.eq.${userId},contact_telephone.eq.${destination}`
+    ? `user_id.eq.${userId},contact_telephone.eq.${safeFilterValue(destination)}`
     : `user_id.eq.${userId}`
   await admin.from("notifications")
     .update({ envoye: true, envoye_le: new Date().toISOString(), erreur: raison } as never)
@@ -95,7 +106,7 @@ export async function issueOtp(userId: string, canal: OtpCanal, destination: str
     .update({ envoye: true, erreur: "remplacé par un nouveau code OTP" } as never)
     .eq("type", "otp_verification")
     .eq("envoye", false)
-    .or(`user_id.eq.${userId},contact_telephone.eq.${dest}`)
+    .or(`user_id.eq.${userId},contact_telephone.eq.${safeFilterValue(dest)}`)
 
   const { error: insErr } = await admin.from("otp_codes").insert({
     user_id: userId, canal, destination: dest, code_hash: hashCode(code), expires_at,

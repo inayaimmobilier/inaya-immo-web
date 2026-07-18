@@ -151,10 +151,14 @@ async function trouverAnnonce(args: { numero?: number | string; titre?: string }
     }
   }
   if (rows.length === 0 && args.titre?.trim()) {
-    const term = args.titre.trim()
-    const { data } = await admin.from("properties").select("*").eq("statut", "publie")
-      .or(`titre.ilike.%${term}%,description.ilike.%${term}%`).limit(4)
-    rows.push(...((data ?? []) as PropRow[]))
+    // SÉCURITÉ : le terme est interpolé dans un filtre PostgREST .or() — on retire
+    // « ( ) , » (syntaxe du filtre) pour empêcher toute injection de conditions.
+    const term = args.titre.trim().replace(/[(),]/g, " ").trim()
+    if (term) {
+      const { data } = await admin.from("properties").select("*").eq("statut", "publie")
+        .or(`titre.ilike.%${term}%,description.ilike.%${term}%`).limit(4)
+      rows.push(...((data ?? []) as PropRow[]))
+    }
   }
   return { nombre: rows.length, resultats: rows.map(r => formatProperty(r)) }
 }

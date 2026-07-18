@@ -9,7 +9,10 @@ import { presignPutUrl, publicUrlForKey, r2Configured } from "@/lib/r2"
 // propriétaire peut gérer les médias de ses biens à vie.
 export const runtime = "nodejs"
 
-const VIDEO_EXTS = new Set(["mp4", "mov", "avi", "webm", "mkv"])
+const VIDEO_EXTS = new Set(["mp4", "mov", "avi", "webm", "mkv", "m4v", "3gp"])
+// SÉCURITÉ : extensions LIMITÉES aux images/vidéos (pas de .html/.svg servis
+// depuis le domaine des médias → phishing/XSS).
+const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "webp", "gif", "heic", "heif", "avif", "bmp"])
 const MAX_FILE_BYTES = 200 * 1024 * 1024
 
 /** Vérifie l'auth + la propriété du bien. Renvoie l'id user ou une Response d'erreur. */
@@ -44,7 +47,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if ((f.size ?? 0) > MAX_FILE_BYTES) { errors.push(`${name} dépasse 200 Mo`); continue }
     const ext = (name.split(".").pop() ?? "jpg").toLowerCase()
     const isVideo = VIDEO_EXTS.has(ext)
-    const contentType = f.contentType || (isVideo ? "video/mp4" : "image/jpeg")
+    if (!isVideo && !IMAGE_EXTS.has(ext)) { errors.push(`${name} : format non accepté (photos ou vidéos uniquement).`); continue }
+    // Content-Type contraint à image/* ou video/* (cohérent avec l'extension).
+    const claimed = f.contentType ?? ""
+    const contentType = (isVideo ? claimed.startsWith("video/") : claimed.startsWith("image/"))
+      ? claimed : (isVideo ? "video/mp4" : "image/jpeg")
     const key = `properties/${propertyId}/${Date.now()}_${i++}.${ext}`
     try {
       const uploadUrl = await presignPutUrl(key, contentType)

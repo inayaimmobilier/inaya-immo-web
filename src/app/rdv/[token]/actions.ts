@@ -7,6 +7,9 @@ import { notifyClientDecision } from "@/lib/notifications"
 // Décision du propriétaire sur un rendez-vous, via le lien tokenisé reçu par
 // WhatsApp. Le token fait office d'autorisation (capability) — pas de login.
 async function decide(token: string, confirme: boolean): Promise<void> {
+  // SÉCURITÉ : token issu de l'URL (non fiable). UUID strict exigé avant toute
+  // requête — sinon un token forgé injecterait un filtre PostgREST via le .or().
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(token)) return
   const admin = createAdminClient()
   const sel = "id, contact_telephone, validation_proprietaire, properties(titre)"
   // Résout par ID (nouveaux liens) OU validation_token (liens déjà envoyés).

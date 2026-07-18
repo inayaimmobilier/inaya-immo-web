@@ -69,6 +69,10 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
+    // SÉCURITÉ (défense en profondeur) : /admin exige une session. Chaque page
+    // admin vérifie déjà le RÔLE ; ce verrou global garantit qu'aucune page
+    // admin oubliée ne soit servie à un visiteur non connecté.
+    "/admin/:path*",
     "/client/:path*",
     "/proprietaire/:path*",
     "/locataire/:path*",

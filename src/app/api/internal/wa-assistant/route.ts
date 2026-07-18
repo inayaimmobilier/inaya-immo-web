@@ -169,10 +169,14 @@ async function trouverAnnonce(args: { numero?: number | string; titre?: string }
 
   // 2) Fragment de titre (full-text puis ilike de repli).
   if (rows.length === 0 && args.titre?.trim()) {
-    const term = args.titre.trim()
-    const { data } = await admin.from("properties").select(SELECT).eq("statut", "publie")
-      .or(`titre.ilike.%${term}%,description.ilike.%${term}%`).limit(4)
-    rows.push(...((data ?? []) as Row[]))
+    // SÉCURITÉ : le terme est interpolé dans un filtre PostgREST .or() — on retire
+    // « ( ) , » (syntaxe du filtre) pour empêcher toute injection de conditions.
+    const term = args.titre.trim().replace(/[(),]/g, " ").trim()
+    if (term) {
+      const { data } = await admin.from("properties").select(SELECT).eq("statut", "publie")
+        .or(`titre.ilike.%${term}%,description.ilike.%${term}%`).limit(4)
+      rows.push(...((data ?? []) as Row[]))
+    }
   }
 
   if (rows.length === 0) return { nombre: 0, resultats: [] }

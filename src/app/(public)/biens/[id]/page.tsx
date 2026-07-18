@@ -193,7 +193,9 @@ export default async function BienDetailPage({ params }: PageProps) {
 
   return (
     <>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      {/* SÉCURITÉ : « < » échappé — titre/description viennent de l'ingestion WhatsApp
+          (contenu NON fiable) ; un « </script> » dans le titre injecterait du script (XSS stocké). */}
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
       <PixelViewContent id={property.id} value={property.prix} category={property.categorie} />
       <Navbar />
       <main className="min-h-screen bg-gray-50">

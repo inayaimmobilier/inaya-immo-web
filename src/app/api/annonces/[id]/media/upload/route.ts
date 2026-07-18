@@ -14,7 +14,10 @@ import { uploadToR2, publicUrlForKey, r2Configured } from "@/lib/r2"
 
 export const runtime = "nodejs"
 
-const VIDEO_EXTS = new Set(["mp4", "mov", "avi", "webm", "mkv"])
+const VIDEO_EXTS = new Set(["mp4", "mov", "avi", "webm", "mkv", "m4v", "3gp"])
+// SÉCURITÉ : extensions LIMITÉES aux images/vidéos (pas de .html/.svg servis
+// depuis le domaine des médias → phishing/XSS).
+const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "webp", "gif", "heic", "heif", "avif", "bmp"])
 const MAX_PROXY_BYTES = 4 * 1024 * 1024 // marge sous la limite Vercel (~4,5 Mo)
 const WINDOW_MS = 2 * 60 * 60 * 1000
 
@@ -46,7 +49,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const name = (file.name || "fichier").replace(/[^\w.-]/g, "_")
   const ext = (name.split(".").pop() ?? "jpg").toLowerCase()
   const isVideo = VIDEO_EXTS.has(ext)
-  const contentType = file.type || (isVideo ? "video/mp4" : "image/jpeg")
+  if (!isVideo && !IMAGE_EXTS.has(ext)) {
+    return NextResponse.json({ error: "Format non accepté (photos ou vidéos uniquement)." }, { status: 415 })
+  }
+  // Content-Type contraint à image/* ou video/* (cohérent avec l'extension).
+  const contentType = (isVideo ? file.type.startsWith("video/") : file.type.startsWith("image/"))
+    ? file.type : (isVideo ? "video/mp4" : "image/jpeg")
   const key = `properties/${propertyId}/${Date.now()}.${ext}`
   try {
     const buf = Buffer.from(await file.arrayBuffer())

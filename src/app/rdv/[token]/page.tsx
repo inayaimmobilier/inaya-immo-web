@@ -20,6 +20,10 @@ interface LeadRow {
 
 export default async function ValidationRdvPage({ params }: PageProps) {
   const { token } = await params
+  // SÉCURITÉ : le token vient de l'URL (non fiable). On EXIGE un UUID strict avant
+  // toute requête — sinon un token forgé (ex. « x,id.not.is.null ») injecterait un
+  // filtre PostgREST dans le .or() et matcherait n'importe quel lead.
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(token)) notFound()
   const admin = createAdminClient()
   const sel = "id, contact_nom, message, creneaux, validation_proprietaire, properties(titre, quartier, ville)"
   // Résout le lead par ID (nouveaux liens) OU par validation_token (liens déjà

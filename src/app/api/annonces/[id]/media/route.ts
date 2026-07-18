@@ -8,7 +8,10 @@ import { uploadToR2, r2Configured, publicUrlForKey } from "@/lib/r2"
 export const runtime = "nodejs"
 export const maxDuration = 120
 
-const VIDEO_EXTS = new Set(["mp4", "mov", "avi", "webm", "mkv"])
+const VIDEO_EXTS = new Set(["mp4", "mov", "avi", "webm", "mkv", "m4v", "3gp"])
+// SÉCURITÉ : extensions LIMITÉES aux images/vidéos (pas de .html/.svg servis
+// depuis le domaine des médias → phishing/XSS).
+const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "webp", "gif", "heic", "heif", "avif", "bmp"])
 const MAX_FILE_BYTES = 200 * 1024 * 1024
 const MAX_MB = 200
 const WINDOW_MS = 2 * 60 * 60 * 1000 // 2 heures
@@ -68,6 +71,10 @@ export async function POST(
     }
     const ext = (file.name.split(".").pop() ?? "jpg").toLowerCase()
     const isVideo = VIDEO_EXTS.has(ext)
+    if (!isVideo && !IMAGE_EXTS.has(ext)) {
+      errors.push(`${file.name} : format non accepté (photos ou vidéos uniquement).`)
+      continue
+    }
     const stamp = `${Date.now()}_${nextOrdre}`
 
     try {
@@ -94,7 +101,8 @@ export async function POST(
         if (error) { errors.push(`DB: ${error.message}`); continue }
         created.push(row)
       } else {
-        const mime = file.type || "image/jpeg"
+        // Content-Type contraint à image/* (un « text/html » déclaré serait servi tel quel par R2).
+        const mime = file.type.startsWith("image/") ? file.type : "image/jpeg"
         const url = await uploadToR2(`properties/${propertyId}/${stamp}.${ext}`, raw, mime)
         const { data: row, error } = await admin.from("property_media")
           .insert({ property_id: propertyId, type: "image", url, ordre: nextOrdre++, taille_bytes: raw.length, } as never)
@@ -133,7 +141,9 @@ export async function PUT(
 
   let body: { items?: { key?: string; type?: string }[] }
   try { body = await req.json() } catch { return NextResponse.json({ error: "Corps invalide" }, { status: 400 }) }
-  const items = (body.items ?? []).filter(it => it.key)
+  // SÉCURITÉ : seule une clé émise pour CE bien (préfixe properties/{id}/) est
+  // enregistrable — empêche de rattacher un objet R2 arbitraire à l'annonce.
+  const items = (body.items ?? []).filter(it => it.key && it.key.startsWith(`properties/${propertyId}/`))
   if (items.length === 0) return NextResponse.json({ error: "Aucun média" }, { status: 400 })
 
   const { data: existing } = await admin.from("property_media").select("ordre")

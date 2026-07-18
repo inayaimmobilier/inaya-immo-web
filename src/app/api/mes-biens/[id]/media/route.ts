@@ -33,7 +33,9 @@ export async function PUT(
 
   let body: { items?: { key?: string; type?: string }[] }
   try { body = await req.json() } catch { return NextResponse.json({ error: "Corps invalide" }, { status: 400 }) }
-  const items = (body.items ?? []).filter(it => it.key)
+  // SÉCURITÉ : seule une clé émise pour CE bien (préfixe properties/{id}/) est
+  // enregistrable — empêche de rattacher un objet R2 arbitraire à l'annonce.
+  const items = (body.items ?? []).filter(it => it.key && it.key.startsWith(`properties/${propertyId}/`))
   if (items.length === 0) return NextResponse.json({ error: "Aucun média à enregistrer" }, { status: 400 })
 
   const admin = createAdminClient()

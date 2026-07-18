@@ -8,7 +8,13 @@ import { signInFlexible } from "@/lib/account-actions"
 
 export default function ConnexionForm() {
   const searchParams = useSearchParams()
-  const explicitRedirect = searchParams.get("redirect")
+  // SÉCURITÉ (anti open-redirect) : seule une destination INTERNE est acceptée —
+  // un chemin relatif commençant par « / » (mais pas « // » ni « /\ », interprétés
+  // par les navigateurs comme protocol-relative vers un domaine externe). Sinon un
+  // lien « /connexion?redirect=https://faux-site.com » enverrait l'utilisateur,
+  // fraîchement connecté, vers un site de phishing.
+  const rawRedirect = searchParams.get("redirect")
+  const explicitRedirect = rawRedirect && /^\/(?![/\\])/.test(rawRedirect) ? rawRedirect : null
 
   const [identifier, setIdentifier] = useState("")
   const [password, setPassword] = useState("")

@@ -89,7 +89,8 @@ export default async function RootLayout({
   return (
     <html lang="fr" className={`${geist.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
-        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(orgJsonLd) }} />
+        {/* SÉCURITÉ : « < » échappé — un contenu contenant </script> casserait le tag et injecterait du script (XSS). */}
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(orgJsonLd).replace(/</g, "\\u003c") }} />
         {children}
         <ChatWidget />
         <VisitTracker />
