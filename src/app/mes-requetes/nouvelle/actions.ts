@@ -3,6 +3,7 @@
 import { createClient, createAdminClient } from "@/lib/supabase/server"
 import { runMatchingForRequest } from "@/lib/matching"
 import { computeAlerteExpiry } from "@/lib/alert-expiry"
+import { normalizeSearchCategories, withSousTypesNote } from "@/lib/search-cats"
 import type { PropertyCat, PropertyType } from "@/types/database"
 
 function normalizePhone(raw: string): string | null {
@@ -23,15 +24,20 @@ export async function saveSearchFull(form: FormData) {
   const pieces_min = form.get("pieces_min") ? Number(form.get("pieces_min")) : null
   const q         = (form.get("q") as string) || null
 
+  // Types admin (« villa », « entrepôt »…) → familles enum de la base (la colonne
+  // categories est un enum : insérer un sous-type inconnu ferait échouer la
+  // création). Le sous-type précis est consigné dans les précisions.
+  const { cats, sousTypes } = normalizeSearchCategories(categorie ? [categorie] : [])
+
   const criteres = {
     canal:            "web" as const,
     type_offre:       type as PropertyType | null,
-    categories:       categorie ? [categorie as PropertyCat] : null,
+    categories:       cats.length ? (cats as PropertyCat[]) : null,
     zones:            quartier ? [quartier] : null,
     budget_min:       prix_min,
     budget_max:       prix_max,
     nb_pieces_min:    pieces_min,
-    description_libre: q,
+    description_libre: withSousTypesNote(q, sousTypes),
     statut:           "active" as const,
   }
 

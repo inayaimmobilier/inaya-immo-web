@@ -5,6 +5,7 @@ import { createClient, createAdminClient } from "@/lib/supabase/server"
 import { phoneMatchCandidates, normalizePhone } from "@/lib/phone"
 import { runMatchingForRequest } from "@/lib/matching"
 import { computeAlerteExpiry, ALERTE_TTL_SETTING_KEY } from "@/lib/alert-expiry"
+import { normalizeSearchCategories, withSousTypesNote } from "@/lib/search-cats"
 import type { UserRole, PropertyType, PropertyCat, RequestStatus } from "@/types/database"
 
 type Res = { ok: true; matched?: number } | { ok: false; error: string }
@@ -24,7 +25,8 @@ export interface SearchInput {
   contact_telephone: string
   contact_nom?: string | null
   type_offre?: PropertyType | null
-  categories?: PropertyCat[] | null
+  /** Codes des types admin (peuvent inclure des sous-types hors enum : « villa »…). */
+  categories?: string[] | null
   budget_min?: number | null
   budget_max?: number | null
   zones?: string[] | null
@@ -39,17 +41,20 @@ function cleanInput(input: SearchInput) {
     const list = (a ?? []).map(s => s.trim()).filter(Boolean)
     return list.length ? list : null
   }
+  // Types admin (« villa », « entrepôt »…) → familles enum de la base ; les
+  // sous-types précis sont consignés dans les précisions (note dédupliquée).
+  const { cats, sousTypes } = normalizeSearchCategories(input.categories ?? [])
   return {
     contact_telephone: normalizePhone(input.contact_telephone),
     contact_nom: input.contact_nom?.trim() || null,
     type_offre: input.type_offre || null,
-    categories: (input.categories ?? []).length ? input.categories : null,
+    categories: (cats.length ? cats : null) as PropertyCat[] | null,
     budget_min: clean(input.budget_min),
     budget_max: clean(input.budget_max),
     zones: arr(input.zones),
     nb_pieces_min: clean(input.nb_pieces_min),
     meuble: input.meuble ?? null,
-    description_libre: input.description_libre?.trim() || null,
+    description_libre: withSousTypesNote(input.description_libre?.trim() || null, sousTypes),
   }
 }
 

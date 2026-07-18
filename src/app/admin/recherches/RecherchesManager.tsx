@@ -1,11 +1,12 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useEffect, useState, useTransition } from "react"
 import { Plus, Pencil, Trash2, Loader2, X, BellRing, BellOff, CheckCircle2, Search, CheckSquare, Square, Clock, Timer } from "lucide-react"
 import {
   createSearchForClient, updateSearchRequest, deleteSearchRequest, setSearchStatus,
   bulkSetSearchStatus, bulkDeleteSearchRequests, saveAlerteProTtl, type SearchInput,
 } from "./actions"
+import { usePropertyTypes } from "@/hooks/usePropertyTypes"
 import type { PropertyType, PropertyCat, RequestStatus } from "@/types/database"
 
 export interface SearchRow {
@@ -292,6 +293,8 @@ export default function RecherchesManager({ rows, canDelete, isAdmin = false, tt
   )
 }
 
+interface ZoneOpt { id: string; nom: string }
+
 function SearchModal({ initial, onClose, onSaved }: {
   initial: SearchRow | null
   onClose: () => void
@@ -300,16 +303,46 @@ function SearchModal({ initial, onClose, onSaved }: {
   const [tel, setTel] = useState(initial?.contact_telephone ?? "")
   const [nom, setNom] = useState(initial?.contact_nom ?? "")
   const [typeOffre, setTypeOffre] = useState<PropertyType | "">(initial?.type_offre ?? "")
-  const [cats, setCats] = useState<PropertyCat[]>(initial?.categories ?? [])
+  // Types de biens gérés par l'admin (« Villa », « Entrepôt »… inclus) — même
+  // liste que la barre de recherche principale et le formulaire de publication.
+  const { options: adminCats } = usePropertyTypes()
+  const [cats, setCats] = useState<string[]>(initial?.categories ?? [])
   const [budgetMax, setBudgetMax] = useState(initial?.budget_max ? String(initial.budget_max) : "")
-  const [zones, setZones] = useState((initial?.zones ?? []).join(", "))
+  // Quartiers : sélection comme dans la barre de recherche principale — choisir
+  // une commune, puis cocher un ou PLUSIEURS quartiers. Les zones existantes hors
+  // référentiel restent affichées (retirable) ; un champ permet d'en ajouter.
+  const [zones, setZonesArr] = useState<string[]>(initial?.zones ?? [])
+  const [villes, setVilles] = useState<ZoneOpt[]>([])
+  const [villeId, setVilleId] = useState("")
+  const [quartiers, setQuartiers] = useState<ZoneOpt[]>([])
+  const [zoneLibre, setZoneLibre] = useState("")
   const [pieces, setPieces] = useState(initial?.nb_pieces_min ? String(initial.nb_pieces_min) : "")
   const [desc, setDesc] = useState(initial?.description_libre ?? "")
   const [pending, start] = useTransition()
   const [err, setErr] = useState<string | null>(null)
 
-  function toggleCat(c: PropertyCat) {
+  useEffect(() => {
+    fetch("/api/zones/villes").then(r => r.json())
+      .then((d: ZoneOpt[]) => { if (Array.isArray(d)) setVilles(d) })
+      .catch(() => {})
+  }, [])
+  useEffect(() => {
+    if (!villeId) { setQuartiers([]); return }
+    fetch(`/api/zones/quartiers?ville_id=${villeId}`).then(r => r.json())
+      .then((d: ZoneOpt[]) => { if (Array.isArray(d)) setQuartiers(d) })
+      .catch(() => setQuartiers([]))
+  }, [villeId])
+
+  function toggleCat(c: string) {
     setCats(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c])
+  }
+  function toggleZone(nomQuartier: string) {
+    setZonesArr(prev => prev.includes(nomQuartier) ? prev.filter(z => z !== nomQuartier) : [...prev, nomQuartier])
+  }
+  function addZoneLibre() {
+    const v = zoneLibre.trim()
+    if (v && !zones.includes(v)) setZonesArr(prev => [...prev, v])
+    setZoneLibre("")
   }
 
   function submit() {
@@ -320,7 +353,7 @@ function SearchModal({ initial, onClose, onSaved }: {
       type_offre: (typeOffre || null) as PropertyType | null,
       categories: cats,
       budget_max: budgetMax ? Number(budgetMax.replace(/\D/g, "")) : null,
-      zones: zones.split(",").map(s => s.trim()).filter(Boolean),
+      zones,
       nb_pieces_min: pieces ? Number(pieces) : null,
       description_libre: desc,
     }
@@ -375,24 +408,71 @@ function SearchModal({ initial, onClose, onSaved }: {
 
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Catégories</label>
+          {/* Types gérés par l'admin (Villa, Entrepôt… inclus) — même liste que la
+              recherche principale. Les sous-types sont mappés côté serveur. */}
           <div className="flex flex-wrap gap-1.5">
-            {CATS.map(c => (
-              <button key={c.v} type="button" onClick={() => toggleCat(c.v)}
-                className={`text-xs px-2.5 py-1 rounded-full border ${cats.includes(c.v) ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-200"}`}>
-                {c.l}
+            {adminCats.map(c => (
+              <button key={c.value} type="button" onClick={() => toggleCat(c.value)}
+                className={`text-xs px-2.5 py-1 rounded-full border ${cats.includes(c.value) ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-200"}`}>
+                {c.label}
               </button>
             ))}
           </div>
         </div>
 
+        {/* Localisation : commune → quartiers (sélection multiple), comme la barre
+            de recherche principale. */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Quartiers (séparés par des virgules)</label>
-            <input value={zones} onChange={e => setZones(e.target.value)} placeholder="Nimbo, Koko…" className={field} />
+            <label className="block text-xs font-medium text-gray-600 mb-1">Commune</label>
+            <select value={villeId} onChange={e => setVilleId(e.target.value)} className={field}>
+              <option value="">Choisir une commune…</option>
+              {villes.map(v => <option key={v.id} value={v.id}>{v.nom}</option>)}
+            </select>
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Pièces min.</label>
             <input value={pieces} onChange={e => setPieces(e.target.value)} inputMode="numeric" placeholder="ex. 2" className={field} />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">
+            Quartiers <span className="text-gray-400 font-normal">(un ou plusieurs)</span>
+          </label>
+          {quartiers.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-2 max-h-32 overflow-y-auto">
+              {quartiers.map(q => (
+                <button key={q.id} type="button" onClick={() => toggleZone(q.nom)}
+                  className={`text-xs px-2.5 py-1 rounded-full border ${zones.includes(q.nom) ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-200"}`}>
+                  {q.nom}
+                </button>
+              ))}
+            </div>
+          )}
+          {villeId === "" && quartiers.length === 0 && (
+            <p className="text-[11px] text-gray-400 mb-2">Choisissez une commune pour afficher ses quartiers.</p>
+          )}
+          {/* Quartiers retenus (y compris hors référentiel) — cliquer pour retirer. */}
+          {zones.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {zones.map(z => (
+                <button key={z} type="button" onClick={() => toggleZone(z)}
+                  title="Retirer ce quartier"
+                  className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                  📍 {z} <X className="w-3 h-3" />
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="flex gap-2">
+            <input value={zoneLibre} onChange={e => setZoneLibre(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addZoneLibre() } }}
+              placeholder="Autre quartier (hors liste)…" className={field} />
+            <button type="button" onClick={addZoneLibre}
+              className="shrink-0 text-xs font-medium border border-gray-200 text-gray-600 px-3 rounded-xl hover:border-blue-300">
+              Ajouter
+            </button>
           </div>
         </div>
 
