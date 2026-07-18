@@ -3,6 +3,7 @@ import Link from "next/link"
 import { createClient, createAdminClient } from "@/lib/supabase/server"
 import { Search, BellRing } from "lucide-react"
 import type { UserRole } from "@/types/database"
+import { getAlerteProTtlJours } from "@/lib/alert-expiry"
 import RecherchesManager, { type SearchRow } from "./RecherchesManager"
 
 export const metadata = { title: "Recherches & alertes · Inaya Immo" }
@@ -23,11 +24,10 @@ export default async function RecherchesPage({ searchParams }: PageProps) {
   const canDelete = ["super_admin", "admin", "moderateur"].includes(role)
 
   const admin = createAdminClient()
-  // Colonnes SÛRES (présentes depuis la migration 001) — on n'inclut ni `reference`
-  // (041) ni `created_by` (042) pour rester fonctionnel si elles ne sont pas encore
-  // appliquées.
+  // select("*") : reste fonctionnel quel que soit l'état des migrations (les
+  // colonnes récentes comme expire_at/created_by sont simplement absentes).
   let q = admin.from("search_requests")
-    .select("id,user_id,contact_nom,contact_telephone,canal,type_offre,categories,budget_min,budget_max,zones,nb_pieces_min,meuble,description_libre,statut,created_at")
+    .select("*")
     .order("created_at", { ascending: false })
     .limit(500)
   if (params.statut && ["active", "satisfaite", "expiree"].includes(params.statut)) q = q.eq("statut", params.statut)
@@ -44,7 +44,10 @@ export default async function RecherchesPage({ searchParams }: PageProps) {
         .filter(Boolean).some(v => String(v).toLowerCase().includes(needle)))
   }
 
-  const rows: SearchRow[] = raws.map(r => ({ ...r, hasAccount: !!r.user_id }))
+  const rows: SearchRow[] = raws.map(r => ({ ...r, expire_at: r.expire_at ?? null, hasAccount: !!r.user_id }))
+
+  // Durée de vie configurée pour les alertes des profils professionnels.
+  const ttlJours = await getAlerteProTtlJours()
 
   // Compteurs par statut pour les onglets de filtre.
   const { data: allStatuts } = await admin.from("search_requests").select("statut").limit(2000)
@@ -86,7 +89,7 @@ export default async function RecherchesPage({ searchParams }: PageProps) {
         })}
       </div>
 
-      <RecherchesManager rows={rows} canDelete={canDelete} />
+      <RecherchesManager rows={rows} canDelete={canDelete} isAdmin={["super_admin", "admin"].includes(role)} ttlJours={ttlJours} />
     </div>
   )
 }

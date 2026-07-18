@@ -16,12 +16,14 @@
 
 import { createAdminClient } from "@/lib/supabase/server"
 import { evaluateMatch, type MatchableProperty, type MatchableRequest } from "@/lib/matching"
+import { isSearchExpired } from "@/lib/alert-expiry"
 import { absoluteUrl } from "@/lib/site"
 
 const TOP_N = 5
 const COOLDOWN_H = 6
 
-const REQ_COLS = "id,user_id,contact_telephone,canal,type_offre,categories,budget_min,budget_max,zones,surface_min,nb_pieces_min,meuble,statut"
+// select("*") : inclut expire_at (migration 045) sans casser si la colonne manque.
+const REQ_COLS = "*"
 const PROP_COLS = "id,reference,titre,type_offre,categorie,prix,quartier,ville,surface,nb_pieces,meuble"
 
 type PropRow = MatchableProperty & { reference: number | null; ville: string | null }
@@ -60,6 +62,7 @@ export async function respondToDemande(requestId: string): Promise<{ matched: nu
   const request = reqData as (MatchableRequest & { statut: string }) | null
   if (!request) return { matched: 0, sent: false, skipped: "introuvable" }
   if (request.statut !== "active") return { matched: 0, sent: false, skipped: "inactive" }
+  if (isSearchExpired(request)) return { matched: 0, sent: false, skipped: "expiree" }
 
   const tel = request.contact_telephone?.trim()
   if (!tel) return { matched: 0, sent: false, skipped: "sans_numero" }

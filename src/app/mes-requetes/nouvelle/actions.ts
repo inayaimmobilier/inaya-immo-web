@@ -2,6 +2,7 @@
 
 import { createClient, createAdminClient } from "@/lib/supabase/server"
 import { runMatchingForRequest } from "@/lib/matching"
+import { computeAlerteExpiry } from "@/lib/alert-expiry"
 import type { PropertyCat, PropertyType } from "@/types/database"
 
 function normalizePhone(raw: string): string | null {
@@ -37,10 +38,17 @@ export async function saveSearchFull(form: FormData) {
   let requestId: string
 
   if (user) {
-    const { data, error } = await supabase
-      .from("search_requests").insert({ ...criteres, user_id: user.id } as never).select("id").single()
-    if (error) return { error: "Échec de l'enregistrement : " + error.message }
-    requestId = (data as { id: string }).id
+    // Durée de vie : permanente pour un client final, limitée (TTL admin) pour un
+    // profil professionnel (agent, apporteur…). 42703 = colonne absente → réessai sans.
+    const expire_at = await computeAlerteExpiry(user.id)
+    let { data, error } = await supabase
+      .from("search_requests").insert({ ...criteres, user_id: user.id, expire_at } as never).select("id").single()
+    if (error?.code === "42703") {
+      const retry = await supabase.from("search_requests").insert({ ...criteres, user_id: user.id } as never).select("id").single()
+      data = retry.data; error = retry.error
+    }
+    if (error || !data) return { error: "Échec de l'enregistrement : " + (error?.message ?? "réessayez.") }
+    requestId = (data as unknown as { id: string }).id
   } else {
     // Anonyme : numéro WhatsApp obligatoire (le formulaire l'exige côté front).
     const tel = normalizePhone((form.get("telephone") as string) || "")

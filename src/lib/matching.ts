@@ -10,6 +10,7 @@
 
 import { createAdminClient } from "@/lib/supabase/server"
 import { notifySearcher } from "@/lib/notifications"
+import { isSearchExpired } from "@/lib/alert-expiry"
 import type { PropertyCat, PropertyType, MatchType } from "@/types/database"
 
 export interface MatchableProperty {
@@ -37,6 +38,8 @@ export interface MatchableRequest {
   surface_min: number | null
   nb_pieces_min: number | null
   meuble: boolean | null
+  /** NULL = alerte permanente (client final) ; renseigné = fin de vie (pro). */
+  expire_at?: string | null
 }
 
 /**
@@ -109,7 +112,9 @@ export function evaluateMatch(p: MatchableProperty, r: MatchableRequest): MatchS
 }
 
 const PROP_COLS = "id,titre,type_offre,categorie,prix,quartier,surface,nb_pieces,meuble"
-const REQ_COLS = "id,user_id,contact_telephone,canal,type_offre,categories,budget_min,budget_max,zones,surface_min,nb_pieces_min,meuble"
+// select("*") : inclut expire_at (migration 045) tout en restant fonctionnel si
+// la colonne n'existe pas encore (un select explicite ferait 42703).
+const REQ_COLS = "*"
 
 /**
  * Matche une annonce nouvellement publiée contre toutes les requêtes actives.
@@ -127,7 +132,9 @@ export async function runMatchingForProperty(propertyId: string): Promise<number
     db.from("search_requests").select(REQ_COLS).eq("statut", "active"),
     db.from("matches").select("search_request_id").eq("property_id", propertyId),
   ])
-  const requests = (reqData ?? []) as MatchableRequest[]
+  // Alertes EXPIRÉES (durée de vie des alertes pro, migration 045) : ni matchées
+  // ni notifiées. Les alertes des clients finaux (expire_at NULL) sont permanentes.
+  const requests = ((reqData ?? []) as MatchableRequest[]).filter(r => !isSearchExpired(r))
   const already = new Set((existing ?? []).map(m => (m as { search_request_id: string }).search_request_id))
   const allowGroup = await groupAlertsEnabled(db)
 
@@ -167,7 +174,7 @@ export async function runMatchingForRequest(requestId: string, opts: { notify?: 
 
   const { data: reqData } = await db.from("search_requests").select(REQ_COLS).eq("id", requestId).single()
   const request = reqData as MatchableRequest | null
-  if (!request) return []
+  if (!request || isSearchExpired(request)) return []
 
   // Pré-filtre large pour limiter la charge ; le scoring fin fait le reste.
   let q = db.from("properties").select(PROP_COLS).eq("statut", "publie").limit(500)

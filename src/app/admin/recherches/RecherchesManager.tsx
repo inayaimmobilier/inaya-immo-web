@@ -1,8 +1,11 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { Plus, Pencil, Trash2, Loader2, X, BellRing, BellOff, CheckCircle2, Search } from "lucide-react"
-import { createSearchForClient, updateSearchRequest, deleteSearchRequest, setSearchStatus, type SearchInput } from "./actions"
+import { Plus, Pencil, Trash2, Loader2, X, BellRing, BellOff, CheckCircle2, Search, CheckSquare, Square, Clock, Timer } from "lucide-react"
+import {
+  createSearchForClient, updateSearchRequest, deleteSearchRequest, setSearchStatus,
+  bulkSetSearchStatus, bulkDeleteSearchRequests, saveAlerteProTtl, type SearchInput,
+} from "./actions"
 import type { PropertyType, PropertyCat, RequestStatus } from "@/types/database"
 
 export interface SearchRow {
@@ -20,6 +23,8 @@ export interface SearchRow {
   description_libre: string | null
   statut: RequestStatus
   created_at: string
+  /** NULL = permanente (client final) ; renseigné = fin de vie (profil pro). */
+  expire_at: string | null
   hasAccount: boolean
 }
 
@@ -52,11 +57,23 @@ function critLabel(r: SearchRow): string {
 
 const field = "w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:border-blue-400"
 
-export default function RecherchesManager({ rows, canDelete }: { rows: SearchRow[]; canDelete: boolean }) {
+/** Date + heure de création, format court fr (« 18/07/2026 10:34 »). */
+function fmtDateHeure(iso: string): string {
+  const d = new Date(iso)
+  return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" })
+    + " " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
+}
+
+export default function RecherchesManager({ rows, canDelete, isAdmin = false, ttlJours = 30 }: {
+  rows: SearchRow[]; canDelete: boolean; isAdmin?: boolean; ttlJours?: number
+}) {
   const [modal, setModal] = useState<null | { mode: "create" } | { mode: "edit"; row: SearchRow }>(null)
   const [pendingId, setPendingId] = useState<string | null>(null)
   const [pending, start] = useTransition()
   const [flash, setFlash] = useState<string | null>(null)
+  // Sélection multiple (suppression / arrêt / réactivation en masse)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [ttl, setTtl] = useState(String(ttlJours))
 
   function onStatus(r: SearchRow, statut: RequestStatus) {
     setPendingId(r.id)
@@ -74,8 +91,73 @@ export default function RecherchesManager({ rows, canDelete }: { rows: SearchRow
     })
   }
 
+  const toggleSel = (id: string) => setSelected(prev => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id); else next.add(id)
+    return next
+  })
+  const allSelected = rows.length > 0 && rows.every(r => selected.has(r.id))
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(rows.map(r => r.id)))
+
+  function bulkStatus(statut: RequestStatus, label: string) {
+    if (selected.size === 0) return
+    if (!confirm(`${label} ${selected.size} recherche(s) sélectionnée(s) ?`)) return
+    const ids = [...selected]
+    start(async () => {
+      const res = await bulkSetSearchStatus(ids, statut)
+      setFlash(res.ok ? `${res.count} recherche(s) : ${label.toLowerCase()} ✓` : res.error)
+      if (res.ok) setSelected(new Set())
+      setTimeout(() => setFlash(null), 6000)
+    })
+  }
+  function bulkDelete() {
+    if (selected.size === 0) return
+    if (!confirm(`Supprimer DÉFINITIVEMENT ${selected.size} recherche(s) sélectionnée(s) ? Cette action est irréversible.`)) return
+    const ids = [...selected]
+    start(async () => {
+      const res = await bulkDeleteSearchRequests(ids)
+      setFlash(res.ok ? `${res.count} recherche(s) supprimée(s).` : res.error)
+      if (res.ok) setSelected(new Set())
+      setTimeout(() => setFlash(null), 6000)
+    })
+  }
+  function saveTtl() {
+    start(async () => {
+      const res = await saveAlerteProTtl(Number(ttl))
+      setFlash(res.ok
+        ? (Number(ttl) === 0
+          ? "Durée de vie enregistrée : les alertes des professionnels n'expirent plus automatiquement."
+          : `Durée de vie enregistrée : les nouvelles alertes des professionnels expireront après ${Number(ttl)} jour(s).`)
+        : res.error)
+      setTimeout(() => setFlash(null), 8000)
+    })
+  }
+
   return (
     <div className="space-y-4">
+      {/* Durée de vie des alertes des professionnels (admins) */}
+      {isAdmin && (
+        <div className="bg-white rounded-2xl border border-gray-100 p-4 flex items-center gap-3 flex-wrap">
+          <Timer className="w-4 h-4 text-blue-600 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-gray-900">Durée de vie des alertes des professionnels</p>
+            <p className="text-xs text-gray-500">
+              Agents (internes/externes), apporteurs, propriétaires, prestataires… : leurs alertes expirent après ce délai.
+              Les alertes des <strong>clients finaux restent permanentes</strong> (jusqu&apos;à désactivation par eux ou par vous). 0 = jamais.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <input value={ttl} onChange={e => setTtl(e.target.value.replace(/\D/g, ""))} inputMode="numeric"
+              className="w-20 px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-center outline-none focus:border-blue-400" />
+            <span className="text-xs text-gray-500">jours</span>
+            <button onClick={saveTtl} disabled={pending}
+              className="text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-xl disabled:opacity-50">
+              Enregistrer
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <p className="text-sm text-gray-500">{rows.length} recherche{rows.length > 1 ? "s" : ""} enregistrée{rows.length > 1 ? "s" : ""}</p>
         <button onClick={() => setModal({ mode: "create" })}
@@ -83,6 +165,33 @@ export default function RecherchesManager({ rows, canDelete }: { rows: SearchRow
           <Plus className="w-4 h-4" /> Créer pour un client
         </button>
       </div>
+
+      {/* Barre d'actions en masse (apparaît dès qu'une ligne est cochée) */}
+      {selected.size > 0 && (
+        <div className="sticky top-2 z-10 bg-blue-50 border border-blue-200 rounded-2xl px-4 py-2.5 flex items-center gap-2 flex-wrap shadow-sm">
+          <p className="text-sm font-medium text-blue-900">{selected.size} sélectionnée{selected.size > 1 ? "s" : ""}</p>
+          <div className="flex items-center gap-1.5 ml-auto flex-wrap">
+            <button onClick={() => bulkStatus("expiree", "Arrêter")} disabled={pending}
+              className="inline-flex items-center gap-1 text-xs font-medium border border-amber-300 text-amber-700 bg-white px-2.5 py-1.5 rounded-lg hover:bg-amber-50 disabled:opacity-50">
+              <BellOff className="w-3.5 h-3.5" /> Arrêter
+            </button>
+            <button onClick={() => bulkStatus("active", "Réactiver")} disabled={pending}
+              className="inline-flex items-center gap-1 text-xs font-medium border border-green-300 text-green-700 bg-white px-2.5 py-1.5 rounded-lg hover:bg-green-50 disabled:opacity-50">
+              <BellRing className="w-3.5 h-3.5" /> Réactiver
+            </button>
+            {canDelete && (
+              <button onClick={bulkDelete} disabled={pending}
+                className="inline-flex items-center gap-1 text-xs font-semibold bg-red-600 text-white px-2.5 py-1.5 rounded-lg hover:bg-red-700 disabled:opacity-50">
+                <Trash2 className="w-3.5 h-3.5" /> Supprimer
+              </button>
+            )}
+            <button onClick={() => setSelected(new Set())}
+              className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 px-2 py-1.5">
+              <X className="w-3.5 h-3.5" /> Annuler
+            </button>
+          </div>
+        </div>
+      )}
 
       {flash && <p className="text-sm text-green-700 bg-green-50 border border-green-100 rounded-xl px-3 py-2">{flash}</p>}
 
@@ -94,8 +203,14 @@ export default function RecherchesManager({ rows, canDelete }: { rows: SearchRow
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs font-semibold text-gray-400 uppercase tracking-wide bg-gray-50/60">
+                  <th className="px-3 py-3 w-8">
+                    <button onClick={toggleAll} title={allSelected ? "Tout désélectionner" : "Tout sélectionner"} className="align-middle">
+                      {allSelected ? <CheckSquare className="w-4 h-4 text-blue-600" /> : <Square className="w-4 h-4 text-gray-300 hover:text-blue-400" />}
+                    </button>
+                  </th>
                   <th className="px-4 py-3">Client</th>
                   <th className="px-4 py-3">Critères</th>
+                  <th className="px-4 py-3">Créée</th>
                   <th className="px-4 py-3">Canal</th>
                   <th className="px-4 py-3">Statut</th>
                   <th className="px-4 py-3 text-right">Actions</th>
@@ -105,17 +220,35 @@ export default function RecherchesManager({ rows, canDelete }: { rows: SearchRow
                 {rows.map(r => {
                   const meta = STATUT_META[r.statut]
                   const busy = pending && pendingId === r.id
+                  const isSel = selected.has(r.id)
+                  const expired = !!r.expire_at && new Date(r.expire_at).getTime() <= Date.now()
                   return (
-                    <tr key={r.id} className="border-t border-gray-50 hover:bg-gray-50/60">
+                    <tr key={r.id} className={`border-t border-gray-50 ${isSel ? "bg-blue-50/60" : "hover:bg-gray-50/60"}`}>
+                      <td className="px-3 py-3">
+                        <button onClick={() => toggleSel(r.id)} className="align-middle">
+                          {isSel ? <CheckSquare className="w-4 h-4 text-blue-600" /> : <Square className="w-4 h-4 text-gray-300 hover:text-blue-400" />}
+                        </button>
+                      </td>
                       <td className="px-4 py-3">
                         <p className="font-medium text-gray-900">{r.contact_nom || "—"}</p>
                         <p className="text-xs text-gray-400 font-mono">{r.contact_telephone || "—"}</p>
                         {r.hasAccount && <span className="text-[10px] text-blue-700 bg-blue-50 rounded-full px-1.5 py-0.5">compte lié</span>}
                       </td>
                       <td className="px-4 py-3 text-gray-700 max-w-xs">{critLabel(r)}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1 text-xs text-gray-500">
+                          <Clock className="w-3 h-3 text-gray-300" /> {fmtDateHeure(r.created_at)}
+                        </span>
+                      </td>
                       <td className="px-4 py-3 text-xs text-gray-500 capitalize">{r.canal}</td>
                       <td className="px-4 py-3">
                         <span className={`inline-block text-xs font-medium px-2.5 py-1 rounded-full ${meta.cls}`}>{meta.l}</span>
+                        {r.expire_at && (
+                          <span className={`block mt-1 text-[10px] ${expired ? "text-red-600 font-medium" : "text-gray-400"}`}
+                            title="Durée de vie des alertes des professionnels">
+                            {expired ? "Expirée" : `expire le ${fmtDateHeure(r.expire_at)}`}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1.5">
