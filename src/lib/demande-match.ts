@@ -43,7 +43,10 @@ function lien(p: PropRow): string {
 function blocBien(p: PropRow): string {
   const lieu = [p.quartier, p.ville].filter(Boolean).join(", ")
   const num = p.reference != null ? `N°${p.reference} — ` : ""
-  return `*${num}${p.titre}*\n💰 ${prixTexte(p)}${lieu ? ` · 📍 ${lieu}` : ""}\n🔗 ${lien(p)}`
+  // Titre plafonné : un titre ingéré démesuré consommerait tout le budget du
+  // message (et le ferait tronquer derrière « Voir plus » côté WhatsApp).
+  const titre = p.titre.length > 80 ? `${p.titre.slice(0, 79).trimEnd()}…` : p.titre
+  return `*${num}${titre}*\n💰 ${prixTexte(p)}${lieu ? ` · 📍 ${lieu}` : ""}\n🔗 ${lien(p)}`
 }
 
 /**

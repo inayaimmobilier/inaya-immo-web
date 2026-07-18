@@ -14,6 +14,17 @@ import { absoluteUrl } from "@/lib/site"
 const VALID_CANAUX: NotifCanal[] = ["push", "email", "whatsapp", "telegram"]
 const DEFAULT_CANAUX: NotifCanal[] = ["push", "whatsapp", "telegram"]
 
+/**
+ * Titre d'annonce PLAFONNÉ pour les messages WhatsApp. Les titres ingérés des
+ * groupes peuvent être démesurés (toute l'annonce en guise de titre) : injectés
+ * dans un message, ils dépassent le seuil d'affichage de WhatsApp (~700-800
+ * caractères) et le client ne voit qu'un extrait derrière « Voir plus ».
+ */
+export function clampTitre(titre: string | null | undefined, max = 90): string {
+  const t = (titre ?? "").trim()
+  return t.length > max ? `${t.slice(0, max - 1).trimEnd()}…` : t
+}
+
 interface NotifPayload {
   type: string                 // 'nouveau_lead', 'nouveau_bien', 'match_offre'…
   titre: string
@@ -158,6 +169,7 @@ export async function notifySearcher(args: {
 }): Promise<void> {
   const db = createAdminClient()
   const lieu = args.quartier ? ` à ${args.quartier}` : ""
+  const titreCourt = clampTitre(args.propertyTitre)
   const intro = args.type === "exacte" ? "Un bien correspond à votre recherche" : "Un bien similaire à votre recherche est disponible"
   const url = absoluteUrl(`/biens/${args.propertyId}`)
 
@@ -174,7 +186,7 @@ export async function notifySearcher(args: {
   // WhatsApp). On n'utilise plus de boutons URL dynamiques de template : mal
   // configurés côté Meta, ils cassaient les liens (/biens/{}) et figeaient l'arrêt.
   const contenu = [
-    `${intro} : « ${args.propertyTitre} »${lieu}.`,
+    `${intro} : « ${titreCourt} »${lieu}.`,
     `👉 Voir l'annonce : ${url}`,
     `🔕 Ne plus recevoir d'alertes pour CETTE recherche : ${stopUrl}`,
   ].join("\n")
@@ -188,7 +200,7 @@ export async function notifySearcher(args: {
     // stop_token = jeton d'arrêt PAR-REQUÊTE (référence ou UUID) : alimente le
     // postback du bouton « Arrêter les alertes » du template Gupshup, et le lien
     // texte (repli Baileys). property_desc = variable {{1}} du corps du template.
-    payload: { property_id: args.propertyId, request_id: args.requestId, request_ref: reqRef, stop_token: stopToken, stop_url: stopUrl, url, match_type: args.type, property_desc: `${args.propertyTitre}${lieu}` },
+    payload: { property_id: args.propertyId, request_id: args.requestId, request_ref: reqRef, stop_token: stopToken, stop_url: stopUrl, url, match_type: args.type, property_desc: `${titreCourt}${lieu}` },
     lu: false,
     envoye: false,
   }
@@ -224,7 +236,7 @@ export async function notifySearcher(args: {
     const creatorBase = {
       ...base,
       titre: "Bien trouvé pour votre client",
-      contenu: `Un bien correspond à la recherche que vous suivez pour ${args.contactTel ?? "un client"} : « ${args.propertyTitre} »${lieu}.\n👉 ${url}`,
+      contenu: `Un bien correspond à la recherche que vous suivez pour ${args.contactTel ?? "un client"} : « ${titreCourt} »${lieu}.\n👉 ${url}`,
     }
     rows.push({ ...creatorBase, user_id: creatorId, canal: "push" as NotifCanal })
     if (cTel && await waMatchAlertAllowed(db, { waNumber: cTel, userId: creatorId, propertyId: args.propertyId })) {
@@ -271,9 +283,10 @@ export async function notifyClientVisiteRecue(args: {
   reservation?: boolean
 }): Promise<void> {
   const lieu = args.quartier ? ` (${args.quartier})` : ""
+  const titreCourt = clampTitre(args.propertyTitre)
   const contenu = args.reservation
-    ? `Bonjour ${args.contactNom}, votre demande de réservation pour « ${args.propertyTitre} »${lieu} a bien été reçue. Nous confirmons la disponibilité avec le propriétaire très bientôt. Merci de votre confiance.`
-    : `Bonjour ${args.contactNom}, votre demande de visite pour « ${args.propertyTitre} »${lieu} a bien été reçue. Nous confirmons votre rendez-vous très bientôt. Merci de votre confiance.`
+    ? `Bonjour ${args.contactNom}, votre demande de réservation pour « ${titreCourt} »${lieu} a bien été reçue. Nous confirmons la disponibilité avec le propriétaire très bientôt. Merci de votre confiance.`
+    : `Bonjour ${args.contactNom}, votre demande de visite pour « ${titreCourt} »${lieu} a bien été reçue. Nous confirmons votre rendez-vous très bientôt. Merci de votre confiance.`
 
   // WhatsApp (via dispatcher whatsapp-service)
   await notifyPhone({
@@ -285,8 +298,8 @@ export async function notifyClientVisiteRecue(args: {
 
   // SMS (envoi direct via Africa's Talking — indépendant du dispatcher WA)
   const smsText = args.reservation
-    ? `Inaya Immo : Bonjour ${args.contactNom}, votre réservation pour « ${args.propertyTitre} »${lieu} est bien reçue. Nous revenons vers vous très bientôt.`
-    : `Inaya Immo : Bonjour ${args.contactNom}, votre demande de visite pour « ${args.propertyTitre} »${lieu} est bien reçue. Nous confirmons votre RDV très bientôt.`
+    ? `Inaya Immo : Bonjour ${args.contactNom}, votre réservation pour « ${titreCourt} »${lieu} est bien reçue. Nous revenons vers vous très bientôt.`
+    : `Inaya Immo : Bonjour ${args.contactNom}, votre demande de visite pour « ${titreCourt} »${lieu} est bien reçue. Nous confirmons votre RDV très bientôt.`
   await sendSms(args.contactTel, smsText)
 }
 
@@ -296,9 +309,10 @@ export async function notifyProprietaireVisite(args: {
   creneau?: string | null; validationUrl: string; reservation?: boolean
 }): Promise<void> {
   const lieu = args.quartier ? ` (${args.quartier})` : ""
+  const titreCourt = clampTitre(args.propertyTitre)
   const contenu = args.reservation
-    ? `Une demande de réservation a été reçue pour votre résidence « ${args.propertyTitre} »${lieu}.${args.creneau ? ` Dates souhaitées : ${args.creneau}.` : ""} Confirmez ou refusez cette réservation : ${args.validationUrl}`
-    : `Une demande de visite a été reçue pour votre bien « ${args.propertyTitre} »${lieu}.${args.creneau ? ` Créneau souhaité : ${args.creneau}.` : ""} Validez ou refusez ce rendez-vous : ${args.validationUrl}`
+    ? `Une demande de réservation a été reçue pour votre résidence « ${titreCourt} »${lieu}.${args.creneau ? ` Dates souhaitées : ${args.creneau}.` : ""} Confirmez ou refusez cette réservation : ${args.validationUrl}`
+    : `Une demande de visite a été reçue pour votre bien « ${titreCourt} »${lieu}.${args.creneau ? ` Créneau souhaité : ${args.creneau}.` : ""} Validez ou refusez ce rendez-vous : ${args.validationUrl}`
   await notifyPhone({
     telephone: args.ownerTel,
     type: args.reservation ? "reservation_a_valider" : "visite_a_valider",
@@ -311,9 +325,10 @@ export async function notifyProprietaireVisite(args: {
 export async function notifyClientDecision(args: {
   contactTel: string | null; propertyTitre: string; confirme: boolean
 }): Promise<void> {
+  const titreCourt = clampTitre(args.propertyTitre)
   const contenu = args.confirme
-    ? `Bonne nouvelle ! Votre visite de « ${args.propertyTitre} » est confirmée par le propriétaire. Un conseiller Inaya vous recontacte pour finaliser le créneau.`
-    : `Concernant « ${args.propertyTitre} » : le créneau proposé n'a pas pu être retenu. Un conseiller Inaya vous recontacte pour convenir d'un autre rendez-vous.`
+    ? `Bonne nouvelle ! Votre visite de « ${titreCourt} » est confirmée par le propriétaire. Un conseiller Inaya vous recontacte pour finaliser le créneau.`
+    : `Concernant « ${titreCourt} » : le créneau proposé n'a pas pu être retenu. Un conseiller Inaya vous recontacte pour convenir d'un autre rendez-vous.`
   await notifyPhone({
     telephone: args.contactTel,
     type: args.confirme ? "visite_confirmee" : "visite_refusee",
@@ -408,9 +423,10 @@ export async function notifyAgentAssignment(args: {
   type PubRow = { contact_nom: string | null; contact_phone: string | null }
   const pub = pubRes.data as PubRow | null
 
-  // Fallbacks si DB fail
+  // Fallbacks si DB fail. Titre plafonné : un titre ingéré démesuré ferait
+  // tronquer le message WhatsApp de l'agent derrière « Voir plus ».
   const clientNom = lead?.contact_nom || args.contactNom || "Client inconnu"
-  const propTitre = prop?.titre || args.propertyTitre || "Bien immobilier"
+  const propTitre = clampTitre(prop?.titre || args.propertyTitre || "Bien immobilier")
   const creneau = lead?.creneaux?.[0]?.souhaite ?? null
 
   // ── Composition du message WhatsApp ─────────────────────────────────────
@@ -535,7 +551,7 @@ export async function notifyNewLead(args: {
   return notifyStaff({
     type: "nouveau_lead",
     titre: "Nouvelle demande de visite",
-    contenu: `${args.contactNom} (${args.contactTel}) souhaite visiter « ${args.propertyTitre} »${lieu}${creneau}.`,
+    contenu: `${args.contactNom} (${args.contactTel}) souhaite visiter « ${clampTitre(args.propertyTitre)} »${lieu}${creneau}.`,
     payload: { lead_id: args.leadId, property_id: args.propertyId },
   }, { includeAgents: true, agentId: args.agentId })
 }
