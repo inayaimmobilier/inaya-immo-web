@@ -65,8 +65,8 @@ function fmtDateHeure(iso: string): string {
     + " " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
 }
 
-export default function RecherchesManager({ rows, canDelete, isAdmin = false, ttlJours = 30 }: {
-  rows: SearchRow[]; canDelete: boolean; isAdmin?: boolean; ttlJours?: number
+export default function RecherchesManager({ rows, canDelete, isAdmin = false, ttl = { location: 30, vente: 30 } }: {
+  rows: SearchRow[]; canDelete: boolean; isAdmin?: boolean; ttl?: { location: number; vente: number }
 }) {
   const [modal, setModal] = useState<null | { mode: "create" } | { mode: "edit"; row: SearchRow }>(null)
   const [pendingId, setPendingId] = useState<string | null>(null)
@@ -74,7 +74,9 @@ export default function RecherchesManager({ rows, canDelete, isAdmin = false, tt
   const [flash, setFlash] = useState<string | null>(null)
   // Sélection multiple (suppression / arrêt / réactivation en masse)
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [ttl, setTtl] = useState(String(ttlJours))
+  // Durées de vie des alertes pro : LOCATION et VENTE réglées indépendamment.
+  const [ttlLocation, setTtlLocation] = useState(String(ttl.location))
+  const [ttlVente, setTtlVente] = useState(String(ttl.vente))
 
   function onStatus(r: SearchRow, statut: RequestStatus) {
     setPendingId(r.id)
@@ -124,11 +126,11 @@ export default function RecherchesManager({ rows, canDelete, isAdmin = false, tt
   }
   function saveTtl() {
     start(async () => {
-      const res = await saveAlerteProTtl(Number(ttl))
+      const loc = Number(ttlLocation); const ven = Number(ttlVente)
+      const res = await saveAlerteProTtl(loc, ven)
+      const lib = (n: number) => n === 0 ? "jamais" : `${n} jour${n > 1 ? "s" : ""}`
       setFlash(res.ok
-        ? (Number(ttl) === 0
-          ? "Durée de vie enregistrée : les alertes des professionnels n'expirent plus automatiquement."
-          : `Durée de vie enregistrée : les nouvelles alertes des professionnels expireront après ${Number(ttl)} jour(s).`)
+        ? `Durées enregistrées — nouvelles alertes des professionnels : location ${lib(loc)}, vente ${lib(ven)}.`
         : res.error)
       setTimeout(() => setFlash(null), 8000)
     })
@@ -136,21 +138,34 @@ export default function RecherchesManager({ rows, canDelete, isAdmin = false, tt
 
   return (
     <div className="space-y-4">
-      {/* Durée de vie des alertes des professionnels (admins) */}
+      {/* Durée de vie des alertes des professionnels (admins) — location et vente
+          réglées INDÉPENDAMMENT (le locatif tourne vite ; les ventes de maisons,
+          terrains… restent pertinentes plus longtemps). */}
       {isAdmin && (
         <div className="bg-white rounded-2xl border border-gray-100 p-4 flex items-center gap-3 flex-wrap">
           <Timer className="w-4 h-4 text-blue-600 shrink-0" />
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold text-gray-900">Durée de vie des alertes des professionnels</p>
             <p className="text-xs text-gray-500">
-              Agents (internes/externes), apporteurs, propriétaires, prestataires… : leurs alertes expirent après ce délai.
-              Les alertes des <strong>clients finaux restent permanentes</strong> (jusqu&apos;à désactivation par eux ou par vous). 0 = jamais.
+              Agents (internes/externes), apporteurs, propriétaires, prestataires… : leurs alertes expirent après ces délais —
+              réglés séparément pour la <strong>location</strong> (loyers, résidences meublées) et la <strong>vente</strong> (maisons,
+              terrains, cessions…). Les alertes des <strong>clients finaux restent permanentes</strong> (jusqu&apos;à désactivation
+              par eux ou par vous). 0 = jamais. Une recherche « tous types » suit la durée la plus longue.
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <input value={ttl} onChange={e => setTtl(e.target.value.replace(/\D/g, ""))} inputMode="numeric"
-              className="w-20 px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-center outline-none focus:border-blue-400" />
-            <span className="text-xs text-gray-500">jours</span>
+          <div className="flex items-center gap-3 flex-wrap">
+            <label className="flex items-center gap-1.5 text-xs text-gray-600">
+              Location
+              <input value={ttlLocation} onChange={e => setTtlLocation(e.target.value.replace(/\D/g, ""))} inputMode="numeric"
+                className="w-16 px-2 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-center outline-none focus:border-blue-400" />
+              <span className="text-gray-400">j</span>
+            </label>
+            <label className="flex items-center gap-1.5 text-xs text-gray-600">
+              Vente
+              <input value={ttlVente} onChange={e => setTtlVente(e.target.value.replace(/\D/g, ""))} inputMode="numeric"
+                className="w-16 px-2 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-center outline-none focus:border-blue-400" />
+              <span className="text-gray-400">j</span>
+            </label>
             <button onClick={saveTtl} disabled={pending}
               className="text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-xl disabled:opacity-50">
               Enregistrer

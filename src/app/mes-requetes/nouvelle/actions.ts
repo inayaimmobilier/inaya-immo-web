@@ -44,9 +44,9 @@ export async function saveSearchFull(form: FormData) {
   let requestId: string
 
   if (user) {
-    // Durée de vie : permanente pour un client final, limitée (TTL admin) pour un
-    // profil professionnel (agent, apporteur…). 42703 = colonne absente → réessai sans.
-    const expire_at = await computeAlerteExpiry(user.id)
+    // Durée de vie : permanente pour un client final, limitée (TTL admin, distinct
+    // location/vente) pour un profil professionnel. 42703 = colonne absente → réessai sans.
+    const expire_at = await computeAlerteExpiry(user.id, type)
     let { data, error } = await supabase
       .from("search_requests").insert({ ...criteres, user_id: user.id, expire_at } as never).select("id").single()
     if (error?.code === "42703") {

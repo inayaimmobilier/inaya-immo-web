@@ -18,37 +18,66 @@ const PRO_ROLES = new Set([
   "apporteur", "proprietaire", "prestataire",
 ])
 
-export const ALERTE_TTL_SETTING_KEY = "alerte_pro_ttl_jours"
+// Durées INDÉPENDANTES par famille d'opération : les recherches en LOCATION
+// tournent vite (le marché locatif bouge), celles en VENTE (maisons, terrains…)
+// restent pertinentes plus longtemps. Réglées séparément par l'admin.
+export const ALERTE_TTL_LOCATION_KEY = "alerte_pro_ttl_location_jours"
+export const ALERTE_TTL_VENTE_KEY = "alerte_pro_ttl_vente_jours"
+/** Ancienne clé unique (avant séparation location/vente) — sert de repli. */
+export const ALERTE_TTL_LEGACY_KEY = "alerte_pro_ttl_jours"
 export const ALERTE_TTL_DEFAULT_JOURS = 30
 
-/** TTL (jours) configuré par l'admin. 0 = pas d'expiration automatique. */
-export async function getAlerteProTtlJours(): Promise<number> {
+export interface AlerteProTtl { location: number; vente: number }
+
+const toJours = (raw: unknown): number | null => {
+  const n = Number(raw)
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : null
+}
+
+/** TTL (jours) par famille, configurés par l'admin. 0 = pas d'expiration. */
+export async function getAlerteProTtl(): Promise<AlerteProTtl> {
   try {
     const admin = createAdminClient()
-    const { data } = await admin.from("app_settings").select("value").eq("key", ALERTE_TTL_SETTING_KEY).maybeSingle()
-    const raw = (data as { value: unknown } | null)?.value
-    const n = Number(raw)
-    if (Number.isFinite(n) && n >= 0) return Math.floor(n)
-    return ALERTE_TTL_DEFAULT_JOURS
+    const { data } = await admin.from("app_settings").select("key,value")
+      .in("key", [ALERTE_TTL_LOCATION_KEY, ALERTE_TTL_VENTE_KEY, ALERTE_TTL_LEGACY_KEY])
+    const byKey = new Map(((data ?? []) as { key: string; value: unknown }[]).map(r => [r.key, r.value]))
+    const legacy = toJours(byKey.get(ALERTE_TTL_LEGACY_KEY))
+    return {
+      location: toJours(byKey.get(ALERTE_TTL_LOCATION_KEY)) ?? legacy ?? ALERTE_TTL_DEFAULT_JOURS,
+      vente: toJours(byKey.get(ALERTE_TTL_VENTE_KEY)) ?? legacy ?? ALERTE_TTL_DEFAULT_JOURS,
+    }
   } catch {
-    return ALERTE_TTL_DEFAULT_JOURS
+    return { location: ALERTE_TTL_DEFAULT_JOURS, vente: ALERTE_TTL_DEFAULT_JOURS }
   }
 }
 
+/** Famille d'une recherche : location (loyers, résidences meublées) ou vente (ventes, cessions). */
+function ttlForType(ttl: AlerteProTtl, typeOffre: string | null | undefined): number {
+  if (typeOffre === "location" || typeOffre === "residence_meublee") return ttl.location
+  if (typeOffre === "vente" || typeOffre === "cession") return ttl.vente
+  // Recherche « tous types » : on prend la durée la plus LONGUE (jamais expirer
+  // trop tôt) ; 0 sur l'une des deux = jamais → prime.
+  if (ttl.location <= 0 || ttl.vente <= 0) return 0
+  return Math.max(ttl.location, ttl.vente)
+}
+
 /**
- * Date d'expiration à poser À LA CRÉATION d'une recherche, selon QUI cherche :
- * NULL (permanente) pour un client final ou un anonyme ; création + TTL pour un
- * profil professionnel. `searcherUserId` = le compte du CHERCHEUR (pas le staff
- * qui saisit pour un client).
+ * Date d'expiration à poser À LA CRÉATION d'une recherche, selon QUI cherche et
+ * QUOI : NULL (permanente) pour un client final ou un anonyme ; création + TTL
+ * (location ou vente selon le type recherché) pour un profil professionnel.
+ * `searcherUserId` = le compte du CHERCHEUR (pas le staff qui saisit pour un client).
  */
-export async function computeAlerteExpiry(searcherUserId: string | null | undefined): Promise<string | null> {
+export async function computeAlerteExpiry(
+  searcherUserId: string | null | undefined,
+  typeOffre?: string | null,
+): Promise<string | null> {
   if (!searcherUserId) return null // anonyme = client final → permanente
   try {
     const admin = createAdminClient()
     const { data } = await admin.from("profiles").select("role").eq("id", searcherUserId).maybeSingle()
     const role = (data as { role: string } | null)?.role ?? "client"
     if (!PRO_ROLES.has(role)) return null // client final → permanente
-    const jours = await getAlerteProTtlJours()
+    const jours = ttlForType(await getAlerteProTtl(), typeOffre)
     if (jours <= 0) return null // 0 = l'admin a désactivé l'expiration
     return new Date(Date.now() + jours * 24 * 3_600_000).toISOString()
   } catch {

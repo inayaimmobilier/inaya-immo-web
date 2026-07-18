@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache"
 import { createClient, createAdminClient } from "@/lib/supabase/server"
 import { phoneMatchCandidates, normalizePhone } from "@/lib/phone"
 import { runMatchingForRequest } from "@/lib/matching"
-import { computeAlerteExpiry, ALERTE_TTL_SETTING_KEY } from "@/lib/alert-expiry"
+import { computeAlerteExpiry, ALERTE_TTL_LOCATION_KEY, ALERTE_TTL_VENTE_KEY } from "@/lib/alert-expiry"
 import { normalizeSearchCategories, withSousTypesNote } from "@/lib/search-cats"
 import type { UserRole, PropertyType, PropertyCat, RequestStatus } from "@/types/database"
 
@@ -80,9 +80,10 @@ export async function createSearchForClient(input: SearchInput): Promise<Res> {
   const clientId = ((prof ?? []) as { id: string; nom: string | null }[])[0]?.id ?? null
   const clientNom = ((prof ?? []) as { id: string; nom: string | null }[])[0]?.nom ?? null
 
-  // Durée de vie : dépend du BÉNÉFICIAIRE (le compte lié). Client final → permanente ;
-  // profil professionnel (agent, apporteur…) → expire après le TTL réglé par l'admin.
-  const expire_at = await computeAlerteExpiry(clientId)
+  // Durée de vie : dépend du BÉNÉFICIAIRE (le compte lié) et du TYPE recherché.
+  // Client final → permanente ; profil professionnel (agent, apporteur…) → expire
+  // après le TTL réglé par l'admin (location et vente sont réglées séparément).
+  const expire_at = await computeAlerteExpiry(clientId, c.type_offre)
 
   const row: Record<string, unknown> = {
     user_id: clientId,
@@ -206,18 +207,26 @@ export async function bulkDeleteSearchRequests(ids: string[]): Promise<BulkRes> 
 
 /**
  * Règle la DURÉE DE VIE (jours) des alertes créées par les profils professionnels
- * (agents internes/externes, apporteurs, propriétaires, prestataires…).
- * 0 = pas d'expiration automatique. Les alertes des clients finaux ne sont JAMAIS
- * limitées. S'applique aux alertes créées APRÈS le réglage.
+ * (agents internes/externes, apporteurs, propriétaires, prestataires…), avec des
+ * durées INDÉPENDANTES pour la LOCATION (loyers, résidences meublées) et la VENTE
+ * (ventes, cessions — maisons, terrains…). 0 = pas d'expiration automatique.
+ * Les alertes des clients finaux ne sont JAMAIS limitées. S'applique aux alertes
+ * créées APRÈS le réglage.
  */
-export async function saveAlerteProTtl(jours: number): Promise<Res> {
+export async function saveAlerteProTtl(locationJours: number, venteJours: number): Promise<Res> {
   const { user, role } = await requireStaff()
   if (!user || !role || !["super_admin", "admin"].includes(role)) return { ok: false, error: "Réglage réservé aux administrateurs." }
-  const n = Math.floor(Number(jours))
-  if (!Number.isFinite(n) || n < 0 || n > 3650) return { ok: false, error: "Durée invalide (0 à 3650 jours)." }
+  const loc = Math.floor(Number(locationJours))
+  const ven = Math.floor(Number(venteJours))
+  if (![loc, ven].every(n => Number.isFinite(n) && n >= 0 && n <= 3650)) {
+    return { ok: false, error: "Durée invalide (0 à 3650 jours)." }
+  }
   const admin = createAdminClient()
   const { error } = await admin.from("app_settings").upsert(
-    { key: ALERTE_TTL_SETTING_KEY, value: n } as never, { onConflict: "key" },
+    [
+      { key: ALERTE_TTL_LOCATION_KEY, value: loc },
+      { key: ALERTE_TTL_VENTE_KEY, value: ven },
+    ] as never[], { onConflict: "key" },
   )
   if (error) { console.error("INAYA-SR-TTL", error); return { ok: false, error: "Échec de l'enregistrement du réglage." } }
   revalidatePath("/admin/recherches")

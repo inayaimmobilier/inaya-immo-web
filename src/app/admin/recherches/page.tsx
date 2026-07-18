@@ -3,7 +3,7 @@ import Link from "next/link"
 import { createClient, createAdminClient } from "@/lib/supabase/server"
 import { Search, BellRing } from "lucide-react"
 import type { UserRole } from "@/types/database"
-import { getAlerteProTtlJours } from "@/lib/alert-expiry"
+import { getAlerteProTtl } from "@/lib/alert-expiry"
 import RecherchesManager, { type SearchRow } from "./RecherchesManager"
 
 export const metadata = { title: "Recherches & alertes · Inaya Immo" }
@@ -46,8 +46,9 @@ export default async function RecherchesPage({ searchParams }: PageProps) {
 
   const rows: SearchRow[] = raws.map(r => ({ ...r, expire_at: r.expire_at ?? null, hasAccount: !!r.user_id }))
 
-  // Durée de vie configurée pour les alertes des profils professionnels.
-  const ttlJours = await getAlerteProTtlJours()
+  // Durées de vie configurées pour les alertes des profils professionnels
+  // (location et vente réglées séparément).
+  const ttl = await getAlerteProTtl()
 
   // Compteurs par statut pour les onglets de filtre.
   const { data: allStatuts } = await admin.from("search_requests").select("statut").limit(2000)
@@ -89,7 +90,7 @@ export default async function RecherchesPage({ searchParams }: PageProps) {
         })}
       </div>
 
-      <RecherchesManager rows={rows} canDelete={canDelete} isAdmin={["super_admin", "admin"].includes(role)} ttlJours={ttlJours} />
+      <RecherchesManager rows={rows} canDelete={canDelete} isAdmin={["super_admin", "admin"].includes(role)} ttl={ttl} />
     </div>
   )
 }
