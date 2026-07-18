@@ -5,6 +5,7 @@ import PropertyCard from "@/components/properties/PropertyCard"
 import Navbar from "@/components/shared/Navbar"
 import HomeSearch from "@/components/shared/HomeSearch"
 import ServiceBanners from "@/components/shared/ServiceBanners"
+import CityMarquee from "@/components/shared/CityMarquee"
 import AutoRefresh from "@/components/shared/AutoRefresh"
 import { getPublishedTestimonials } from "@/lib/testimonials"
 import { ArrowRight, Shield, Bell, Users, PlusCircle, Sofa, Star } from "lucide-react"
@@ -113,17 +114,8 @@ export default async function Home() {
           <div className="absolute bottom-0 left-0 w-80 h-80 bg-amber-500/10 rounded-full blur-3xl translate-y-1/2 -translate-x-1/3 pointer-events-none" />
 
           <div className="relative max-w-5xl mx-auto px-4 sm:px-6 pt-6 pb-8 md:pt-8 md:pb-10">
-            {/* Badges communes actives */}
-            <div className="flex flex-wrap items-center gap-2 mb-5">
-              {(villes.length > 0 ? villes : [{ id: "bk", nom: "Bouaké" }]).map(v => (
-                <span key={v.id}
-                  className="inline-flex items-center gap-1.5 text-slate-400 text-xs px-3 py-1.5 rounded-full border border-slate-700/60">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
-                  {v.nom}
-                </span>
-              ))}
-              <span className="text-slate-600 text-xs">— Côte d&apos;Ivoire</span>
-            </div>
+            {/* Bandeau défilant des communes actives */}
+            <CityMarquee villes={villes} />
 
             {/* Titre */}
             <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold text-white leading-[1.1] tracking-tight mb-4 max-w-2xl">

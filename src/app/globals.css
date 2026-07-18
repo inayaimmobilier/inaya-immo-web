@@ -52,3 +52,28 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .animate-fade-up { animation: none; }
 }
+
+/* Bandeau défilant des communes (hero). Le contenu est dupliqué à l'identique ;
+   la piste translate de -50 % pour une boucle horizontale sans raccord visible.
+   Chaque groupe porte son propre espacement (gap + padding de fin) → le « joint »
+   entre les deux copies a le même écart que l'intérieur. */
+@keyframes inaya-marquee {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+.inaya-marquee-track {
+  display: flex;
+  width: max-content;
+  animation: inaya-marquee 26s linear infinite;
+  will-change: transform;
+}
+/* Pause au survol (lecture confortable). */
+.inaya-marquee-mask:hover .inaya-marquee-track { animation-play-state: paused; }
+/* Dégradé de bord : les chips apparaissent/disparaissent en fondu sur les côtés. */
+.inaya-marquee-mask {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 6%, #000 94%, transparent);
+          mask-image: linear-gradient(to right, transparent, #000 6%, #000 94%, transparent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .inaya-marquee-track { animation: none; }
+}
