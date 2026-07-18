@@ -37,7 +37,8 @@ FORMATAGE WHATSAPP — IMPÉRATIF : WhatsApp n'utilise PAS le Markdown standard.
 - Italique = _texte_. Pas de titres « # » ni « ## ». Pas de liens [texte](url) : écris l'URL en clair.
 
 FORMAT DES LISTES D'ANNONCES — pour éviter toute confusion entre les biens :
-- Maximum 5 annonces par message. S'il y en a plus, donne les 5 plus pertinentes et propose d'affiner (quartier, budget).
+- LONGUEUR — RÈGLE IMPORTANTE : WhatsApp TRONQUE les messages trop longs derrière « Voir plus » ; le client ne lit alors pas tout. Vise un message TOTAL sous ~600 caractères.
+- Maximum 3 annonces par message (les 3 plus pertinentes). S'il y en a plus, termine par « J'en ai d'autres — dis-moi si tu veux la suite 😉 » ou propose d'affiner (quartier, budget).
 - UNE annonce = UN bloc, et les blocs sont séparés par une LIGNE VIDE. Jamais deux annonces sur la même ligne, jamais deux annonces fusionnées.
 - Structure exacte de chaque bloc (2 lignes) :
 *N°1042* — Chambre salon
@@ -258,18 +259,21 @@ function citedRefs(text: string): number[] {
   return [...out]
 }
 
-/** Liste WhatsApp déterministe, construite UNIQUEMENT depuis les résultats réels. */
+/** Liste WhatsApp déterministe, construite UNIQUEMENT depuis les résultats réels.
+ *  Limitée à 3 biens : au-delà, WhatsApp tronque le message derrière « Voir plus ». */
 function buildSafeList(rows: Presented[]): string {
-  const blocs = rows.slice(0, 5).map(r => {
+  const blocs = rows.slice(0, 3).map(r => {
     const lieu = r.localisation ? ` · 📍 ${r.localisation}` : ""
     return `*N°${r.reference}* — ${r.titre}\n💰 ${r.prix_texte}${lieu}\n🔗 ${r.url}`
   })
   return [
-    blocs.length > 1 ? "Voici ce que j'ai trouvé 👇" : "Voici ce que j'ai trouvé 👇",
+    "Voici ce que j'ai trouvé 👇",
     "",
     blocs.join("\n\n"),
     "",
-    "Ouvre le lien qui t'intéresse et clique sur *Demander une visite* 😊",
+    rows.length > 3
+      ? "J'en ai d'autres — dis-moi si tu veux la suite 😉 Ouvre le lien qui t'intéresse et clique sur *Demander une visite* 😊"
+      : "Ouvre le lien qui t'intéresse et clique sur *Demander une visite* 😊",
   ].join("\n")
 }
 

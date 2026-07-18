@@ -85,15 +85,27 @@ export async function respondToDemande(requestId: string): Promise<{ matched: nu
   let titre: string
   if (scored.length > 0) {
     titre = "Inaya Immo — biens pour votre recherche"
-    contenu = [
-      `Bonjour 👋 Je suis *Miss Maryama*, d'Inaya Immo. J'ai vu votre recherche et voici ${scored.length} bien${scored.length > 1 ? "s" : ""} qui pourrai${scored.length > 1 ? "ent" : "t"} vous intéresser 👇`,
-      "",
-      scored.map(x => blocBien(x.p)).join("\n\n"),
+    // WhatsApp TRONQUE (« Voir plus ») les messages au-delà d'~700-800 caractères.
+    // Pour que le client voie tout SANS cliquer, on compose sous un BUDGET : on
+    // ajoute les biens (les mieux classés d'abord) tant que le message tient,
+    // avec au moins 1 bien. Les biens écartés restent matchés en base (alertes).
+    const CHAR_BUDGET = 650
+    const footer = [
       "",
       "Ouvre le lien qui t'intéresse et clique sur *Demander une visite* 😊",
       "📇 Astuce : enregistre ce numéro (Inaya Immo) pour que les liens soient cliquables.",
       "Répondez STOP pour ne plus recevoir de propositions.",
     ].join("\n")
+    const blocs = scored.map(x => blocBien(x.p))
+    const kept: string[] = []
+    const introFor = (n: number) =>
+      `Bonjour 👋 Je suis *Miss Maryama*, d'Inaya Immo. J'ai vu votre recherche et voici ${n} bien${n > 1 ? "s" : ""} qui pourrai${n > 1 ? "ent" : "t"} vous intéresser 👇`
+    for (const bloc of blocs) {
+      const candidat = [introFor(kept.length + 1), "", [...kept, bloc].join("\n\n"), footer].join("\n")
+      if (kept.length > 0 && candidat.length > CHAR_BUDGET) break
+      kept.push(bloc)
+    }
+    contenu = [introFor(kept.length), "", kept.join("\n\n"), footer].join("\n")
   } else {
     titre = "Inaya Immo — recherche enregistrée"
     contenu = [
