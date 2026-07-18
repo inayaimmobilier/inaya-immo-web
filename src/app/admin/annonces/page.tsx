@@ -61,12 +61,6 @@ export default async function AnnoncesAdminPage({ searchParams }: PageProps) {
     // Recherche LARGE : n'importe quel texte de l'annonce (titre / description /
     // quartier), le NUMÉRO d'annonce (INA-XXXXXX) ou l'identifiant. Filtrage en JS
     // (accents/casse ignorés) pour couvrir tous les cas de façon fiable.
-    let sq = supabase.from("properties").select(SELECT).order("created_at", { ascending: false }).limit(2000)
-    if (params.statut) sq = sq.eq("statut", params.statut as never)
-    if (signaleesActive) sq = sq.in("id", reportedIds.length ? reportedIds : dummyIds)
-    const { data } = await sq
-    const all = (data ?? []) as PropRow[]
-
     const norm = (s: unknown) => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
     const t = norm(params.q).trim()
     // NUMÉRO d'annonce (le même que côté client) : « N°601 », « #601 » ou « 601 ».
@@ -75,6 +69,24 @@ export default async function AnnoncesAdminPage({ searchParams }: PageProps) {
     // Repli : ancien identifiant hex (« A3D855 » / UUID) pour les liens existants.
     const hex = params.q.replace(/[^0-9a-zA-Z]/g, "").toLowerCase().replace(/^ina/, "")
 
+    let sq = supabase.from("properties").select(SELECT).order("created_at", { ascending: false }).limit(2000)
+    if (params.statut) sq = sq.eq("statut", params.statut as never)
+    if (signaleesActive) sq = sq.in("id", reportedIds.length ? reportedIds : dummyIds)
+
+    // Le NUMÉRO est cherché DIRECTEMENT en base (pas seulement dans la fenêtre
+    // des 2000 annonces récentes du filtre texte) : une annonce ancienne — ex.
+    // N°1619 — doit TOUJOURS être retrouvable par son numéro, c'est le moyen de
+    // recontacter le propriétaire quand un client est intéressé.
+    let rq = asRef != null
+      ? supabase.from("properties").select(SELECT).eq("reference", asRef).limit(5)
+      : null
+    if (rq && params.statut) rq = rq.eq("statut", params.statut as never)
+    if (rq && signaleesActive) rq = rq.in("id", reportedIds.length ? reportedIds : dummyIds)
+
+    const [{ data }, refRes] = await Promise.all([sq, rq ?? Promise.resolve({ data: null })])
+    const all = (data ?? []) as PropRow[]
+    const refRows = ((refRes as { data: PropRow[] | null }).data ?? [])
+
     const filtered = all.filter(p => {
       if (asRef != null && p.reference === asRef) return true
       if (t && (norm(p.titre).includes(t) || norm(p.description).includes(t) || norm(p.quartier).includes(t))) return true
@@ -82,9 +94,12 @@ export default async function AnnoncesAdminPage({ searchParams }: PageProps) {
       if (asRef == null && hex.length >= 4 && (idHex.startsWith(hex) || idHex.includes(hex))) return true
       return false
     })
-    total = filtered.length
+    // Fusion : correspondances par numéro D'ABORD, sans doublon.
+    const seen = new Set(refRows.map(p => p.id))
+    const merged = [...refRows, ...filtered.filter(p => !seen.has(p.id))]
+    total = merged.length
     totalPages = Math.ceil(total / PER_PAGE)
-    properties = filtered.slice(from, to + 1)
+    properties = merged.slice(from, to + 1)
   } else {
     let countQ = supabase.from("properties").select("*", { count: "exact", head: true })
     let dataQ = supabase.from("properties").select(SELECT).order("created_at", { ascending: false }).range(from, to)
