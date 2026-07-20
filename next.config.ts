@@ -21,7 +21,15 @@ if (publicUrl) {
 }
 
 const nextConfig: NextConfig = {
-  images: { remotePatterns },
+  images: {
+    remotePatterns,
+    // Next.js ≥15 sert par défaut les images optimisées avec
+    // `Content-Disposition: attachment`, ce qui force le navigateur à
+    // télécharger l'image au lieu de l'afficher dans un <img>. Sur Inaya,
+    // toutes les images viennent de notre bucket R2 (remotePatterns verrouillé),
+    // donc on revient à `inline` pour que les <Image/> s'affichent normalement.
+    contentDispositionType: "inline",
+  },
   experimental: {
     serverActions: {
       bodySizeLimit: "200mb",
