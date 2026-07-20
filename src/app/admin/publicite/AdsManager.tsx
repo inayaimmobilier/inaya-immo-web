@@ -340,7 +340,16 @@ function ItemModal({ item, isNew, saving, onClose, onSave }: {
   }
 
   function unlinkProperty() {
-    set({ property_id: null })
+    // On détache l'annonce ET on nettoie les champs qui avaient été
+    // auto-remplis depuis elle, pour ne pas laisser de « résidu » de
+    // l'ancienne annonce (titre/CTA/lien devenus caducs).
+    setIt(prev => ({
+      ...prev,
+      property_id: null,
+      titre: prev.cta_lien && prev.cta_lien.startsWith("/biens/") ? "" : prev.titre,
+      cta_label: prev.cta_label === "Voir l'annonce" ? null : prev.cta_label,
+      cta_lien: prev.cta_lien && prev.cta_lien.startsWith("/biens/") ? null : prev.cta_lien,
+    }))
     setLinkedLabel(null)
   }
 
@@ -359,6 +368,8 @@ function ItemModal({ item, isNew, saving, onClose, onSave }: {
 
   // Upload direct navigateur → R2 (presign → PUT → enregistrement).
   // Sauvegarde auto la pub si elle est nouvelle (besoin d'un id pour le prefix R2).
+  // Si le PUT direct est bloqué par le CORS du bucket ("Failed to fetch"),
+  // on bascule sur l'upload via le serveur (FormData → /media).
   async function handleUpload(files: FileList | null) {
     if (!files || files.length === 0) return
     setUploadErr(null)
@@ -372,32 +383,60 @@ function ItemModal({ item, isNew, saving, onClose, onSave }: {
         current = created
         setIt(created)
       }
-      for (const file of Array.from(files)) {
-        const presignRes = await fetch(`/api/admin/ads/${current.id}/media/presign`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ files: [{ name: file.name, contentType: file.type, size: file.size }] }),
-        })
-        const presign = await presignRes.json() as { items?: { key: string; uploadUrl: string; type: "image" | "video"; contentType: string }[]; errors?: string[] }
-        if (!presignRes.ok || !presign.items?.[0]) { setUploadErr(presign.errors?.[0] || "Échec presign"); continue }
-        const item0 = presign.items[0]
-        const put = await fetch(item0.uploadUrl, { method: "PUT", headers: { "Content-Type": item0.contentType }, body: file })
-        if (!put.ok) { setUploadErr("Upload R2 refusé (vérifiez le CORS du bucket)"); continue }
-        const field = item0.type === "video" ? "video_url" : "image_url"
-        const pubUrl = `${process.env.NEXT_PUBLIC_R2_PUBLIC_URL}/${item0.key}`
-        // PATCH direct pour persister l'URL du média.
-        const res = await fetch(`/api/admin/ads/items/${current.id}`, {
-          method: "PATCH", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ [field]: pubUrl }),
-        })
-        const json = await res.json()
-        if (res.ok && json[field]) {
-          set({ [field]: json[field] } as Partial<Item>)
-          current = { ...current, [field]: json[field] }
+
+      // Étape 1 : tenter le PUT direct (presign). Rapide et n'emprunte pas
+      // la fonction serverless. Échoue si le CORS du bucket n'autorise pas
+      // l'origine du site — auquel cas on bascule sur le repli serveur.
+      let uploadedViaServer = false
+      try {
+        for (const file of Array.from(files)) {
+          const presignRes = await fetch(`/api/admin/ads/${current.id}/media/presign`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ files: [{ name: file.name, contentType: file.type, size: file.size }] }),
+          })
+          const presign = await presignRes.json() as { items?: { key: string; uploadUrl: string; type: "image" | "video"; contentType: string }[]; errors?: string[] }
+          if (!presignRes.ok || !presign.items?.[0]) throw new Error(presign.errors?.[0] || "Échec presign")
+          const item0 = presign.items[0]
+          const put = await fetch(item0.uploadUrl, { method: "PUT", headers: { "Content-Type": item0.contentType }, body: file })
+          if (!put.ok) throw new Error("PUT R2 refusé")
+          const field = item0.type === "video" ? "video_url" : "image_url"
+          const pubUrl = `${process.env.NEXT_PUBLIC_R2_PUBLIC_URL}/${item0.key}`
+          await persistMediaUrl(current.id, field, pubUrl, current)
+        }
+      } catch (directErr) {
+        // Repli : upload via le serveur (FormData). Marche même si le CORS
+        // du bucket R2 bloque les PUT cross-origin depuis le navigateur.
+        const fd = new FormData()
+        for (const f of Array.from(files)) fd.append("files", f)
+        const res = await fetch(`/api/admin/ads/${current.id}/media`, { method: "POST", body: fd })
+        const json = await res.json() as { items?: { key: string; publicUrl: string; type: "image" | "video" }[]; errors?: string[] }
+        if (!res.ok || !json.items?.length) {
+          setUploadErr(json.errors?.[0] || (directErr as Error).message || "Échec upload")
+          return
+        }
+        uploadedViaServer = true
+        for (const m of json.items) {
+          const field = m.type === "video" ? "video_url" : "image_url"
+          await persistMediaUrl(current.id, field, m.publicUrl, current)
         }
       }
+      if (uploadedViaServer) setUploadErr("Média envoyé via serveur (CORS R2 à vérifier pour accélérer).")
     } catch (e) { setUploadErr((e as Error).message) } finally {
       setUploading(false)
       if (fileRef.current) fileRef.current.value = ""
+    }
+  }
+
+  /** PATCH l'URL du média sur la pub + met à jour l'état local. */
+  async function persistMediaUrl(adItemId: string, field: "image_url" | "video_url", url: string, current: Item) {
+    const res = await fetch(`/api/admin/ads/items/${adItemId}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [field]: url }),
+    })
+    const json = await res.json()
+    if (res.ok && json[field]) {
+      set({ [field]: json[field] } as Partial<Item>)
+      current[field] = json[field]
     }
   }
 
