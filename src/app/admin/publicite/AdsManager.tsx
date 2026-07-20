@@ -173,47 +173,66 @@ export default function AdsManager({
         </div>
       </section>
 
-      {/* ── PUBS PAR EMPLACEMENT ────────────────────────────────────────── */}
+      {/* ── PUBS PAR EMPLACEMENT (vue multi-cases) ─────────────────────── */}
       {spaces.filter(s => s.actif).map(s => {
         const spaceItems = items.filter(it => it.ad_space_id === s.id)
+        // Les N slots fixes (numérotés 0..N-1) : la pub qui a priority = slot
+        // se place dans la case correspondante. Les pubs hors slot (priority
+        // >= nb_slots ou doublons) atterrissent en zone "Autres pubs".
+        const nbSlots = Math.max(1, s.nb_slots)
+        const slots = Array.from({ length: nbSlots }, (_, i) => {
+          const candidates = spaceItems.filter(it => it.priority === i)
+          return { idx: i, item: candidates[0] ?? null }
+        })
+        const others = spaceItems.filter(it => !slots.some(sl => sl.item?.id === it.id))
+        const isMultiSlot = nbSlots > 1
+
         return (
           <section key={s.id} className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-gray-900">Pubs — {s.nom}</h2>
+              <h2 className="text-sm font-semibold text-gray-900">
+                Pubs — {s.nom}
+                <span className="ml-2 text-xs font-normal text-gray-400">
+                  {isMultiSlot ? `${nbSlots} slots` : ""}
+                </span>
+              </h2>
               <button onClick={() => { setEditingItem(emptyItem(s.id)); setIsNewItem(true) }}
                 className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-blue-700 text-white hover:bg-blue-600">
                 <Plus className="w-3.5 h-3.5" /> Ajouter une pub
               </button>
             </div>
-            {spaceItems.length === 0 ? (
+
+            {isMultiSlot ? (
+              <>
+                {/* Vue multi-cases : grille de N slots numérotés */}
+                <div className={`grid gap-2 ${nbSlots <= 2 ? "grid-cols-2" : nbSlots <= 4 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3 sm:grid-cols-6"}`}>
+                  {slots.map(slot => (
+                    <SlotCard
+                      key={slot.idx}
+                      slotIdx={slot.idx}
+                      adSpaceId={s.id}
+                      item={slot.item}
+                      onEdit={(it) => { setEditingItem(it); setIsNewItem(!it.id) }}
+                      onToggle={toggleItem}
+                      onDelete={deleteItem}
+                    />
+                  ))}
+                </div>
+                {others.length > 0 && (
+                  <div className="pt-2 mt-2 border-t border-gray-100">
+                    <p className="text-[11px] text-gray-400 mb-2">Autres pubs (hors slots numérotés)</p>
+                    <div className="space-y-2">
+                      {others.map(it => <ItemRow key={it.id} it={it} onEdit={(x) => { setEditingItem(x); setIsNewItem(false) }} onToggle={toggleItem} onDelete={deleteItem} />)}
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : spaceItems.length === 0 ? (
               <p className="text-xs text-gray-400 py-4 text-center">Aucune pub dans cet emplacement.</p>
             ) : (
               <div className="space-y-2">
                 {spaceItems.map(it => (
-                  <div key={it.id} className="flex items-center gap-3 p-3 rounded-xl border border-gray-100 hover:bg-gray-50">
-                    <div className="flex-shrink-0 w-12 h-12 rounded-lg overflow-hidden bg-gray-100 flex items-center justify-center">
-                      {it.image_url ? <Image src={it.image_url} alt="" width={48} height={48} className="object-cover w-full h-full" /> :
-                       it.video_url ? <span className="text-lg">🎬</span> :
-                       <span className="text-2xl">{it.icone}</span>}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 line-clamp-1">{it.titre || "(sans titre)"}</p>
-                      <p className="text-xs text-gray-500">
-                        {it.property_id ? "🔗 Annonce liée" : "Contenu libre"}
-                        {it.cta_label ? ` · ${it.cta_label}` : ""}
-                        {it.start_at || it.end_at ? " · programmée" : ""}
-                      </p>
-                    </div>
-                    <button onClick={() => toggleItem(it)} className={`p-1.5 rounded-lg ${it.actif ? "text-green-600" : "text-gray-300"}`}>
-                      {it.actif ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                    </button>
-                    <button onClick={() => { setEditingItem(it); setIsNewItem(false) }} className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50">
-                      <Pencil className="w-4 h-4" />
-                    </button>
-                    <button onClick={() => deleteItem(it)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
+                  <ItemRow key={it.id} it={it} onEdit={(x) => { setEditingItem(x); setIsNewItem(false) }} onToggle={toggleItem} onDelete={deleteItem} />
                 ))}
               </div>
             )}
@@ -560,6 +579,110 @@ function ItemModal({ item, isNew, saving, onClose, onSave }: {
         <SaveBar saving={saving} onSave={() => onSave(it)} onCancel={onClose} />
       </div>
     </Modal>
+  )
+}
+
+// ── Case de slot (vue multi-cases) ──────────────────────────────────────────
+// Affiche soit une pub existante (avec actions éditer/toggle/supprimer),
+// soit une case vide numérotée "Slot N" cliquable pour la remplir.
+function SlotCard({ slotIdx, adSpaceId, item, onEdit, onToggle, onDelete }: {
+  slotIdx: number
+  adSpaceId: string
+  item: Item | null
+  onEdit: (it: Item) => void
+  onToggle: (it: Item) => void
+  onDelete: (it: Item) => void
+}) {
+  if (!item) {
+    // Case vide : au clic on crée un item pré-rempli avec priority = slotIdx
+    // pour qu'il se place automatiquement dans ce slot à la sauvegarde.
+    return (
+      <button
+        onClick={() => onEdit({
+          id: "", ad_space_id: adSpaceId, titre: "", sous_titre: null, description: null,
+          cta_label: null, cta_lien: null, image_url: null, video_url: null,
+          couleur: "blue", icone: "📢", property_id: null, priority: slotIdx,
+          actif: true, start_at: null, end_at: null,
+        })}
+        className="aspect-square rounded-xl border-2 border-dashed border-gray-200 hover:border-blue-400 hover:bg-blue-50/50 flex flex-col items-center justify-center text-gray-400 hover:text-blue-600 transition-colors"
+      >
+        <Plus className="w-5 h-5 mb-1" />
+        <span className="text-[11px] font-medium">Slot {slotIdx + 1}</span>
+      </button>
+    )
+  }
+  return (
+    <div className="group relative aspect-square rounded-xl border border-gray-100 overflow-hidden bg-gray-50">
+      {/* Aperçu média */}
+      <div className="absolute inset-0 flex items-center justify-center">
+        {item.image_url ? (
+          <Image src={item.image_url} alt={item.titre} fill className="object-cover" sizes="160px" />
+        ) : item.video_url ? (
+          <span className="text-3xl">🎬</span>
+        ) : (
+          <span className="text-4xl">{item.icone}</span>
+        )}
+      </div>
+      {/* Bandeau bas : numéro slot + titre */}
+      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2 pt-6">
+        <p className="text-[10px] font-bold text-white/70">SLOT {slotIdx + 1}</p>
+        <p className="text-xs font-medium text-white line-clamp-1">{item.titre || "(sans titre)"}</p>
+      </div>
+      {/* Badge inactif */}
+      {!item.actif && (
+        <span className="absolute top-1 left-1 text-[9px] bg-gray-700 text-white px-1.5 py-0.5 rounded">Masqué</span>
+      )}
+      {/* Actions hover */}
+      <div className="absolute top-1 right-1 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+        <button onClick={() => onToggle(item)} title={item.actif ? "Masquer" : "Afficher"}
+          className={`p-1 rounded bg-white/90 hover:bg-white ${item.actif ? "text-green-600" : "text-gray-400"}`}>
+          {item.actif ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+        </button>
+        <button onClick={() => onEdit(item)} title="Modifier"
+          className="p-1 rounded bg-white/90 hover:bg-white text-blue-600">
+          <Pencil className="w-3 h-3" />
+        </button>
+        <button onClick={() => onDelete(item)} title="Supprimer"
+          className="p-1 rounded bg-white/90 hover:bg-white text-red-600">
+          <Trash2 className="w-3 h-3" />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── Ligne de pub compacte (mono-slot + zone "Autres pubs") ──────────────────
+function ItemRow({ it, onEdit, onToggle, onDelete }: {
+  it: Item
+  onEdit: (it: Item) => void
+  onToggle: (it: Item) => void
+  onDelete: (it: Item) => void
+}) {
+  return (
+    <div className="flex items-center gap-3 p-3 rounded-xl border border-gray-100 hover:bg-gray-50">
+      <div className="flex-shrink-0 w-12 h-12 rounded-lg overflow-hidden bg-gray-100 flex items-center justify-center">
+        {it.image_url ? <Image src={it.image_url} alt="" width={48} height={48} className="object-cover w-full h-full" /> :
+         it.video_url ? <span className="text-lg">🎬</span> :
+         <span className="text-2xl">{it.icone}</span>}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-gray-900 line-clamp-1">{it.titre || "(sans titre)"}</p>
+        <p className="text-xs text-gray-500">
+          {it.property_id ? "🔗 Annonce liée" : "Contenu libre"}
+          {it.cta_label ? ` · ${it.cta_label}` : ""}
+          {it.priority ? ` · prio ${it.priority}` : ""}
+        </p>
+      </div>
+      <button onClick={() => onToggle(it)} className={`p-1.5 rounded-lg ${it.actif ? "text-green-600" : "text-gray-300"}`}>
+        {it.actif ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+      </button>
+      <button onClick={() => onEdit(it)} className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50">
+        <Pencil className="w-4 h-4" />
+      </button>
+      <button onClick={() => onDelete(it)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50">
+        <Trash2 className="w-4 h-4" />
+      </button>
+    </div>
   )
 }
 
