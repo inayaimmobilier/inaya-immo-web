@@ -23,12 +23,16 @@ if (publicUrl) {
 const nextConfig: NextConfig = {
   images: {
     remotePatterns,
-    // Next.js ≥15 sert par défaut les images optimisées avec
-    // `Content-Disposition: attachment`, ce qui force le navigateur à
-    // télécharger l'image au lieu de l'afficher dans un <img>. Sur Inaya,
-    // toutes les images viennent de notre bucket R2 (remotePatterns verrouillé),
-    // donc on revient à `inline` pour que les <Image/> s'affichent normalement.
-    contentDispositionType: "inline",
+    // On désactive l'optimisation next/image : nos médias sont déjà optimisés
+    // à l'upload côté R2 (thumbnails générés), et l'optimizer Vercel facture
+    // chaque transformation. En cas de dépassement de quota, Vercel renvoie
+    // un HTTP 402 "OPTIMIZED_IMAGE_REQUEST_PAYMENT_REQUIRED" sur /_next/image,
+    // ce qui casse TOUTES les images du site (icônes brisées).
+    //
+    //Avec unoptimized: true, les <Image src="...r2.dev/..."> sont rendus
+    // tels quels (src direct vers R2), sans passer par le proxy — plus de
+    // quota, plus de 402, chargement plus rapide (1 hop au lieu de 2).
+    unoptimized: true,
   },
   experimental: {
     serverActions: {
