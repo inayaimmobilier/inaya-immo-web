@@ -24,11 +24,25 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(data)
 }
 
+// Colonnes uuid : on ne JAMAIS envoyer "" (Postgres le rejette avec 22P02).
+// On retire les uuids vides de l'insert et on normalise property_id "" → null.
+const UUID_COLS = ["id", "ad_space_id", "property_id"] as const
+
 export async function POST(req: NextRequest) {
   if (!(await checkAdmin())) return NextResponse.json({ error: "Accès refusé" }, { status: 403 })
-  const body = await req.json()
+  const body = await req.json() as Record<string, unknown>
+  const payload: Record<string, unknown> = { ...body }
+  // Ne pas forcer l'id côté client — la base fournit gen_random_uuid().
+  // Les uuids vides ("") sont soit retirés (id), soit null (property_id).
+  for (const col of UUID_COLS) {
+    const v = payload[col]
+    if (v === "" || v == null) {
+      if (col === "id") delete payload[col]
+      else payload[col] = null
+    }
+  }
   const admin = createAdminClient()
-  const { data, error } = await admin.from("ad_items").insert(body as never).select().single()
+  const { data, error } = await admin.from("ad_items").insert(payload as never).select().single()
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
   return NextResponse.json(data, { status: 201 })
 }

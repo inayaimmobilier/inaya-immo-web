@@ -15,9 +15,11 @@ async function checkAdmin(): Promise<boolean> {
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   if (!(await checkAdmin())) return NextResponse.json({ error: "Accès refusé" }, { status: 403 })
   const { id } = await params
-  const body = await req.json()
+  const body = await req.json() as Record<string, unknown>
+  const payload = { ...body }
+  delete payload.id  // ne jamais écraser l'id via PATCH
   const admin = createAdminClient()
-  const { data, error } = await admin.from("ad_spaces").update(body as never).eq("id", id).select().single()
+  const { data, error } = await admin.from("ad_spaces").update(payload as never).eq("id", id).select().single()
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
   return NextResponse.json(data)
 }

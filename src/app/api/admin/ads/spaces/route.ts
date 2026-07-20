@@ -23,9 +23,13 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   if (!(await checkAdmin())) return NextResponse.json({ error: "Accès refusé" }, { status: 403 })
-  const body = await req.json()
+  const body = await req.json() as Record<string, unknown>
+  // L'id est généré côté base (gen_random_uuid()) — on ne JAMAIS insérer
+  // id="" (Postgres rejette avec 22P02 "invalid input syntax for type uuid").
+  const payload = { ...body }
+  if (payload.id === "" || payload.id == null) delete payload.id
   const admin = createAdminClient()
-  const { data, error } = await admin.from("ad_spaces").insert(body as never).select().single()
+  const { data, error } = await admin.from("ad_spaces").insert(payload as never).select().single()
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
   return NextResponse.json(data, { status: 201 })
 }

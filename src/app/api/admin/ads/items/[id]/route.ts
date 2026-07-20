@@ -16,9 +16,15 @@ async function checkAdmin(): Promise<boolean> {
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   if (!(await checkAdmin())) return NextResponse.json({ error: "Accès refusé" }, { status: 403 })
   const { id } = await params
-  const body = await req.json()
+  const body = await req.json() as Record<string, unknown>
+  const payload: Record<string, unknown> = { ...body, updated_at: new Date().toISOString() }
+  // Les uuids vides ("") → null (sinon Postgres rejette avec 22P02).
+  for (const col of ["ad_space_id", "property_id"] as const) {
+    if (payload[col] === "") payload[col] = null
+  }
+  // Ne jamais écraser l'id via PATCH.
+  delete payload.id
   const admin = createAdminClient()
-  const payload = { ...body, updated_at: new Date().toISOString() }
   const { data, error } = await admin.from("ad_items").update(payload as never).eq("id", id).select().single()
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
   return NextResponse.json(data)
