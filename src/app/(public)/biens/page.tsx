@@ -3,6 +3,7 @@ import { createClient, createAdminClient } from "@/lib/supabase/server"
 import PropertyCard from "@/components/properties/PropertyCard"
 import PropertyFilters from "@/components/properties/PropertyFilters"
 import Navbar from "@/components/shared/Navbar"
+import AdSpace from "@/components/ads/AdComponents"
 import SaveSearchButton from "./SaveSearchButton"
 import SaveSearchLink from "./SaveSearchLink"
 import AutoRefresh from "@/components/shared/AutoRefresh"
@@ -318,6 +319,9 @@ export default async function BiensPage({ searchParams }: PageProps) {
           <Suspense>
             <PropertyFilters />
           </Suspense>
+
+          {/* Espaces publicitaires (page /biens) */}
+          <AdSpace placement="biens" />
 
           {/* Barre d'outils */}
           <div className="flex items-center justify-between gap-3 flex-wrap">

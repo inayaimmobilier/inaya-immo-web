@@ -5,6 +5,7 @@ import PropertyCard from "@/components/properties/PropertyCard"
 import Navbar from "@/components/shared/Navbar"
 import HomeSearch from "@/components/shared/HomeSearch"
 import ServiceBanners from "@/components/shared/ServiceBanners"
+import AdSpace from "@/components/ads/AdComponents"
 import CityMarquee from "@/components/shared/CityMarquee"
 import AutoRefresh from "@/components/shared/AutoRefresh"
 import { getPublishedTestimonials } from "@/lib/testimonials"
@@ -130,6 +131,11 @@ export default async function Home() {
             <HomeSearch villes={villes} />
           </div>
         </section>
+
+        {/* ── ESPACES PUBLICITAIRES (accueil) ─────────────────────────── */}
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
+          <AdSpace placement="home" />
+        </div>
 
         {/* ── STATS ────────────────────────────────────────────────────── */}
         <section className="border-b border-gray-100">
