@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import Image from "next/image"
 import {
   Megaphone, Plus, Trash2, Pencil, Loader2, Upload, X, Eye, EyeOff,
@@ -50,11 +50,10 @@ const COULEURS = [
 const input = "w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm outline-none focus:border-blue-400"
 
 export default function AdsManager({
-  initialSpaces, initialItems, properties,
+  initialSpaces, initialItems,
 }: {
   initialSpaces: Space[]
   initialItems: Item[]
-  properties: { id: string; titre: string }[]
 }) {
   const [spaces, setSpaces] = useState<Space[]>(initialSpaces)
   const [items, setItems] = useState<Item[]>(initialItems)
@@ -230,10 +229,9 @@ export default function AdsManager({
       {/* ── MODAL ÉDITION PUB ───────────────────────────────────────────── */}
       {editingItem && (
         <ItemModal
-          item={editingItem} isNew={isNewItem} saving={saving} properties={properties}
+          item={editingItem} isNew={isNewItem} saving={saving}
           onClose={() => { setEditingItem(null); setIsNewItem(false) }}
           onSave={saveItem}
-          onUploaded={(field, url) => setEditingItem(prev => prev ? { ...prev, [field]: url } : prev)}
         />
       )}
     </div>
@@ -289,11 +287,9 @@ function SpaceModal({ space, saving, onClose, onSave }: {
 }
 
 // ── Modal édition pub ────────────────────────────────────────────────────────
-function ItemModal({ item, isNew, saving, properties, onClose, onSave, onUploaded }: {
+function ItemModal({ item, isNew, saving, onClose, onSave }: {
   item: Item; isNew: boolean; saving: boolean
-  properties: { id: string; titre: string }[]
   onClose: () => void; onSave: (it: Item) => void
-  onUploaded: (field: "image_url" | "video_url", url: string) => void
 }) {
   const [it, setIt] = useState<Item>(item)
   const [uploading, setUploading] = useState(false)
@@ -301,16 +297,83 @@ function ItemModal({ item, isNew, saving, properties, onClose, onSave, onUploade
   const fileRef = useRef<HTMLInputElement>(null)
   const set = (patch: Partial<Item>) => setIt(prev => ({ ...prev, ...patch }))
 
-  // Upload direct navigateur → R2 (presign → PUT → enregistrement)
-  async function handleUpload(files: FileList | null) {
-    if (!files || files.length === 0 || !it.id) {
-      setUploadErr(it.id ? null : "Sauvegardez d'abord la pub pour pouvoir uploader un média.")
-      return
+  // ── Recherche d'annonces (remplace la datalist sur des milliers) ──────────
+  const [searchQ, setSearchQ] = useState("")
+  const [searchResults, setSearchResults] = useState<{ id: string; titre: string; quartier: string | null; prix: number }[]>([])
+  const [linkedLabel, setLinkedLabel] = useState<string | null>(null)
+
+  // Si une annonce est déjà liée à l'ouverture, on affiche son titre.
+  useEffect(() => {
+    if (it.property_id) {
+      fetch(`/api/admin/ads/search-properties?q=${it.property_id}`).then(r => r.json()).then(d => {
+        const found = (Array.isArray(d) ? d : []).find((p: { id: string }) => p.id === it.property_id)
+        if (found) setLinkedLabel((found as { titre: string }).titre)
+      }).catch(() => {})
     }
-    setUploading(true); setUploadErr(null)
+  }, [it.property_id])
+
+  // Debounce de la recherche (300 ms).
+  useEffect(() => {
+    if (searchQ.trim().length < 2) { setSearchResults([]); return }
+    const id = setTimeout(() => {
+      fetch(`/api/admin/ads/search-properties?q=${encodeURIComponent(searchQ.trim())}`)
+        .then(r => r.json())
+        .then(d => { if (Array.isArray(d)) setSearchResults(d) })
+        .catch(() => {})
+    }, 300)
+    return () => clearTimeout(id)
+  }, [searchQ])
+
+  /** Sélection d'une annonce : on pré-remplit titre + CTA + lien automatiquement. */
+  function linkProperty(p: { id: string; titre: string; quartier: string | null; prix: number }) {
+    setIt(prev => ({
+      ...prev,
+      property_id: p.id,
+      titre: prev.titre || p.titre,
+      cta_label: prev.cta_label || "Voir l'annonce",
+      cta_lien: prev.cta_lien || `/biens/${p.id}`,
+      sous_titre: prev.sous_titre || (p.quartier ? p.quartier : prev.sous_titre),
+    }))
+    setLinkedLabel(p.titre)
+    setSearchQ("")
+    setSearchResults([])
+  }
+
+  function unlinkProperty() {
+    set({ property_id: null })
+    setLinkedLabel(null)
+  }
+
+  /** Sauvegarde la pub (création si nouvelle) puis renvoie l'item avec son id. */
+  async function persistItem(current: Item): Promise<Item | null> {
+    if (current.id) return current
+    // Création en base (titre requis — placeholder si vide)
+    const payload = { ...current, titre: current.titre || "Pub sans titre" }
+    const res = await fetch("/api/admin/ads/items", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+    })
+    const json = await res.json()
+    if (!res.ok) { setUploadErr(json.error || "Échec création"); return null }
+    return json as Item
+  }
+
+  // Upload direct navigateur → R2 (presign → PUT → enregistrement).
+  // Sauvegarde auto la pub si elle est nouvelle (besoin d'un id pour le prefix R2).
+  async function handleUpload(files: FileList | null) {
+    if (!files || files.length === 0) return
+    setUploadErr(null)
+    setUploading(true)
     try {
+      // 0) S'assurer qu'on a un id (crée la pub si nouvelle).
+      let current = it
+      if (!current.id) {
+        const created = await persistItem(current)
+        if (!created) { setUploading(false); return }
+        current = created
+        setIt(created)
+      }
       for (const file of Array.from(files)) {
-        const presignRes = await fetch(`/api/admin/ads/${it.id}/media/presign`, {
+        const presignRes = await fetch(`/api/admin/ads/${current.id}/media/presign`, {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ files: [{ name: file.name, contentType: file.type, size: file.size }] }),
         })
@@ -318,42 +381,63 @@ function ItemModal({ item, isNew, saving, properties, onClose, onSave, onUploade
         if (!presignRes.ok || !presign.items?.[0]) { setUploadErr(presign.errors?.[0] || "Échec presign"); continue }
         const item0 = presign.items[0]
         const put = await fetch(item0.uploadUrl, { method: "PUT", headers: { "Content-Type": item0.contentType }, body: file })
-        if (!put.ok) { setUploadErr("Upload R2 refusé"); continue }
-        // Enregistre l'URL dans la pub (PATCH direct pour persister immédiatement)
+        if (!put.ok) { setUploadErr("Upload R2 refusé (vérifiez le CORS du bucket)"); continue }
         const field = item0.type === "video" ? "video_url" : "image_url"
-        const pubUrl = presign.items[0].key ? `${process.env.NEXT_PUBLIC_R2_PUBLIC_URL}/${item0.key}` : ""
-        // On calcule l'URL publique via le même helper que le serveur : NEXT_PUBLIC_R2_PUBLIC_URL/key
-        const res = await fetch(`/api/admin/ads/items/${it.id}`, {
+        const pubUrl = `${process.env.NEXT_PUBLIC_R2_PUBLIC_URL}/${item0.key}`
+        // PATCH direct pour persister l'URL du média.
+        const res = await fetch(`/api/admin/ads/items/${current.id}`, {
           method: "PATCH", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ [field]: pubUrl }),
         })
         const json = await res.json()
         if (res.ok && json[field]) {
           set({ [field]: json[field] } as Partial<Item>)
-          onUploaded(field, json[field])
+          current = { ...current, [field]: json[field] }
         }
       }
-    } catch (e) { setUploadErr((e as Error).message) } finally { setUploading(false); if (fileRef.current) fileRef.current.value = "" }
+    } catch (e) { setUploadErr((e as Error).message) } finally {
+      setUploading(false)
+      if (fileRef.current) fileRef.current.value = ""
+    }
   }
 
   return (
     <Modal onClose={onClose} title={isNew ? "Nouvelle pub" : "Modifier la pub"} wide>
       <div className="space-y-3">
-        {/* Liaison annonce existante */}
+        {/* Liaison annonce existante — recherche textuelle */}
         <div className="bg-blue-50 rounded-xl p-3 space-y-2">
           <label className="block text-xs font-medium text-blue-900">
             Lier à une annonce existante <span className="text-blue-500 font-normal">(optionnel)</span>
           </label>
-          <input
-            list="properties-list" value={it.property_id ?? ""}
-            onChange={e => set({ property_id: e.target.value || null })}
-            placeholder="Choisir une annonce (titre)…"
-            className={input}
-          />
-          <datalist id="properties-list">
-            {properties.map(p => <option key={p.id} value={p.id}>{p.titre}</option>)}
-          </datalist>
-          <p className="text-[11px] text-blue-700">Si liée, le titre/photo/lien du bien seront auto-utilisés côté public.</p>
+          {it.property_id && linkedLabel ? (
+            <div className="flex items-center justify-between gap-2 bg-white rounded-lg px-3 py-2 border border-blue-200">
+              <span className="text-sm text-gray-800 truncate">🔗 {linkedLabel}</span>
+              <button onClick={unlinkProperty} className="text-red-500 hover:text-red-700 p-1" title="Détacher">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <>
+              <input
+                value={searchQ}
+                onChange={e => setSearchQ(e.target.value)}
+                placeholder="Rechercher une annonce (titre, quartier)…"
+                className={input}
+              />
+              {searchResults.length > 0 && (
+                <div className="bg-white rounded-lg border border-gray-200 max-h-48 overflow-y-auto divide-y divide-gray-50">
+                  {searchResults.map(p => (
+                    <button key={p.id} type="button" onClick={() => linkProperty(p)}
+                      className="w-full text-left px-3 py-2 hover:bg-blue-50 transition-colors">
+                      <p className="text-sm font-medium text-gray-900 line-clamp-1">{p.titre}</p>
+                      <p className="text-xs text-gray-500">{p.quartier ?? "—"} · {Number(p.prix).toLocaleString("fr-FR")} FCFA</p>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <p className="text-[11px] text-blue-700">Si liée, le titre/photo/prix/lien du bien sont auto-remplis.</p>
+            </>
+          )}
         </div>
 
         <div>
@@ -375,7 +459,7 @@ function ItemModal({ item, isNew, saving, properties, onClose, onSave, onUploade
           <textarea value={it.description ?? ""} onChange={e => set({ description: e.target.value || null })} rows={2} className={`${input} resize-none`} />
         </div>
 
-        {/* Médias */}
+        {/* Médias — upload direct, marche même sur une pub nouvelle (auto-save) */}
         <div className="border border-gray-200 rounded-xl p-3 space-y-2">
           <label className="block text-xs font-medium text-gray-600">Image / Vidéo (upload direct)</label>
           {it.image_url && (
@@ -391,10 +475,10 @@ function ItemModal({ item, isNew, saving, properties, onClose, onSave, onUploade
             </div>
           )}
           <input ref={fileRef} type="file" accept="image/*,video/mp4,video/webm,video/quicktime" multiple className="hidden" onChange={e => handleUpload(e.target.files)} />
-          <button onClick={() => fileRef.current?.click()} disabled={uploading || isNew}
+          <button onClick={() => fileRef.current?.click()} disabled={uploading}
             className="inline-flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50">
             {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-            {isNew ? "Sauvegardez avant upload" : "Uploader image/vidéo"}
+            {uploading ? "Envoi en cours…" : "Uploader image/vidéo"}
           </button>
           {uploadErr && <p className="text-xs text-red-600">{uploadErr}</p>}
           {!it.image_url && !it.video_url && <p className="text-[11px] text-gray-400">Sans média, la pub utilise sa couleur + icône.</p>}
