@@ -73,10 +73,21 @@ function splitZones(args: SearchArgs): string[] {
  *    (X pièces = X-1 chambres, le salon comptant comme une pièce) ;
  *  - « chambre salon » sans chiffre = 1 chambre ;
  *  - sinon nb_pieces - 1 ; sinon indéterminé (null).
+ *
+ * EXCEPTION CITÉ : une annonce type « Cité de 3 logements 2 pièces » ou
+ * « 3 fois chambre salon » décrit X LOGEMENTS SÉPARÉS de 2 pièces (1 ch + 1 salon)
+ * chacun — pas une maison de X chambres. On renvoie donc 1 chambre par logement.
  */
 export function bedroomsOf(p: RawProperty): number | null {
   if (typeof p.nb_chambres === "number") return p.nb_chambres
   const hay = stripAccents(`${p.titre} ${p.description ?? ""}`)
+  // Cités / ensembles de logements : « X fois chambre salon », « cité de X logements »,
+  // « X unités chambre salon » → 1 chambre par logement (pas X chambres).
+  const citeM = hay.match(/(\d+)\s*(?:fois|unites?|exemplaires?|logements?)\s*(?:de\s*)?chambre\s*salon/i)
+    ?? hay.match(/chambre\s*salon\s*(?:disponible\s*)?en\s*(\d+)\s*(?:exemplaires?|unites?|logements?|fois)/i)
+    ?? hay.match(/(\d+)\s*chambre\s*salon\s+en\s+cit/i)
+    ?? hay.match(/cit[ée]\s+de\s+(\d+)\s*logements?/)
+  if (citeM) return 1
   const m = hay.match(/(\d+)\s*(chambres?|pieces?|pces?)/)
   if (m) {
     const n = Number(m[1])
