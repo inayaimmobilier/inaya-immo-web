@@ -1,7 +1,7 @@
 "use client"
 
-import { useState } from "react"
-import { Plus, Pencil, Trash2, Eye, EyeOff, GripVertical, X, Save, Loader2 } from "lucide-react"
+import { useRef, useState } from "react"
+import { Plus, Pencil, Trash2, Eye, EyeOff, GripVertical, X, Save, Loader2, Upload } from "lucide-react"
 
 const COULEURS = [
   { val: "blue",    label: "Bleu",   cls: "bg-blue-500"    },
@@ -56,6 +56,47 @@ export default function ServicesManager({ initialBanners }: { initialBanners: Ba
   const [isNew, setIsNew] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Upload de l'image d'illustration (depuis PC/téléphone)
+  const imgFileRef = useRef<HTMLInputElement>(null)
+  const [imgUploading, setImgUploading] = useState(false)
+  const [imgUploadErr, setImgUploadErr] = useState<string | null>(null)
+
+  /** Upload : PUT direct navigateur → R2 (gros fichiers) avec repli via le
+   *  serveur (sans CORS, ≤ 4 Mo). L'URL publique remplit image_url. */
+  async function uploadIllustration(file: File | null) {
+    if (!file) return
+    setImgUploadErr(null)
+    setImgUploading(true)
+    try {
+      let publicUrl: string | null = null
+      // 1) Voie directe (présignature) — échoue si le CORS R2 n'est pas configuré.
+      try {
+        const pres = await fetch("/api/admin/services/upload", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: file.name, contentType: file.type }),
+        })
+        const pj = await pres.json() as { uploadUrl?: string; publicUrl?: string; contentType?: string; error?: string }
+        if (!pres.ok || !pj.uploadUrl) throw new Error(pj.error || "presign")
+        const put = await fetch(pj.uploadUrl, { method: "PUT", headers: { "Content-Type": pj.contentType ?? file.type }, body: file })
+        if (!put.ok) throw new Error("PUT refusé")
+        publicUrl = pj.publicUrl ?? null
+      } catch {
+        // 2) Repli proxy serveur (≤ 4 Mo)
+        const fd = new FormData()
+        fd.append("file", file)
+        const res = await fetch("/api/admin/services/upload", { method: "POST", body: fd })
+        const j = await res.json() as { publicUrl?: string; error?: string }
+        if (!res.ok || !j.publicUrl) throw new Error(j.error || "Envoi impossible.")
+        publicUrl = j.publicUrl
+      }
+      if (publicUrl) setEditing(p => p && ({ ...p, image_url: publicUrl }))
+    } catch (e) {
+      setImgUploadErr((e as Error).message)
+    } finally {
+      setImgUploading(false)
+      if (imgFileRef.current) imgFileRef.current.value = ""
+    }
+  }
 
   function openNew() {
     setEditing({ id: "", ordre: banners.length, ...EMPTY })
@@ -308,10 +349,31 @@ export default function ServicesManager({ initialBanners }: { initialBanners: Ba
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Image (URL optionnelle)</label>
-                <input value={editing.image_url ?? ""} onChange={e => setEditing(p => p && ({ ...p, image_url: e.target.value }))}
-                  placeholder="https://..."
-                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-400" />
+                <label className="block text-xs font-medium text-gray-600 mb-1">Image d&apos;illustration</label>
+                {editing.image_url && (
+                  <div className="relative w-full h-28 rounded-xl overflow-hidden bg-gray-100 mb-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={editing.image_url} alt="" className="w-full h-full object-cover" />
+                    <button type="button" onClick={() => setEditing(p => p && ({ ...p, image_url: "" }))}
+                      className="absolute top-1.5 right-1.5 p-1 rounded-full bg-black/60 text-white hover:bg-black/80" title="Retirer l'image">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+                {/* accept="image/*" : sur téléphone, ouvre l'appareil photo / la galerie */}
+                <input ref={imgFileRef} type="file" accept="image/*" className="hidden"
+                  onChange={e => uploadIllustration(e.target.files?.[0] ?? null)} />
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => imgFileRef.current?.click()} disabled={imgUploading}
+                    className="inline-flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50 shrink-0">
+                    {imgUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                    {imgUploading ? "Envoi…" : "Uploader depuis l'appareil"}
+                  </button>
+                  <input value={editing.image_url ?? ""} onChange={e => setEditing(p => p && ({ ...p, image_url: e.target.value }))}
+                    placeholder="…ou coller une URL https://"
+                    className="flex-1 min-w-0 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-400" />
+                </div>
+                {imgUploadErr && <p className="text-xs text-red-600 mt-1">{imgUploadErr}</p>}
               </div>
 
               <label className="flex items-center gap-3 cursor-pointer">
