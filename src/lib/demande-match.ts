@@ -95,12 +95,15 @@ export async function respondToDemande(requestId: string): Promise<{ matched: nu
     // Pour que le client voie tout SANS cliquer, on compose sous un BUDGET : on
     // ajoute les biens (les mieux classés d'abord) tant que le message tient,
     // avec au moins 1 bien. Les biens écartés restent matchés en base (alertes).
-    const CHAR_BUDGET = 650
+    // Budget SERRÉ : le message final reçu par le client porte AUSSI le titre
+    // préfixé par le dispatcher (« *Inaya Immo — biens pour votre recherche* »,
+    // ~43 car.) et, via Gupshup, le texte fixe du template (~60 car.). Pour rester
+    // sous le seuil « Voir plus » (~700), le contenu doit viser ≤ ~480 caractères.
+    const CHAR_BUDGET = 480
     const footer = [
       "",
-      "Ouvre le lien qui t'intéresse et clique sur *Demander une visite* 😊",
-      "📇 Astuce : enregistre ce numéro (Inaya Immo) pour que les liens soient cliquables.",
-      "Répondez STOP pour ne plus recevoir de propositions.",
+      "👆 Ouvre un lien et clique sur *Demander une visite* 😊",
+      "📇 Enregistre ce numéro (liens cliquables) · Répondez STOP pour arrêter.",
     ].join("\n")
     const blocs = scored.map(x => blocBien(x.p))
     const kept: string[] = []

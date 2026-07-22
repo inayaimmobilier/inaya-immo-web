@@ -1,9 +1,33 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { ArrowRight, Megaphone, ChevronLeft, ChevronRight } from "lucide-react"
+
+// ── Vidéo publicitaire « sûre » ─────────────────────────────────────────────
+// JAMAIS d'attribut autoplay dans le HTML : sur les WebViews Android anciennes
+// (navigateur intégré WhatsApp) et navigateurs légers (Opera Mini…), une vidéo
+// autoplay est déléguée au GESTIONNAIRE DE TÉLÉCHARGEMENT → une fenêtre de
+// téléchargement s'ouvre toute seule à l'arrivée sur la page. Ici :
+//  1. on ne monte la vidéo QUE si le navigateur sait lire le mp4 en ligne
+//     (canPlayType) — sinon le fond dégradé/l'image restent seuls ;
+//  2. la lecture est lancée par JS (play() best-effort), muette et en boucle.
+function SafeAdVideo({ src, className }: { src: string; className: string }) {
+  const ref = useRef<HTMLVideoElement>(null)
+  const [supported, setSupported] = useState(false)
+  useEffect(() => {
+    try {
+      const probe = document.createElement("video")
+      setSupported(!!probe.canPlayType && probe.canPlayType("video/mp4") !== "")
+    } catch { setSupported(false) }
+  }, [])
+  useEffect(() => {
+    if (supported) ref.current?.play().catch(() => { /* lecture refusée → visuel statique */ })
+  }, [supported])
+  if (!supported) return null
+  return <video ref={ref} src={src} muted loop playsInline preload="metadata" className={className} />
+}
 
 // ============================================================================
 // Composants publics d'affichage des espaces publicitaires.
@@ -70,7 +94,7 @@ function AdHero({ item }: { item: AdItem }) {
   const inner = (
     <>
       {item.video_url ? (
-        <video src={item.video_url} autoPlay muted loop playsInline
+        <SafeAdVideo src={item.video_url}
           className="absolute inset-0 w-full h-full object-cover opacity-40 group-hover:opacity-50 transition-opacity" />
       ) : item.image_url ? (
         <Image src={item.image_url} alt={item.titre} fill priority
@@ -107,7 +131,7 @@ function AdGridCard({ item }: { item: AdItem }) {
         {item.image_url ? (
           <Image src={item.image_url} alt={item.titre} fill className="object-cover group-hover:scale-105 transition-transform duration-300" sizes="300px" />
         ) : item.video_url ? (
-          <video src={item.video_url} autoPlay muted loop playsInline className="absolute inset-0 w-full h-full object-cover" />
+          <SafeAdVideo src={item.video_url} className="absolute inset-0 w-full h-full object-cover" />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center text-5xl">{item.icone}</div>
         )}
