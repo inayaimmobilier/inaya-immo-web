@@ -66,11 +66,16 @@ export default function AdsManager({
 
   // ── Spaces ─────────────────────────────────────────────────────────────────
   async function saveSpace(s: Space) {
-    setSaving(true); setError(null)
+    setSaving(true); setError(null); setMsg(null)
     try {
-      const method = spaces.find(x => x.id === s.id) ? "PATCH" : "POST"
-      const url = method === "PATCH" ? `/api/admin/ads/spaces/${s.id}` : "/api/admin/ads/spaces"
-      const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(s) })
+      if (!s.nom.trim()) throw new Error("Le nom de l'emplacement est requis.")
+      // Slug auto depuis le nom si vide (le slug est l'identifiant d'affichage).
+      const slug = s.slug.trim() || s.nom.trim().toLowerCase().normalize("NFD")
+        .replace(/\p{Diacritic}/gu, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")
+      const payload = { ...s, slug }
+      const method = s.id ? "PATCH" : "POST"
+      const url = s.id ? `/api/admin/ads/spaces/${s.id}` : "/api/admin/ads/spaces"
+      const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || "Échec")
       setSpaces(prev => {
@@ -83,7 +88,9 @@ export default function AdsManager({
   }
 
   async function toggleSpace(s: Space) {
-    await fetch(`/api/admin/ads/spaces/${s.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ actif: !s.actif }) })
+    setError(null)
+    const res = await fetch(`/api/admin/ads/spaces/${s.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ actif: !s.actif }) }).catch(() => null)
+    if (!res?.ok) { setError("Échec du changement de visibilité — réessayez."); return }
     setSpaces(prev => prev.map(x => x.id === s.id ? { ...x, actif: !s.actif } : x))
   }
 
@@ -96,10 +103,14 @@ export default function AdsManager({
   })
 
   async function saveItem(it: Item) {
-    setSaving(true); setError(null)
+    setSaving(true); setError(null); setMsg(null)
     try {
-      const method = isNewItem ? "POST" : "PATCH"
-      const url = isNewItem ? "/api/admin/ads/items" : `/api/admin/ads/items/${it.id}`
+      if (!it.titre.trim()) throw new Error("Le titre de la pub est requis.")
+      // POST/PATCH décidé par la PRÉSENCE d'un id (jamais par un drapeau d'UI) :
+      // l'upload d'un média sur une pub nouvelle la crée déjà en base — refaire
+      // un POST ici créerait un DOUBLON.
+      const method = it.id ? "PATCH" : "POST"
+      const url = it.id ? `/api/admin/ads/items/${it.id}` : "/api/admin/ads/items"
       const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(it) })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || "Échec")
@@ -112,14 +123,26 @@ export default function AdsManager({
     } catch (e) { setError((e as Error).message) } finally { setSaving(false) }
   }
 
+  /** L'upload d'un média a auto-créé la pub : on synchronise la liste tout de
+   *  suite (sinon la pub existe en base mais reste invisible si la modale est
+   *  fermée sans « Enregistrer »). */
+  function onItemCreated(created: Item) {
+    setItems(prev => (prev.find(x => x.id === created.id) ? prev : [created, ...prev]))
+    setIsNewItem(false)
+  }
+
   async function toggleItem(it: Item) {
-    await fetch(`/api/admin/ads/items/${it.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ actif: !it.actif }) })
+    setError(null)
+    const res = await fetch(`/api/admin/ads/items/${it.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ actif: !it.actif }) }).catch(() => null)
+    if (!res?.ok) { setError("Échec du changement de visibilité — réessayez."); return }
     setItems(prev => prev.map(x => x.id === it.id ? { ...x, actif: !it.actif } : x))
   }
 
   async function deleteItem(it: Item) {
     if (!confirm(`Supprimer la pub « ${it.titre} » ?`)) return
-    await fetch(`/api/admin/ads/items/${it.id}`, { method: "DELETE" })
+    setError(null)
+    const res = await fetch(`/api/admin/ads/items/${it.id}`, { method: "DELETE" }).catch(() => null)
+    if (!res?.ok) { setError("Échec de la suppression — réessayez."); return }
     setItems(prev => prev.filter(x => x.id !== it.id))
   }
 
@@ -251,6 +274,7 @@ export default function AdsManager({
           item={editingItem} isNew={isNewItem} saving={saving}
           onClose={() => { setEditingItem(null); setIsNewItem(false) }}
           onSave={saveItem}
+          onCreated={onItemCreated}
         />
       )}
     </div>
@@ -306,9 +330,10 @@ function SpaceModal({ space, saving, onClose, onSave }: {
 }
 
 // ── Modal édition pub ────────────────────────────────────────────────────────
-function ItemModal({ item, isNew, saving, onClose, onSave }: {
+function ItemModal({ item, isNew, saving, onClose, onSave, onCreated }: {
   item: Item; isNew: boolean; saving: boolean
   onClose: () => void; onSave: (it: Item) => void
+  onCreated: (it: Item) => void
 }) {
   const [it, setIt] = useState<Item>(item)
   const [uploading, setUploading] = useState(false)
@@ -382,6 +407,10 @@ function ItemModal({ item, isNew, saving, onClose, onSave }: {
     })
     const json = await res.json()
     if (!res.ok) { setUploadErr(json.error || "Échec création"); return null }
+    // Synchronise la liste parent tout de suite : la pub existe désormais en
+    // base — l'écran doit le refléter même si la modale est fermée sans
+    // « Enregistrer », et le prochain enregistrement doit être un PATCH.
+    onCreated(json as Item)
     return json as Item
   }
 

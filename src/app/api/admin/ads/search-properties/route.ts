@@ -20,10 +20,21 @@ export async function GET(req: NextRequest) {
   if (q.length < 2) return NextResponse.json([])
 
   const admin = createAdminClient()
-  // Recherche full-text légère par préfixe + ilike sur le titre
+  const SEL = "id,titre,quartier,prix,type_offre,categorie"
+
+  // UUID → résolution DIRECTE par id (utilisé pour réafficher le titre d'une
+  // annonce déjà liée à une pub ; un ilike sur le titre ne la trouverait jamais).
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(q)) {
+    const { data } = await admin.from("properties").select(SEL).eq("id", q).limit(1)
+    return NextResponse.json(data ?? [])
+  }
+
+  // Recherche texte sur titre + quartier (caractères de syntaxe .or() retirés).
+  const term = q.replace(/[(),]/g, " ").trim()
+  if (term.length < 2) return NextResponse.json([])
   const { data, error } = await admin.from("properties")
-    .select("id,titre,quartier,prix,type_offre,categorie")
-    .or(`titre.ilike.%${q}%,quartier.ilike.%${q}%`)
+    .select(SEL)
+    .or(`titre.ilike.%${term}%,quartier.ilike.%${term}%`)
     .eq("statut", "publie")
     .order("created_at", { ascending: false })
     .limit(20)
