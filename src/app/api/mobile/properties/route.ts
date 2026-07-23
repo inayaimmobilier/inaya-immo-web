@@ -17,9 +17,14 @@ type MediaRow = { property_id: string; url: string; type: string; ordre: number;
 
 export async function GET(req: NextRequest) {
   const p = req.nextUrl.searchParams
+  // Multi-sélection (comme le web) : `categorie` et `quartier` peuvent contenir
+  // plusieurs valeurs séparées par des virgules. Le moteur gère les types via
+  // `categories[]` et les quartiers via le CSV de `quartier` (splitZones).
+  const csv = (s: string | null) => (s ? s.split(",").map(x => x.trim()).filter(Boolean) : [])
+  const cats = csv(p.get("categorie"))
   const args: SearchArgs = {
     type_offre: p.get("type_offre") ?? undefined,
-    categorie: p.get("categorie") ?? undefined,
+    categories: cats.length ? cats : undefined,
     commune: p.get("commune") ?? undefined,
     quartier: p.get("quartier") ?? undefined,
     prix_max: p.get("prix_max") ? Number(p.get("prix_max")) : undefined,
