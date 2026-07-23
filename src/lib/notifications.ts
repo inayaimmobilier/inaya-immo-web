@@ -10,6 +10,7 @@ import { createAdminClient } from "@/lib/supabase/server"
 import type { NotifCanal } from "@/types/database"
 import { sendSms } from "@/lib/sms"
 import { absoluteUrl } from "@/lib/site"
+import { sendExpoPushToUser } from "@/lib/push"
 
 const VALID_CANAUX: NotifCanal[] = ["push", "email", "whatsapp", "telegram"]
 const DEFAULT_CANAUX: NotifCanal[] = ["push", "whatsapp", "telegram"]
@@ -247,6 +248,27 @@ export async function notifySearcher(args: {
   if (rows.length === 0) return
   const { error } = await db.from("notifications").insert(rows as never)
   if (error) console.error("INAYA-NOTIF-003", error.message)
+
+  // Livraison PUSH vers l'app mobile (best-effort, hors file WhatsApp) : le
+  // chercheur connecté et, le cas échéant, l'agent qui suit la recherche
+  // reçoivent une notification sur leurs appareils enregistrés (device_tokens).
+  const pushData = { url, property_id: args.propertyId, request_id: args.requestId, type: "match_offre" }
+  const pushTargets: Promise<unknown>[] = []
+  if (args.userId) {
+    pushTargets.push(sendExpoPushToUser(args.userId, {
+      title: "Nouveau bien pour vous",
+      body: `${intro} : « ${titreCourt} »${lieu}.`,
+      data: pushData,
+    }))
+  }
+  if (creatorId && creatorId !== args.userId) {
+    pushTargets.push(sendExpoPushToUser(creatorId, {
+      title: "Bien trouvé pour votre client",
+      body: `Un bien correspond à une recherche que vous suivez : « ${titreCourt} »${lieu}.`,
+      data: pushData,
+    }))
+  }
+  await Promise.allSettled(pushTargets)
 }
 
 // ---------------------------------------------------------------------------
