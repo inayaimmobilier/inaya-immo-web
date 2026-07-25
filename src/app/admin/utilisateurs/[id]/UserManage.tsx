@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { Loader2, Save, Trash2, ShieldCheck, ShieldAlert, KeyRound, Eye, EyeOff, RefreshCw, Copy } from "lucide-react"
-import { updateUserProfile, deleteUser, updateUserRole, updateUserStatus, setUserPassword } from "../actions"
+import { updateUserProfile, deleteUser, updateUserRole, updateUserStatus, setUserPassword, verifyUserAccount } from "../actions"
 import { ROLE_LABEL, USER_STATUS_LABEL } from "@/lib/utils"
 import type { UserRole, UserStatus } from "@/types/database"
 
@@ -38,6 +38,7 @@ export default function UserManage({ user, roleOptions, canManageRole, isSelf }:
   const [email, setEmail] = useState(user.email)
   const [role, setRole] = useState<UserRole>(user.role)
   const [status, setStatus] = useState<UserStatus>(user.status)
+  const [verifie, setVerifie] = useState(user.verifie)
 
   const [pending, start] = useTransition()
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
@@ -79,6 +80,19 @@ export default function UserManage({ user, roleOptions, canManageRole, isSelf }:
       const res = await updateUserStatus(user.id, next)
       if (!res.ok) { setStatus(prev); setMsg({ ok: false, text: res.error }) }
       else { setMsg({ ok: true, text: "Statut mis à jour." }); router.refresh() }
+    })
+  }
+
+  function onVerify() {
+    setMsg(null)
+    start(async () => {
+      const res = await verifyUserAccount(user.id)
+      if (!res.ok) { setMsg({ ok: false, text: res.error }) }
+      else {
+        setVerifie(true)
+        setMsg({ ok: true, text: "Compte validé et activé avec succès." })
+        router.refresh()
+      }
     })
   }
 
@@ -157,9 +171,17 @@ export default function UserManage({ user, roleOptions, canManageRole, isSelf }:
       <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
         <h2 className="text-sm font-semibold text-gray-900">Rôle & accès</h2>
         <div className="flex items-center gap-2 text-xs">
-          {user.verifie
+          {verifie
             ? <span className="inline-flex items-center gap-1 text-green-700 bg-green-50 px-2 py-1 rounded-full"><ShieldCheck className="w-3.5 h-3.5" /> Compte vérifié</span>
-            : <span className="inline-flex items-center gap-1 text-amber-700 bg-amber-50 px-2 py-1 rounded-full"><ShieldAlert className="w-3.5 h-3.5" /> Non vérifié</span>}
+            : (
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="inline-flex items-center gap-1 text-amber-700 bg-amber-50 px-2 py-1 rounded-full"><ShieldAlert className="w-3.5 h-3.5" /> Non vérifié</span>
+                <button type="button" onClick={onVerify} disabled={pending}
+                  className="bg-blue-50 border border-blue-200 text-blue-700 px-2.5 py-1 rounded-lg hover:bg-blue-100 disabled:opacity-60 inline-flex items-center gap-1 font-medium transition-colors cursor-pointer">
+                  {pending ? <Loader2 className="w-3 h-3 animate-spin" /> : <ShieldCheck className="w-3 h-3" />} Valider le compte
+                </button>
+              </div>
+            )}
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>

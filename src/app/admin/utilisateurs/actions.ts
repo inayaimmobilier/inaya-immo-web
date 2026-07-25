@@ -105,6 +105,28 @@ export async function createUser(input: {
   return { ok: true }
 }
 
+/** Force la vérification/validation d'un compte utilisateur (admin bypass). */
+export async function verifyUserAccount(targetId: string): Promise<ActionResult> {
+  const me = await currentProfile()
+  if (!me) return { ok: false, error: "Non authentifié." }
+  if (me.role !== "super_admin" && me.role !== "admin")
+    return { ok: false, error: "Action réservée aux administrateurs." }
+
+  const admin = createAdminClient()
+  const { error } = await admin.from("profiles")
+    .update({ verifie: true, verified_at: new Date().toISOString(), verified_canal: "admin" } as never)
+    .eq("id", targetId)
+
+  if (error) {
+    console.error("INAYA-USER-VERIFY", error)
+    return { ok: false, error: "Échec de la validation du compte." }
+  }
+
+  revalidatePath("/admin/utilisateurs")
+  revalidatePath(`/admin/utilisateurs/${targetId}`)
+  return { ok: true }
+}
+
 /** Modifie le rôle d'un utilisateur. */
 export async function updateUserRole(targetId: string, role: UserRole): Promise<ActionResult> {
   if (!ROLES.includes(role)) return { ok: false, error: "Rôle invalide." }

@@ -148,14 +148,33 @@ export async function issueOtp(userId: string, canal: OtpCanal, destination: str
         // existant tant qu'un template Gupshup (ex. OTP) est encore "Pending" chez
         // Meta — sans toucher aux autres envois (alertes), qui restent sur Gupshup.
         // Retirer cette variable une fois le template approuvé.
-        const engine = process.env.WA_OTP_ENGINE === "baileys" ? "baileys" : undefined
+        let engine: string | undefined = process.env.WA_OTP_ENGINE === "baileys" ? "baileys" : undefined
+        if (!engine) {
+          // Si l'env var n'est pas forcée, on interroge le service pour savoir si Gupshup est configuré.
+          // Si non configuré, on force baileys en repli automatique pour éviter l'échec de distribution.
+          try {
+            const healthRes = await fetch(`${waUrl}/health`, {
+              headers: process.env.WA_HTTP_SECRET ? { "x-inaya-secret": process.env.WA_HTTP_SECRET } : {},
+              signal: AbortSignal.timeout(2000),
+            })
+            if (healthRes.ok) {
+              const health = await healthRes.json().catch(() => null)
+              if (health && health.gupshupConfigured === false) {
+                engine = "baileys"
+              }
+            }
+          } catch (e) {
+            console.error("INAYA-OTP-HEALTH-FALLBACK", (e as Error).message)
+          }
+        }
+
         const r = await fetch(`${waUrl}/send-direct`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             ...(process.env.WA_HTTP_SECRET ? { "x-inaya-secret": process.env.WA_HTTP_SECRET } : {}),
           },
-          body: JSON.stringify({ to: dest, text: texte, engine }),
+          body: JSON.stringify({ to: dest, text: texte, engine, type: "otp_verification" }),
           signal: AbortSignal.timeout(9000),
         })
         if (r.ok) return { ok: true }
