@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
     mots_cles: p.get("q") ?? undefined,
     tri: (p.get("tri") as SearchArgs["tri"]) ?? undefined,
   }
-  const limit = Math.min(Number(p.get("limit")) || 24, 48)
+  const limit = Math.min(Number(p.get("limit")) || 24, 200)
 
   let rows
   try { rows = await searchProperties(args, { limit }) }
