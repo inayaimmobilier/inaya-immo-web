@@ -107,6 +107,41 @@ export async function runAssistant(opts: RunOpts): Promise<RunResult> {
   }
 }
 
+// --- Complétion simple (sans outils) — pour l'extraction/agents batch --------
+export type CompleteResult = { ok: true; text: string } | { ok: false; error: string }
+
+/** Un aller-retour simple system+user, sans outils. Utilise le modèle actif. */
+export async function llmComplete(system: string, user: string, maxTokens = 2000): Promise<CompleteResult> {
+  const id = await getActiveModelId()
+  const entry = MODEL_CATALOG.find(m => m.id === id) ?? MODEL_CATALOG[0]
+  const provider = PROVIDERS[entry.provider]
+  const apiKey = (await getSecret(provider.envKey)) || process.env[provider.envKey] || ""
+  if (!apiKey) return { ok: false, error: `Fournisseur « ${provider.label} » non configuré.` }
+  try {
+    if (provider.shape === "anthropic") {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+        body: JSON.stringify({ model: entry.model, max_tokens: maxTokens, system, messages: [{ role: "user", content: user }] }),
+      })
+      if (!res.ok) throw new Error(`anthropic ${res.status}`)
+      const data = (await res.json()) as { content: { type: string; text?: string }[] }
+      return { ok: true, text: data.content.filter(b => b.type === "text").map(b => b.text).join("\n").trim() }
+    }
+    const res = await fetch(`${provider.baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+      body: JSON.stringify({ model: entry.model, max_tokens: maxTokens, messages: [{ role: "system", content: system }, { role: "user", content: user }] }),
+    })
+    if (!res.ok) throw new Error(`openai-compat ${res.status}`)
+    const data = (await res.json()) as { choices: { message: { content: string | null } }[] }
+    return { ok: true, text: (data.choices?.[0]?.message?.content ?? "").trim() }
+  } catch (e) {
+    console.error("INAYA-LLM-COMPLETE", entry.id, e)
+    return { ok: false, error: "Extraction indisponible (LLM)." }
+  }
+}
+
 // --- Implémentation Anthropic ---------------------------------------------
 interface AnthBlock { type: string; text?: string; id?: string; name?: string; input?: Record<string, unknown> }
 

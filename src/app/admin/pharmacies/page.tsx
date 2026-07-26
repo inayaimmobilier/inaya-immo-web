@@ -2,6 +2,7 @@ import { redirect } from "next/navigation"
 import { createClient, createAdminClient } from "@/lib/supabase/server"
 import type { UserRole } from "@/types/database"
 import PharmaciesManager, { type Pharmacie } from "./PharmaciesManager"
+import PharmacySources from "./PharmacySources"
 
 export const metadata = { title: "Pharmacies de garde · Inaya Admin" }
 
@@ -31,6 +32,7 @@ export default async function AdminPharmaciesPage() {
           Renseignez la garde du jour (ou de la semaine via une période).
         </p>
       </div>
+      <div className="mb-6"><PharmacySources /></div>
       <PharmaciesManager initialItems={items} />
     </div>
   )

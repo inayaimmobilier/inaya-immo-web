@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { createClient, createAdminClient } from "@/lib/supabase/server"
+import { getPharmacySources, setPharmacySources, refreshPharmaciesDeGarde } from "@/lib/pharmacy-scrape"
 
 type Res = { ok: true } | { ok: false; error: string }
 
@@ -52,4 +53,26 @@ export async function removePharmacie(id: string): Promise<Res> {
   if (error) return { ok: false, error: "Suppression impossible." }
   revalidatePath("/admin/pharmacies")
   return { ok: true }
+}
+
+// ── Sources de collecte automatique (IA) ────────────────────────────────────
+
+export async function loadSources(): Promise<string[]> {
+  if (!(await requireStaff())) return []
+  return getPharmacySources()
+}
+
+export async function saveSources(urls: string[]): Promise<Res> {
+  if (!(await requireStaff())) return { ok: false, error: "Action réservée au staff." }
+  await setPharmacySources(urls)
+  revalidatePath("/admin/pharmacies")
+  return { ok: true }
+}
+
+/** Lance la collecte IA immédiatement (bouton admin). */
+export async function collectNow(): Promise<{ ok: boolean; count: number; sources: number; errors: string[] }> {
+  if (!(await requireStaff())) return { ok: false, count: 0, sources: 0, errors: ["Action réservée au staff."] }
+  const r = await refreshPharmaciesDeGarde()
+  revalidatePath("/admin/pharmacies")
+  return r
 }
