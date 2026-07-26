@@ -124,10 +124,26 @@ export async function searchProperties(args: SearchArgs, opts: { limit?: number 
   const kw = kwRaw ? stripAccents(kwRaw) : ""
   const isEntreeCouchee = !!kwRaw && ENTREE_COUCHEE_RE.test(kwRaw)
 
+  const communeWanted = args.commune ? stripAccents(args.commune.trim()) : ""
+
   const scored: ScoredProperty[] = []
   for (const p of rows) {
     let score = 1
     let soft = 0
+
+    // ── Commune (ville) ── filtre STRICT quand une commune est demandée ────────
+    // Sélectionner « Yamoussoukro » ne doit JAMAIS renvoyer des biens de Bouaké.
+    if (communeWanted) {
+      const pVille = stripAccents(p.ville ?? "")
+      if (pVille) {
+        // Ville renseignée mais différente → hors commune, on exclut franchement.
+        if (pVille !== communeWanted && !pVille.includes(communeWanted) && !communeWanted.includes(pVille)) continue
+      } else {
+        // Ville inconnue : on n'accepte que si la commune apparaît dans le texte.
+        const hay = stripAccents(`${p.quartier ?? ""} ${p.titre} ${p.description ?? ""}`)
+        if (!hay.includes(communeWanted)) continue
+      }
+    }
 
     // ── Catégorie ────────────────────────────────────────────────────────────
     // Écart de catégorie toléré (similaire), SAUF terrain ↔ logement (franc).
