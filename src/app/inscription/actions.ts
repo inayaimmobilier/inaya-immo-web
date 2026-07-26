@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { createClient, createAdminClient } from "@/lib/supabase/server"
 import { issueOtp, verifyOtp, availableCanaux, type OtpCanal } from "@/lib/otp"
 import { phoneMatchCandidates } from "@/lib/phone"
+import { checkBlacklist, BLOCKED_MESSAGE } from "@/lib/blacklist"
 
 // Adresse interne quand l'utilisateur ne fournit pas de vrai e-mail (email facultatif).
 const SYNTH_EMAIL_DOMAIN = "auto.inaya-immo.ci"
@@ -114,6 +115,11 @@ export async function registerAccount(input: {
   const admin = createAdminClient()
   const supabase = await createClient()
   const roleVal = ROLE_FOR[input.type]
+
+  // Liste noire : refuse toute inscription si le numéro ou l'e-mail est bloqué.
+  if ((await checkBlacklist({ telephone, email: realEmail })).blocked) {
+    return { ok: false, error: BLOCKED_MESSAGE }
+  }
 
   // Champs de profil communs (création comme mise à jour), avec repli 42703.
   const fields: Record<string, unknown> = { nom, commune, telephone, role: roleVal }

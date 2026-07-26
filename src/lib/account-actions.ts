@@ -3,6 +3,9 @@
 import { revalidatePath } from "next/cache"
 import { createClient, createAdminClient } from "@/lib/supabase/server"
 import { normalizePhone, phoneDigits, phoneMatchCandidates } from "@/lib/phone"
+import { checkBlacklist, BLOCKED_MESSAGE } from "@/lib/blacklist"
+
+const SYNTH_SUFFIX = "@auto.inaya-immo.ci"
 
 // Domaine interne utilisé quand le client ne fournit pas de vraie adresse e-mail.
 // Supabase exige un e-mail pour l'auth par mot de passe : on en synthétise un à
@@ -40,6 +43,11 @@ export async function quickSignup(input: {
 
   const email = realEmail ?? synthEmail(telephone)
   const admin = createAdminClient()
+
+  // Liste noire : refuse la création si le numéro ou l'e-mail est bloqué.
+  if ((await checkBlacklist({ telephone, email: realEmail })).blocked) {
+    return { ok: false, error: BLOCKED_MESSAGE }
+  }
 
   // Anti-doublon sur le téléphone (tolérant local ⇄ +225 pour ne pas créer un
   // doublon quand l'ancien compte a été enregistré sans indicatif).
@@ -125,8 +133,16 @@ export async function signInFlexible(identifier: string, password: string): Prom
   let redirect = "/client/mes-requetes"
   const uid = signIn.user?.id
   if (uid) {
-    const { data } = await createAdminClient().from("profiles").select("role").eq("id", uid).single()
-    redirect = pathForRole((data as { role: string } | null)?.role)
+    const { data } = await createAdminClient().from("profiles").select("role, status, telephone").eq("id", uid).single()
+    const prof = data as { role: string; status?: string | null; telephone?: string | null } | null
+    // Blocage : compte banni OU numéro/e-mail en liste noire → on ferme la session.
+    const realEmail = signIn.user?.email && !signIn.user.email.endsWith(SYNTH_SUFFIX) ? signIn.user.email : null
+    const bl = await checkBlacklist({ telephone: prof?.telephone, email: realEmail })
+    if (prof?.status === "banni" || bl.blocked) {
+      await supabase.auth.signOut()
+      return { ok: false, error: BLOCKED_MESSAGE }
+    }
+    redirect = pathForRole(prof?.role)
   }
 
   revalidatePath("/", "layout")

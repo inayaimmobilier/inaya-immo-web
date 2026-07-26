@@ -2,8 +2,9 @@
 
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { Loader2, Save, Trash2, ShieldCheck, ShieldAlert, KeyRound, Eye, EyeOff, RefreshCw, Copy } from "lucide-react"
+import { Loader2, Save, Trash2, ShieldCheck, ShieldAlert, KeyRound, Eye, EyeOff, RefreshCw, Copy, Ban } from "lucide-react"
 import { updateUserProfile, deleteUser, updateUserRole, updateUserStatus, setUserPassword } from "../actions"
+import { addBlacklist } from "../../blacklist/actions"
 import { ROLE_LABEL, USER_STATUS_LABEL } from "@/lib/utils"
 import type { UserRole, UserStatus } from "@/types/database"
 
@@ -48,6 +49,21 @@ export default function UserManage({ user, roleOptions, canManageRole, isSelf }:
   const [newPwd, setNewPwd] = useState("")
   const [showPwd, setShowPwd] = useState(false)
   const [pwdSet, setPwdSet] = useState<string | null>(null)
+
+  // Liste noire (blocage définitif du numéro / e-mail).
+  const [blMotif, setBlMotif] = useState("")
+  const [blDone, setBlDone] = useState(false)
+
+  function blacklist(type: "telephone" | "email", valeur: string) {
+    setMsg(null)
+    start(async () => {
+      const res = await addBlacklist({ type, valeur, motif: blMotif })
+      if (!res.ok) { setMsg({ ok: false, text: res.error }); return }
+      setBlDone(true); setStatus("banni")
+      setMsg({ ok: true, text: "Ajouté à la liste noire. Le compte est banni." })
+      router.refresh()
+    })
+  }
 
   const isSynthEmail = email.endsWith("@auto.inaya-immo.ci")
 
@@ -224,6 +240,32 @@ export default function UserManage({ user, roleOptions, canManageRole, isSelf }:
             className="inline-flex items-center gap-2 bg-gray-900 text-white px-4 rounded-xl text-sm font-semibold hover:bg-gray-800 disabled:opacity-60">
             {pending ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />} Définir
           </button>
+        </div>
+      </div>
+
+      {/* Liste noire */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3">
+        <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+          <Ban className="w-4 h-4 text-red-500" /> Liste noire
+        </h2>
+        <p className="text-xs text-gray-500">
+          Bloque définitivement l&apos;accès (inscription, connexion, app) et bannit le compte. À utiliser pour les arnaques,
+          faux comptes, impayés… Gérez toutes les entrées dans <a href="/admin/blacklist" className="text-blue-600">Liste noire</a>.
+        </p>
+        <input value={blMotif} onChange={e => setBlMotif(e.target.value)} placeholder="Motif du blocage (facultatif)" className={input} />
+        <div className="flex items-center gap-2 flex-wrap">
+          {telephone.trim() && (
+            <button type="button" onClick={() => blacklist("telephone", telephone)} disabled={pending || blDone}
+              className="inline-flex items-center gap-2 bg-white border border-red-300 text-red-700 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-red-50 disabled:opacity-60">
+              <Ban className="w-4 h-4" /> Blacklister le numéro
+            </button>
+          )}
+          {!isSynthEmail && email.trim() && (
+            <button type="button" onClick={() => blacklist("email", email)} disabled={pending || blDone}
+              className="inline-flex items-center gap-2 bg-white border border-red-300 text-red-700 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-red-50 disabled:opacity-60">
+              <Ban className="w-4 h-4" /> Blacklister l&apos;e-mail
+            </button>
+          )}
         </div>
       </div>
 

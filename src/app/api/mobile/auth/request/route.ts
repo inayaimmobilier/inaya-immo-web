@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/server"
 import { issueOtp } from "@/lib/otp"
 import { normalizePhone, phoneDigits, phoneMatchCandidates } from "@/lib/phone"
+import { checkBlacklist, BLOCKED_MESSAGE } from "@/lib/blacklist"
 
 // ============================================================================
 // Auth mobile — étape 1 : demande d'un code OTP par téléphone.
@@ -32,15 +33,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Numéro de téléphone invalide." }, { status: 400 })
   }
 
+  // Liste noire : refuse la demande de code si le numéro est bloqué.
+  if ((await checkBlacklist({ telephone })).blocked) {
+    return NextResponse.json({ error: BLOCKED_MESSAGE }, { status: 403 })
+  }
+
   const admin = createAdminClient()
 
   // Profil déjà rattaché à ce numéro ? (matching tolérant local ⇄ +225.)
   const { data: existRows } = await admin.from("profiles")
-    .select("id, telephone, role, statut")
+    .select("id, telephone, role, status")
     .in("telephone", phoneMatchCandidates(telephone)).limit(1)
-  const existing = ((existRows ?? []) as { id: string; telephone: string | null; role: string | null; statut: string | null }[])[0] ?? null
+  const existing = ((existRows ?? []) as { id: string; telephone: string | null; role: string | null; status: string | null }[])[0] ?? null
 
-  if (existing && (existing.statut === "suspendu" || existing.statut === "banni")) {
+  if (existing && (existing.status === "suspendu" || existing.status === "banni")) {
     return NextResponse.json({ error: "Ce compte est momentanément indisponible. Contactez Inaya." }, { status: 403 })
   }
 

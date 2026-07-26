@@ -6,7 +6,7 @@ import { useState } from "react"
 import {
   LayoutDashboard, Home, Users, MessageSquare, Wallet,
   Settings, ChevronLeft, ChevronRight, LogOut,
-  Bell, Smartphone, TrendingUp, MapPin, Megaphone, Sofa, Building2, HandCoins, Clock, Star, UserCircle, Bot, BellRing, ImagePlus
+  Bell, Smartphone, TrendingUp, MapPin, Megaphone, Sofa, Building2, HandCoins, Clock, Star, UserCircle, Bot, BellRing, ImagePlus, ShieldBan
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -24,6 +24,7 @@ const NAV = [
   { href: "/admin/transactions",  icon: Wallet,          label: "Transactions",     roles: ["super_admin","admin"] },
   { href: "/admin/commissions",   icon: TrendingUp,      label: "Commissions",      roles: ["super_admin","admin"] },
   { href: "/admin/utilisateurs",  icon: Users,           label: "Utilisateurs",     roles: ["super_admin","admin"] },
+  { href: "/admin/blacklist",     icon: ShieldBan,       label: "Liste noire",      roles: ["super_admin","admin"] },
   { href: "/admin/whatsapp",      icon: Smartphone,      label: "WhatsApp",         roles: ["super_admin","admin"] },
   { href: "/admin/agents-ia",     icon: Bot,             label: "Agents IA",        roles: ["super_admin","admin","moderateur"] },
   { href: "/admin/zones",         icon: MapPin,          label: "Zones",            roles: ["super_admin","admin"] },

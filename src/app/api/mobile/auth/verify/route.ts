@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/server"
 import { verifyOtp } from "@/lib/otp"
 import { signMobileToken } from "@/lib/mobile-session"
 import { normalizePhone, phoneDigits, phoneMatchCandidates } from "@/lib/phone"
+import { checkBlacklist, BLOCKED_MESSAGE } from "@/lib/blacklist"
 
 // ============================================================================
 // Auth mobile — étape 2 : vérification du code + émission de la session.
@@ -20,14 +21,19 @@ export async function POST(req: NextRequest) {
   if (phoneDigits(telephone).length < 8) return NextResponse.json({ error: "Numéro invalide." }, { status: 400 })
   if (code.length !== 6) return NextResponse.json({ error: "Le code doit comporter 6 chiffres." }, { status: 400 })
 
+  // Liste noire : refuse la vérification si le numéro est bloqué.
+  if ((await checkBlacklist({ telephone })).blocked) {
+    return NextResponse.json({ error: BLOCKED_MESSAGE }, { status: 403 })
+  }
+
   const admin = createAdminClient()
   const { data: rows } = await admin.from("profiles")
-    .select("id, nom, telephone, role, statut, verifie")
+    .select("id, nom, telephone, role, status, verifie")
     .in("telephone", phoneMatchCandidates(telephone)).limit(1)
-  const prof = ((rows ?? []) as { id: string; nom: string | null; telephone: string | null; role: string | null; statut: string | null; verifie: boolean | null }[])[0] ?? null
+  const prof = ((rows ?? []) as { id: string; nom: string | null; telephone: string | null; role: string | null; status: string | null; verifie: boolean | null }[])[0] ?? null
 
   if (!prof) return NextResponse.json({ error: "Aucun compte pour ce numéro. Demandez un code." }, { status: 404 })
-  if (prof.statut === "suspendu" || prof.statut === "banni") {
+  if (prof.status === "suspendu" || prof.status === "banni") {
     return NextResponse.json({ error: "Ce compte est momentanément indisponible." }, { status: 403 })
   }
 
