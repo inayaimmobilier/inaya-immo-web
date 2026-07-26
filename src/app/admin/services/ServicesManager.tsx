@@ -288,9 +288,11 @@ export default function ServicesManager({ initialBanners }: { initialBanners: Ba
               )}
 
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Icône (emoji) *</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Icône — application mobile (emoji) *</label>
                 <input value={editing.icone} onChange={e => setEditing(p => p && ({ ...p, icone: e.target.value }))}
+                  placeholder="🏠"
                   className="w-24 px-3 py-2 border border-gray-200 rounded-xl text-2xl text-center focus:outline-none focus:border-blue-400" />
+                <p className="text-[11px] text-gray-400 mt-1">Affichée dans la grille Services de l&apos;app mobile.</p>
               </div>
 
               <div>
@@ -349,7 +351,7 @@ export default function ServicesManager({ initialBanners }: { initialBanners: Ba
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Image d&apos;illustration</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Image d&apos;illustration — site web</label>
                 {editing.image_url && (
                   <div className="relative w-full h-28 rounded-xl overflow-hidden bg-gray-100 mb-2">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
