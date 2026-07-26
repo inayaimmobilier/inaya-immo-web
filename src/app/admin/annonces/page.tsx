@@ -1,5 +1,5 @@
 import { createClient, createAdminClient } from "@/lib/supabase/server"
-import { XCircle, Plus, Clock, Globe, Archive, Copy, Flag } from "lucide-react"
+import { XCircle, Plus, Clock, Globe, Archive, Copy, Flag, Trash2 } from "lucide-react"
 import Link from "next/link"
 import AutoRefresh from "@/components/shared/AutoRefresh"
 import ModerationTable, { type AnnonceRow } from "./ModerationTable"
@@ -152,6 +152,12 @@ export default async function AnnoncesAdminPage({ searchParams }: PageProps) {
             className="flex items-center gap-2 bg-white border border-amber-200 text-amber-700 px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-amber-50 transition-colors"
           >
             <Copy className="w-4 h-4" /> Doublons
+          </Link>
+          <Link
+            href="/admin/annonces/suppression"
+            className="flex items-center gap-2 bg-white border border-red-200 text-red-700 px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-red-50 transition-colors"
+          >
+            <Trash2 className="w-4 h-4" /> Suppression groupée
           </Link>
           <Link
             href="/admin/annonces/nouvelle"
