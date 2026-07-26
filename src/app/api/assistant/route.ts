@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/server"
 import { runAssistant, type ToolSpec, type ChatTurn } from "@/lib/llm"
 import { searchProperties, type SearchArgs, type ScoredProperty } from "@/lib/property-search"
+import { pharmaciesTool } from "@/lib/pharmacies"
 
 // ============================================================================
 // Assistant client Inaya : un LLM (modèle choisi par l'admin) avec accès en
@@ -41,6 +42,7 @@ RÈGLES IMPÉRATIVES :
 - RECHERCHE LARGE — l'outil renvoie des biens EXACTS et des biens SIMILAIRES (champ "correspondance" = "exacte" ou "similaire"), avec "nombre_exact" et "nombre_similaire". Ne réponds « aucun bien » QUE si "nombre" = 0. S'il n'y a que des similaires, présente-les en le disant clairement : « Je n'ai pas de correspondance exacte, mais voici des biens proches : … » — puis liste-les. Présente toujours les exacts en premier.
 - POUR MAXIMISER LES RÉSULTATS : passe TOUS les quartiers cités par le client dans "quartier" (séparés par des virgules), et mets le nombre de chambres dans "chambres_min" (« 2 chambres salon » → chambres_min:2). N'aie pas peur d'un budget : l'outil inclut aussi les biens légèrement au-dessus, marqués « similaire ».
 - Si l'outil ne renvoie réellement AUCUN résultat (nombre = 0), dis-le franchement et propose d'élargir (quartier voisin, budget un peu plus haut) ou "lister_zones" pour les communes/quartiers couverts.
+- PHARMACIES DE GARDE (service public) : si l'utilisateur demande une pharmacie de garde, de nuit, ou ouverte maintenant, appelle l'outil "pharmacies_de_garde" (avec la ville si donnée) et donne la liste renvoyée (nom, quartier, téléphone). N'invente jamais de pharmacie ; si l'outil ne renvoie rien, dis-le simplement et invite à réessayer plus tard.
 - Réponds en français, de façon concise, chaleureuse et professionnelle. Montants en FCFA.`
 
 const TOOLS: ToolSpec[] = [
@@ -86,6 +88,16 @@ const TOOLS: ToolSpec[] = [
     name: "lister_zones",
     description: "Liste les communes et leurs quartiers couverts par la plateforme.",
     parameters: { type: "object", properties: {} },
+  },
+  {
+    name: "pharmacies_de_garde",
+    description: "Donne les PHARMACIES DE GARDE du jour (service public). Utilise cet outil dès qu'un utilisateur demande une pharmacie de garde / de nuit / ouverte maintenant. Ne JAMAIS inventer une pharmacie : n'annonce que celles renvoyées par l'outil.",
+    parameters: {
+      type: "object",
+      properties: {
+        ville: { type: "string", description: "Commune/ville si précisée par l'utilisateur (ex. Bouaké). Sinon laisse vide." },
+      },
+    },
   },
 ]
 
@@ -190,6 +202,7 @@ async function exec(name: string, args: Record<string, unknown>): Promise<unknow
   if (name === "trouver_annonce") return trouverAnnonce(args as { numero?: string; titre?: string })
   if (name === "rechercher_annonces") return rechercherAnnonces(args as SearchArgs)
   if (name === "lister_zones") return listerZones()
+  if (name === "pharmacies_de_garde") return pharmaciesTool((args as { ville?: string }).ville)
   return { erreur: "Outil inconnu." }
 }
 

@@ -50,6 +50,21 @@ export async function GET(req: NextRequest) {
     properties: { id: string; titre: string; quartier: string | null; prix: number } | { id: string; titre: string; quartier: string | null; prix: number }[] | null
   }>
 
+  // 2b. Cover des biens mis en avant sans image_url propre : on récupère la 1re
+  // photo (ou la miniature d'une vidéo) du bien pour l'afficher dans la pub.
+  const coverByProp = new Map<string, string>()
+  const propIds = Array.from(new Set(adItems.filter(it => !it.image_url && it.property_id).map(it => it.property_id as string)))
+  if (propIds.length) {
+    const { data: medias } = await admin.from("property_media")
+      .select("property_id,url,type,ordre,thumbnail_url")
+      .in("property_id", propIds).order("ordre", { ascending: true })
+    for (const m of (medias ?? []) as { property_id: string; url: string; type: string; thumbnail_url: string | null }[]) {
+      if (coverByProp.has(m.property_id)) continue
+      const cover = m.type === "image" ? m.url : m.thumbnail_url
+      if (cover) coverByProp.set(m.property_id, cover)
+    }
+  }
+
   // 3. Groupe par emplacement, en plafonnant par nb_slots si défini
   const bySpace = new Map<string, unknown[]>()
   for (const s of adSpaces) bySpace.set(s.id, [])
@@ -65,7 +80,7 @@ export async function GET(req: NextRequest) {
       description: it.description,
       cta_label: it.cta_label ?? (prop ? "Voir l'annonce" : null),
       cta_lien: it.cta_lien ?? (prop ? `/biens/${prop.id}` : null),
-      image_url: it.image_url, // si null, l'UI publique peut fetcher la photo du bien
+      image_url: it.image_url ?? (it.property_id ? coverByProp.get(it.property_id) ?? null : null), // cover du bien à défaut
       video_url: it.video_url,
       couleur: it.couleur,
       icone: it.icone,

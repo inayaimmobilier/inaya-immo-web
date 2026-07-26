@@ -4,6 +4,7 @@ import { runAssistant, type ToolSpec, type ChatTurn } from "@/lib/llm"
 import { SITE_URL } from "@/lib/site"
 import { toWhatsAppFormat } from "@/lib/whatsapp-format"
 import { searchProperties, type SearchArgs, type ScoredProperty } from "@/lib/property-search"
+import { pharmaciesTool } from "@/lib/pharmacies"
 
 // ============================================================================
 // Assistant IA WhatsApp (interne) — appelé par le whatsapp-service pour répondre
@@ -63,6 +64,7 @@ OUTILS :
 - "trouver_annonce" : retrouve une annonce précise par son NUMÉRO (référence, ex. 1042), par une partie du TITRE, ou un identifiant. Utilise-le dès qu'un client mentionne un numéro d'annonce ou un titre.
 - "rechercher_annonces" : recherche par critères (type d'opération, catégorie, commune, quartier, budget, chambres). Utilise-le pour une demande par critères.
 - "lister_zones" : communes et quartiers couverts.
+- "pharmacies_de_garde" : pharmacies de garde du jour (service public) — utilise-le si on te demande une pharmacie de garde/de nuit, et donne la liste renvoyée sans rien inventer.
 
 RÈGLES :
 - Ne JAMAIS inventer un bien, un prix ou un numéro : utilise toujours les outils et ne cite que ce qu'ils renvoient. Les outils ne renvoient PAS de téléphone — n'en invente aucun.
@@ -232,12 +234,14 @@ const TOOLS: ToolSpec[] = [
     },
   },
   { name: "lister_zones", description: "Liste les communes et quartiers couverts.", parameters: { type: "object", properties: {} } },
+  { name: "pharmacies_de_garde", description: "Pharmacies de garde du jour (service public). Utilise-le si le client demande une pharmacie de garde/de nuit. N'invente jamais : n'annonce que celles renvoyées.", parameters: { type: "object", properties: { ville: { type: "string", description: "Ville si précisée." } } } },
 ]
 
 async function exec(name: string, args: Record<string, unknown>): Promise<unknown> {
   if (name === "trouver_annonce") return trouverAnnonce(args as { numero?: string; titre?: string })
   if (name === "rechercher_annonces") return rechercherAnnonces(args as SearchArgs)
   if (name === "lister_zones") return listerZones()
+  if (name === "pharmacies_de_garde") return pharmaciesTool((args as { ville?: string }).ville)
   return { erreur: "Outil inconnu." }
 }
 
