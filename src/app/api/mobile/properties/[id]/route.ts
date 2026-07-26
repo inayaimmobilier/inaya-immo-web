@@ -33,6 +33,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     tarif_periode: string | null; forfaits: string | null; disponible: boolean | null
     mois_caution: number | null; mois_avance: number | null; mois_agence: number | null
     cout_cession: number | null; loyer_cession: number | null; conditions_acquisition: string | null
+    latitude: number | null; longitude: number | null; google_maps_url: string | null; amenities: string[] | null
     created_at: string
     property_media?: { url: string; type: string; ordre: number; thumbnail_url: string | null; taille_bytes: number | null }[]
   }
@@ -72,6 +73,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         ? { cout_cession: prop.cout_cession, loyer_cession: prop.loyer_cession, conditions_acquisition: prop.conditions_acquisition }
         : null,
     media,
+    latitude: prop.latitude ?? null,
+    longitude: prop.longitude ?? null,
+    google_maps_url: prop.google_maps_url ?? null,
+    amenities: Array.isArray(prop.amenities) ? prop.amenities : [],
     created_at: prop.created_at,
   }, { headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300" } })
 }

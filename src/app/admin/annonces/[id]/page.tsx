@@ -161,6 +161,10 @@ export default async function AdminBienDetail({ params }: PageProps) {
           // Colonnes résidence (migrations 020/023)
           tarif_periode: (prop as unknown as { tarif_periode?: string | null }).tarif_periode ?? null,
           forfaits:      (prop as unknown as { forfaits?: string | null }).forfaits ?? null,
+          latitude:        (prop as unknown as { latitude?: number | null }).latitude ?? null,
+          longitude:       (prop as unknown as { longitude?: number | null }).longitude ?? null,
+          google_maps_url: (prop as unknown as { google_maps_url?: string | null }).google_maps_url ?? null,
+          amenities:       (prop as unknown as { amenities?: string[] | null }).amenities ?? null,
         }}
       />
 

@@ -33,6 +33,10 @@ interface Props {
     conditions_acquisition: string | null
     tarif_periode: string | null
     forfaits: string | null
+    latitude?: number | null
+    longitude?: number | null
+    google_maps_url?: string | null
+    amenities?: string[] | null
   }
 }
 
@@ -318,6 +322,34 @@ export default function PropertyEditForm({ propertyId, initial }: Props) {
                 </div>
               </div>
             )}
+
+            {/* Localisation (carte) & commodités */}
+            <div className="space-y-3 border border-blue-100 bg-blue-50/40 rounded-xl p-4">
+              <p className="text-xs font-medium text-blue-700">Localisation sur la carte &amp; commodités</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Latitude</label>
+                  <input name="latitude" type="number" step="any" defaultValue={initial.latitude ?? ""} placeholder="7.6906"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-400 bg-white" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Longitude</label>
+                  <input name="longitude" type="number" step="any" defaultValue={initial.longitude ?? ""} placeholder="-5.0304"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-400 bg-white" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Lien Google Maps (optionnel)</label>
+                <input name="google_maps_url" defaultValue={initial.google_maps_url ?? ""} placeholder="https://maps.google.com/?q=..."
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-400 bg-white" />
+                <p className="text-[11px] text-gray-400 mt-1">Astuce : dans Google Maps, faites un clic droit sur le point → « Plus/copier les coordonnées » (lat, lng).</p>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Commodités (séparées par des virgules)</label>
+                <input name="amenities" defaultValue={(initial.amenities ?? []).join(", ")} placeholder="Wifi, Télé, Climatiseur, Réfrigérateur, Parking, Serviette"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-400 bg-white" />
+              </div>
+            </div>
 
             <button type="submit" disabled={pending}
               className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-60">

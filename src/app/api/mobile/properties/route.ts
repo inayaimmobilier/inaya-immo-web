@@ -71,6 +71,7 @@ export async function GET(req: NextRequest) {
       meuble: r.meuble, correspondance: r.correspondance,
       cover, media_count: media.length,
       video: media.some(m => m.type === "video"),
+      created_at: r.created_at ?? null,
     }
   })
 

@@ -34,6 +34,11 @@ export async function updateProperty(propertyId: string, _prev: unknown, form: F
   const conditions_acquisition = (form.get("conditions_acquisition") as string)?.trim() || null
   const tarif_periode = (form.get("tarif_periode") as string | null)?.trim() || null
   const forfaits = (form.get("forfaits") as string | null)?.trim() || null
+  const latitude = form.get("latitude") !== null && form.get("latitude") !== "" ? Number(form.get("latitude")) || null : null
+  const longitude = form.get("longitude") !== null && form.get("longitude") !== "" ? Number(form.get("longitude")) || null : null
+  const google_maps_url = (form.get("google_maps_url") as string | null)?.trim() || null
+  const amenitiesRaw = (form.get("amenities") as string | null)?.trim() || ""
+  const amenities = amenitiesRaw ? amenitiesRaw.split(",").map(s => s.trim()).filter(Boolean) : null
 
   if (!titre?.trim() || !type_offre || !categorie || isNaN(prix)) {
     return { error: "Champs obligatoires manquants" }
@@ -57,13 +62,17 @@ export async function updateProperty(propertyId: string, _prev: unknown, form: F
     conditions_acquisition,
     tarif_periode,
     forfaits,
+    latitude,
+    longitude,
+    google_maps_url,
+    amenities,
   }
 
   let { error } = await admin.from("properties").update(payload as never).eq("id", propertyId)
 
   // 42703 = colonne absente (migrations récentes non appliquées) → réessai sans les colonnes récentes
   if (error?.code === "42703") {
-    const { prix_m2: _pm, cout_cession: _cc, loyer_cession: _lc, conditions_acquisition: _ca, tarif_periode: _tp, forfaits: _f, ...base } = payload
+    const { prix_m2: _pm, cout_cession: _cc, loyer_cession: _lc, conditions_acquisition: _ca, tarif_periode: _tp, forfaits: _f, latitude: _lat, longitude: _lng, google_maps_url: _gm, amenities: _am, ...base } = payload
     const retry = await admin.from("properties").update(base as never).eq("id", propertyId)
     error = retry.error
   }
