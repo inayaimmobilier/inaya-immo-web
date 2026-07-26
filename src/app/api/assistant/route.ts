@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/server"
 import { runAssistant, type ToolSpec, type ChatTurn } from "@/lib/llm"
 import { searchProperties, type SearchArgs, type ScoredProperty } from "@/lib/property-search"
 import { pharmaciesTool } from "@/lib/pharmacies"
+import { assistantFallbackRows, lastUserText } from "@/lib/assistant-fallback"
 
 // ============================================================================
 // Assistant client Inaya : un LLM (modèle choisi par l'admin) avec accès en
@@ -257,5 +258,21 @@ export async function POST(req: NextRequest) {
   if (history.length === 0) return NextResponse.json({ reply: "Posez-moi votre question 🙂" })
 
   const res = await runAssistant({ system: SYSTEM, history, tools: TOOLS, exec })
-  return NextResponse.json({ reply: res.ok ? res.reply : res.error })
+  if (res.ok) return NextResponse.json({ reply: res.reply })
+
+  // LLM indisponible (clé non configurée / crédit épuisé / erreur fournisseur) :
+  // repli déterministe — on cherche de VRAIS biens par mots-clés plutôt que de
+  // rester muet. Aucune invention.
+  const rows = await assistantFallbackRows(lastUserText(history))
+  if (rows.length > 0) {
+    const list = rows.map(r => {
+      const f = formatProperty(r as PropRow, r.correspondance)
+      const num = f.reference != null ? `N°${f.reference} — ` : ""
+      return `${num}[${f.titre} — ${f.prix_texte} · ${f.localisation}](${f.url})`
+    }).join("\n")
+    return NextResponse.json({
+      reply: `Voici des biens qui pourraient vous intéresser 👇\n\n${list}\n\nOuvrez une annonce pour voir les photos, la description complète et être mis en relation.`,
+    })
+  }
+  return NextResponse.json({ reply: res.error })
 }

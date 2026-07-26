@@ -5,6 +5,7 @@ import { SITE_URL } from "@/lib/site"
 import { toWhatsAppFormat } from "@/lib/whatsapp-format"
 import { searchProperties, type SearchArgs, type ScoredProperty } from "@/lib/property-search"
 import { pharmaciesTool } from "@/lib/pharmacies"
+import { assistantFallbackRows, lastUserText } from "@/lib/assistant-fallback"
 
 // ============================================================================
 // Assistant IA WhatsApp (interne) — appelé par le whatsapp-service pour répondre
@@ -346,7 +347,14 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   let tour = await runTour(baseSystem)
-  if (!tour.ok) return NextResponse.json({ ok: false, error: tour.error })
+  if (!tour.ok) {
+    // LLM indisponible → repli déterministe : on cherche de vrais biens par
+    // mots-clés et on répond avec une liste WhatsApp propre (plutôt que le
+    // message d'erreur générique du service). Aucune invention.
+    const rows = await assistantFallbackRows(lastUserText(history))
+    if (rows.length > 0) return NextResponse.json({ ok: true, reply: buildSafeList(present(rows)) })
+    return NextResponse.json({ ok: false, error: tour.error })
+  }
 
   // Le modèle a cité un numéro qui ne vient d'aucun outil de ce tour (il recopie
   // une annonce vue plus haut). On lui donne UNE seconde chance en exigeant l'appel
