@@ -69,3 +69,14 @@ export async function deleteExpiryRule(id: string): Promise<Result> {
   revalidatePath("/admin/expiration")
   return { ok: true }
 }
+
+/** Lance immédiatement le balayage d'expiration (comme le cron quotidien). */
+export async function runExpiryNow(): Promise<{ ok: boolean; expired: number; backfilled: number; rules: number; error?: string }> {
+  const guard = await requireAdmin()
+  if (!guard.ok) return { ok: false, expired: 0, backfilled: 0, rules: 0, error: guard.error }
+  const { runExpirySweep } = await import("@/lib/property-expiry")
+  const r = await runExpirySweep()
+  revalidatePath("/admin/expiration")
+  revalidatePath("/admin/annonces")
+  return r
+}

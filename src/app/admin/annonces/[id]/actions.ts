@@ -94,6 +94,12 @@ export async function changeStatut(propertyId: string, statut: string) {
 
   // Publication → matching §6.9 : alerte les chercheurs correspondants. Best-effort.
   if (statut === "publie") {
+    // Durée de vie : calcule et pose expire_at selon les règles admin (best-effort).
+    try {
+      const { expireAtForProperty } = await import("@/lib/property-expiry")
+      const eat = await expireAtForProperty(propertyId)
+      if (eat) await admin.from("properties").update({ expire_at: eat } as never).eq("id", propertyId)
+    } catch (e) { console.error("INAYA-EXPIRE-SET", e) }
     try {
       const { runMatchingForProperty } = await import("@/lib/matching")
       const n = await runMatchingForProperty(propertyId)

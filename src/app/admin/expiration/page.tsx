@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/server"
 import type { ExpiryRule } from "@/types/database"
 import ExpiryRulesManager from "./ExpiryRulesManager"
+import RunSweepButton from "./RunSweepButton"
 
 export const dynamic = "force-dynamic"
 
@@ -31,6 +32,7 @@ export default async function ExpirationPage() {
         </div>
       )}
 
+      {moduleActif && <RunSweepButton />}
       <ExpiryRulesManager rules={rules} />
     </div>
   )
