@@ -32,6 +32,17 @@ export type SearchArgs = {
   chambres_min?: number
   mots_cles?: string
   tri?: "recent" | "prix_asc" | "prix_desc"
+  /** Filtres explicites de l'app : catégorie/quartier/budget deviennent DURS
+   *  (exclusion) au lieu de simples pénalités. L'assistant reste tolérant. */
+  strict?: boolean
+}
+
+/** Univers d'une catégorie : on ne mélange pas résidentiel / commercial / terrain. */
+function categoryUniverse(cat: string): "residentiel" | "commercial" | "terrain" | "autre" {
+  if (cat === "terrain") return "terrain"
+  if (cat === "local_commercial" || cat === "bureau" || cat === "magasin") return "commercial"
+  if (cat === "maison" || cat === "appartement" || cat === "studio") return "residentiel"
+  return "autre"
 }
 
 export type RawProperty = {
@@ -146,17 +157,24 @@ export async function searchProperties(args: SearchArgs, opts: { limit?: number 
     }
 
     // ── Catégorie ────────────────────────────────────────────────────────────
-    // Écart de catégorie toléré (similaire), SAUF terrain ↔ logement (franc).
+    // Univers différent (une maison n'est pas un magasin ni un terrain) → hors
+    // sujet : exclu en mode strict, sinon forte pénalité. Même univers, catégorie
+    // voisine (maison ↔ appartement ↔ studio) → toléré (similaire).
     if (cats.length && !cats.includes(p.categorie)) {
-      const wantTerrain = cats.includes("terrain")
-      const isTerrain = p.categorie === "terrain"
-      if (wantTerrain !== isTerrain) score -= 0.7 // hors sujet (terrain vs bâti)
-      else { score -= 0.25; soft++ }
+      const wantedUniverses = new Set(cats.map(categoryUniverse))
+      const sameUniverse = wantedUniverses.has(categoryUniverse(p.categorie))
+      if (!sameUniverse) {
+        if (args.strict) continue
+        score -= 0.7
+      } else {
+        score -= 0.2; soft++
+      }
     }
 
     // ── Budget ───────────────────────────────────────────────────────────────
     if (typeof args.prix_max === "number" && p.prix != null && p.prix > 0) {
       if (p.prix <= args.prix_max) { /* ok */ }
+      else if (args.strict) continue                                   // budget explicite = plafond dur
       else if (p.prix <= args.prix_max * 1.2) { score -= 0.2; soft++ }
       else if (p.prix <= args.prix_max * 1.5) { score -= 0.45; soft++ }
       else continue // au-delà de +50 % : hors budget
@@ -167,7 +185,10 @@ export async function searchProperties(args: SearchArgs, opts: { limit?: number 
     if (zones.length) {
       const hay = stripAccents(`${p.quartier ?? ""} ${p.titre} ${p.description ?? ""}`)
       const hit = zones.some(z => hay.includes(z))
-      if (!hit) { score -= 0.25; soft++ }
+      if (!hit) {
+        if (args.strict) continue          // quartiers explicites = filtre dur
+        score -= 0.35; soft++
+      }
     }
 
     // ── Chambres minimales ── déduites même sans colonne ──────────────────────

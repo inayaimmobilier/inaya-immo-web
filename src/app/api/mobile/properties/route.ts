@@ -32,6 +32,9 @@ export async function GET(req: NextRequest) {
     chambres_min: p.get("chambres_min") ? Number(p.get("chambres_min")) : undefined,
     mots_cles: p.get("q") ?? undefined,
     tri: (p.get("tri") as SearchArgs["tri"]) ?? undefined,
+    // Filtres explicites de l'app → recherche STRICTE (catégorie par univers,
+    // quartier obligatoire, budget plafond dur). `strict=0` pour désactiver.
+    strict: p.get("strict") !== "0",
   }
   const limit = Math.min(Number(p.get("limit")) || 24, 200)
 

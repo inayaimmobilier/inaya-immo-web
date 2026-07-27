@@ -11,6 +11,7 @@ import { createAdminClient, createClient } from "@/lib/supabase/server"
 
 export interface DeleteCriteria {
   type_offre?: string
+  categorie?: string
   statut?: string
   prix_min?: number | null
   prix_max?: number | null
@@ -29,7 +30,7 @@ async function callerRole(): Promise<string | null> {
 }
 
 function hasAnyCriterion(c: DeleteCriteria): boolean {
-  return !!(c.type_offre || c.statut || c.prix_min != null || c.prix_max != null || c.date_from || c.date_to)
+  return !!(c.type_offre || c.categorie || c.statut || c.prix_min != null || c.prix_max != null || c.date_from || c.date_to)
 }
 
 type Row = { id: string; reference: number | null; titre: string; prix: number | null; type_offre: string; statut: string; created_at: string }
@@ -39,6 +40,7 @@ type Row = { id: string; reference: number | null; titre: string; prix: number |
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function applyCriteria(q: any, c: DeleteCriteria): any {
   if (c.type_offre) q = q.eq("type_offre", c.type_offre)
+  if (c.categorie) q = q.eq("categorie", c.categorie)
   if (c.statut) q = q.eq("statut", c.statut)
   if (c.prix_min != null) q = q.gte("prix", c.prix_min)
   if (c.prix_max != null) q = q.lte("prix", c.prix_max)

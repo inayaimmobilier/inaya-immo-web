@@ -15,12 +15,19 @@ const STATUTS = [
   { v: "publie", l: "Publiée" }, { v: "en_attente_validation", l: "En attente" },
   { v: "rejete", l: "Rejetée" }, { v: "expire", l: "Expirée" }, { v: "suspendu", l: "Suspendue" },
 ]
+const CATS = [
+  { v: "", l: "Toutes les catégories" },
+  { v: "maison", l: "Maison" }, { v: "appartement", l: "Appartement" }, { v: "studio", l: "Studio" },
+  { v: "terrain", l: "Terrain" }, { v: "local_commercial", l: "Local commercial" },
+  { v: "bureau", l: "Bureau" }, { v: "magasin", l: "Magasin" }, { v: "autre", l: "Autre" },
+]
 
 const fmt = (n: number | null) => (n != null ? n.toLocaleString("fr-FR") + " F" : "—")
 const input = "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500"
 
 export default function SuppressionForm() {
   const [typeOffre, setTypeOffre] = useState("")
+  const [categorie, setCategorie] = useState("")
   const [statut, setStatut] = useState("")
   const [prixMin, setPrixMin] = useState("")
   const [prixMax, setPrixMax] = useState("")
@@ -36,6 +43,7 @@ export default function SuppressionForm() {
   function criteria(): DeleteCriteria {
     return {
       type_offre: typeOffre || undefined,
+      categorie: categorie || undefined,
       statut: statut || undefined,
       prix_min: prixMin ? Number(prixMin) : null,
       prix_max: prixMax ? Number(prixMax) : null,
@@ -73,6 +81,12 @@ export default function SuppressionForm() {
             <span className="block text-gray-600 mb-1 font-medium">Type d&apos;offre</span>
             <select value={typeOffre} onChange={e => setTypeOffre(e.target.value)} className={input}>
               {OFFRES.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
+            </select>
+          </label>
+          <label className="text-sm">
+            <span className="block text-gray-600 mb-1 font-medium">Catégorie</span>
+            <select value={categorie} onChange={e => setCategorie(e.target.value)} className={input}>
+              {CATS.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
             </select>
           </label>
           <label className="text-sm">
