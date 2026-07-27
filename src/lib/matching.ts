@@ -16,14 +16,18 @@ import type { PropertyCat, PropertyType, MatchType } from "@/types/database"
 export interface MatchableProperty {
   id: string
   titre: string
+  description?: string | null
   type_offre: PropertyType
   categorie: PropertyCat
   prix: number
   quartier: string | null
+  ville: string | null
   surface: number | null
   nb_pieces: number | null
   meuble: boolean
 }
+
+const stripAccents = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim()
 
 export interface MatchableRequest {
   id: string
@@ -94,11 +98,15 @@ export function evaluateMatch(p: MatchableProperty, r: MatchableRequest): MatchS
   // Budget min : moins cher que souhaité => acceptable mais imparfait
   if (r.budget_min != null && p.prix < r.budget_min) { score -= 0.1; soft++ }
 
-  // Zone
+  // Zone(s) — la demande stocke commune ET quartiers dans `zones`. On les cherche
+  // (tolérant : accents + sous-chaîne) dans la ville, le quartier, le titre et la
+  // description du bien. Ainsi la COMMUNE est bien prise en compte (avant : on ne
+  // comparait qu'au quartier, en égalité stricte → commune ignorée).
   if (r.zones && r.zones.length > 0) {
-    const z = (p.quartier ?? "").trim().toLowerCase()
-    const hit = z && r.zones.some(rz => rz.trim().toLowerCase() === z)
-    if (!hit) { score -= 0.25; soft++ }
+    const hay = stripAccents(`${p.quartier ?? ""} ${p.ville ?? ""} ${p.titre ?? ""} ${p.description ?? ""}`)
+    const zones = r.zones.map(stripAccents).filter(Boolean)
+    const hit = zones.some(z => hay.includes(z))
+    if (!hit) { score -= 0.35; soft++ }
   }
   // Surface minimale
   if (r.surface_min != null && p.surface != null && p.surface < r.surface_min) { score -= 0.15; soft++ }
@@ -111,7 +119,7 @@ export function evaluateMatch(p: MatchableProperty, r: MatchableRequest): MatchS
   return { type: soft === 0 ? "exacte" : "similaire", score: round2(score) }
 }
 
-const PROP_COLS = "id,titre,type_offre,categorie,prix,quartier,surface,nb_pieces,meuble"
+const PROP_COLS = "id,titre,description,type_offre,categorie,prix,quartier,ville,surface,nb_pieces,meuble"
 // select("*") : inclut expire_at (migration 045) tout en restant fonctionnel si
 // la colonne n'existe pas encore (un select explicite ferait 42703).
 const REQ_COLS = "*"
