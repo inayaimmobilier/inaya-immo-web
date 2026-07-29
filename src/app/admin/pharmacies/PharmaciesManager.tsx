@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { Plus, Trash2, Cross, Phone, MapPin, Power } from "lucide-react"
-import { addPharmacie, togglePharmacie, removePharmacie } from "./actions"
+import { addPharmacie, togglePharmacie, removePharmacie, removePharmacies, removeAllPharmacies } from "./actions"
 
 export interface Pharmacie {
   id: string; nom: string; ville: string; quartier: string | null; adresse: string | null
@@ -17,7 +17,11 @@ export default function PharmaciesManager({ initialItems }: { initialItems: Phar
   const [pending, start] = useTransition()
   const [f, setF] = useState({ nom: "", ville: "Bouaké", quartier: "", telephone: "", adresse: "", date_debut: "", date_fin: "" })
   const [error, setError] = useState<string | null>(null)
+  const [sel, setSel] = useState<string[]>([])
   const set = (k: keyof typeof f, v: string) => setF(s => ({ ...s, [k]: v }))
+
+  const toggleSel = (id: string) => setSel(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id])
+  const allSelected = initialItems.length > 0 && sel.length === initialItems.length
 
   function submit(e: React.FormEvent) {
     e.preventDefault(); setError(null)
@@ -51,13 +55,40 @@ export default function PharmaciesManager({ initialItems }: { initialItems: Phar
       </form>
 
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="px-5 py-3 border-b border-gray-100 text-sm font-semibold text-gray-700">{initialItems.length} pharmacie{initialItems.length > 1 ? "s" : ""}</div>
+        <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-3 flex-wrap">
+          {initialItems.length > 0 && (
+            <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+              <input type="checkbox" checked={allSelected} onChange={() => setSel(allSelected ? [] : initialItems.map(p => p.id))} className="w-4 h-4 accent-blue-600" />
+              Tout sélectionner
+            </label>
+          )}
+          <span className="text-sm font-semibold text-gray-700">
+            {sel.length > 0 ? `${sel.length} sélectionnée${sel.length > 1 ? "s" : ""}` : `${initialItems.length} pharmacie${initialItems.length > 1 ? "s" : ""}`}
+          </span>
+          <div className="ml-auto flex items-center gap-2">
+            {sel.length > 0 && (
+              <button
+                onClick={() => { if (confirm(`Supprimer les ${sel.length} pharmacies sélectionnées ?`)) act(async () => { const r = await removePharmacies(sel); setSel([]); return r }) }}
+                disabled={pending}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white"
+              ><Trash2 className="w-3.5 h-3.5" /> Supprimer la sélection</button>
+            )}
+            {initialItems.length > 0 && (
+              <button
+                onClick={() => { if (confirm(`Vider TOUTE la liste (${initialItems.length} pharmacies) ? Cette action est irréversible.`)) act(async () => { const r = await removeAllPharmacies(); setSel([]); return r }) }}
+                disabled={pending}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-60"
+              ><Trash2 className="w-3.5 h-3.5" /> Tout supprimer</button>
+            )}
+          </div>
+        </div>
         {initialItems.length === 0 ? (
           <p className="px-5 py-8 text-center text-sm text-gray-400">Aucune pharmacie enregistrée.</p>
         ) : (
           <ul className="divide-y divide-gray-100">
             {initialItems.map(p => (
-              <li key={p.id} className="px-5 py-3.5 flex items-start gap-3">
+              <li key={p.id} className={`px-5 py-3.5 flex items-start gap-3 ${sel.includes(p.id) ? "bg-blue-50/60" : ""}`}>
+                <input type="checkbox" checked={sel.includes(p.id)} onChange={() => toggleSel(p.id)} className="mt-3 w-4 h-4 accent-blue-600 flex-shrink-0" />
                 <div className={`mt-0.5 w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${p.actif ? "bg-teal-50 text-teal-600" : "bg-gray-100 text-gray-400"}`}><Cross className="w-4 h-4" /></div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">

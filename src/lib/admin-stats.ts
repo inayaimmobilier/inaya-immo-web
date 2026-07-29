@@ -8,6 +8,11 @@
 import { createAdminClient } from "@/lib/supabase/server"
 
 const MAX_ROWS = 5000
+const PAGE = 1000
+// PostgREST PLAFONNE les réponses à 1000 lignes : `.limit(5000)` ne lève PAS ce
+// plafond et, sans `order`, on reçoit les lignes les PLUS ANCIENNES. D'où une
+// règle absolue ici : toujours `order(... desc)` + `range()` pour paginer.
+// (Bug réel : le compteur de visites affichait 0 alors que 55 vues existaient.)
 
 export interface TopProperty {
   id: string; reference: number | null; titre: string
@@ -25,12 +30,19 @@ export async function topViewedProperties(jours = 30, limit = 15): Promise<TopPr
   const admin = createAdminClient()
   const since = new Date(Date.now() - jours * 86_400_000).toISOString()
   try {
-    const { data } = await admin.from("page_views")
-      .select("path").gte("created_at", since).like("path", "/biens/%").limit(MAX_ROWS)
     const counts = new Map<string, number>()
-    for (const v of (data ?? []) as { path: string }[]) {
-      const m = UUID_RE.exec(v.path)
-      if (m) counts.set(m[1], (counts.get(m[1]) ?? 0) + 1)
+    for (let page = 0; page * PAGE < MAX_ROWS; page++) {
+      const { data, error } = await admin.from("page_views")
+        .select("path").gte("created_at", since).like("path", "/biens/%")
+        .order("created_at", { ascending: false })
+        .range(page * PAGE, page * PAGE + PAGE - 1)
+      if (error) { console.error("INAYA-STATS-TOPVIEWS", error.message); break }
+      const batch = (data ?? []) as { path: string }[]
+      for (const v of batch) {
+        const m = UUID_RE.exec(v.path)
+        if (m) counts.set(m[1], (counts.get(m[1]) ?? 0) + 1)
+      }
+      if (batch.length < PAGE) break
     }
     if (counts.size === 0) return []
     const ids = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, limit).map(([id]) => id)
@@ -49,9 +61,18 @@ export async function topSearchTerms(jours = 90, limit = 12): Promise<{
   const admin = createAdminClient()
   const since = new Date(Date.now() - jours * 86_400_000).toISOString()
   try {
-    const { data } = await admin.from("search_requests")
-      .select("zones,type_offre,categories").gte("created_at", since).limit(MAX_ROWS)
-    const rows = (data ?? []) as { zones: string[] | null; type_offre: string | null; categories: string[] | null }[]
+    type SR = { zones: string[] | null; type_offre: string | null; categories: string[] | null }
+    const rows: SR[] = []
+    for (let page = 0; page * PAGE < MAX_ROWS; page++) {
+      const { data, error } = await admin.from("search_requests")
+        .select("zones,type_offre,categories").gte("created_at", since)
+        .order("created_at", { ascending: false })
+        .range(page * PAGE, page * PAGE + PAGE - 1)
+      if (error) { console.error("INAYA-STATS-SEARCH", error.message); break }
+      const batch = (data ?? []) as SR[]
+      rows.push(...batch)
+      if (batch.length < PAGE) break
+    }
     const tally = (vals: (string | null | undefined)[]) => {
       const m = new Map<string, number>()
       for (const v of vals) {
@@ -91,15 +112,20 @@ export async function deletionsOverTime(from: string, to: string): Promise<{
 }> {
   const admin = createAdminClient()
   try {
-    const { data, error } = await admin.from("property_deletions")
-      .select("deleted_at")
-      .gte("deleted_at", `${from}T00:00:00`).lte("deleted_at", `${to}T23:59:59`)
-      .limit(MAX_ROWS)
-    if (error) return { points: [], total: 0, disponible: false }
     const m = new Map<string, number>()
-    for (const d of (data ?? []) as { deleted_at: string }[]) {
-      const jour = d.deleted_at.slice(0, 10)
-      m.set(jour, (m.get(jour) ?? 0) + 1)
+    for (let page = 0; page * PAGE < MAX_ROWS; page++) {
+      const { data, error } = await admin.from("property_deletions")
+        .select("deleted_at")
+        .gte("deleted_at", `${from}T00:00:00`).lte("deleted_at", `${to}T23:59:59`)
+        .order("deleted_at", { ascending: false })
+        .range(page * PAGE, page * PAGE + PAGE - 1)
+      if (error) return { points: [], total: 0, disponible: page > 0 }
+      const batch = (data ?? []) as { deleted_at: string }[]
+      for (const d of batch) {
+        const jour = d.deleted_at.slice(0, 10)
+        m.set(jour, (m.get(jour) ?? 0) + 1)
+      }
+      if (batch.length < PAGE) break
     }
     const points = [...m.entries()].map(([jour, count]) => ({ jour, count })).sort((a, b) => a.jour.localeCompare(b.jour))
     return { points, total: points.reduce((s, p) => s + p.count, 0), disponible: true }

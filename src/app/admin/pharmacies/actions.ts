@@ -76,3 +76,28 @@ export async function collectNow(): Promise<{ ok: boolean; count: number; source
   revalidatePath("/admin/pharmacies")
   return r
 }
+
+/** Supprime plusieurs pharmacies d'un coup (sélection dans la liste). */
+export async function removePharmacies(ids: string[]): Promise<Res> {
+  const me = await requireStaff()
+  if (!me) return { ok: false, error: "Action réservée au staff." }
+  const clean = ids.filter(Boolean)
+  if (clean.length === 0) return { ok: false, error: "Aucune pharmacie sélectionnée." }
+  const { error } = await createAdminClient().from("pharmacies_garde").delete().in("id", clean)
+  if (error) { console.error("INAYA-PHARM-DELMANY", error.message); return { ok: false, error: "Suppression impossible." } }
+  revalidatePath("/admin/pharmacies")
+  return { ok: true }
+}
+
+/** Vide entièrement la liste des pharmacies de garde. */
+export async function removeAllPharmacies(): Promise<Res> {
+  const me = await requireStaff()
+  if (!me) return { ok: false, error: "Action réservée au staff." }
+  // `delete()` sans filtre est refusé par PostgREST : on cible toutes les lignes
+  // via une condition toujours vraie sur la clé primaire.
+  const { error } = await createAdminClient().from("pharmacies_garde")
+    .delete().not("id", "is", null)
+  if (error) { console.error("INAYA-PHARM-DELALL", error.message); return { ok: false, error: "Suppression impossible." } }
+  revalidatePath("/admin/pharmacies")
+  return { ok: true }
+}

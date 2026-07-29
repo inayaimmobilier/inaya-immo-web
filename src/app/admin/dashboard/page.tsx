@@ -16,10 +16,29 @@ async function getVisitStats() {
   try {
     const admin = createAdminClient()
     const since30 = new Date(Date.now() - 30 * 86400_000).toISOString()
-    const { data } = await admin.from("page_views")
-      .select("visitor_id, created_at").gte("created_at", since30).limit(50000)
-    const rows = (data ?? []) as { visitor_id: string; created_at: string }[]
+
+    // ATTENTION : PostgREST PLAFONNE le nombre de lignes (1000 par défaut) — le
+    // `.limit(50000)` ne lève pas ce plafond. Sans `order`, on recevait donc les
+    // 1000 lignes les PLUS ANCIENNES : les visites du jour n'y figuraient jamais
+    // et le compteur 24 h affichait 0 alors que le site était visité (bug réel
+    // constaté le 2026-07-29 : 1177 vues sur 30 j, 55 sur 24 h, toutes ignorées).
+    // On pagine donc explicitement, du PLUS RÉCENT au plus ancien.
+    const PAGE = 1000
+    const MAX_PAGES = 30            // jusqu'à 30 000 vues sur la fenêtre
+    const rows: { visitor_id: string; created_at: string }[] = []
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const { data, error } = await admin.from("page_views")
+        .select("visitor_id, created_at")
+        .gte("created_at", since30)
+        .order("created_at", { ascending: false })
+        .range(page * PAGE, page * PAGE + PAGE - 1)
+      if (error) { console.error("INAYA-STATS-VIEWS", error.message); break }
+      const batch = (data ?? []) as { visitor_id: string; created_at: string }[]
+      rows.push(...batch)
+      if (batch.length < PAGE) break   // dernière page atteinte
+    }
     if (rows.length === 0) return empty
+
     const now = Date.now()
     const agg = (ms: number) => {
       const cut = now - ms
@@ -31,7 +50,8 @@ async function getVisitStats() {
       return { v: set.size, p }
     }
     return { j1: agg(86400_000), j7: agg(7 * 86400_000), j30: agg(30 * 86400_000) }
-  } catch {
+  } catch (e) {
+    console.error("INAYA-STATS-VIEWS-002", (e as Error).message)
     return empty
   }
 }
