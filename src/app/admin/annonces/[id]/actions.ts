@@ -12,6 +12,13 @@ async function getCallerRole() {
   return (data as { role: string } | null)?.role ?? null
 }
 
+/** Id de l'utilisateur courant (pour tracer l'auteur d'une suppression). */
+async function callerId(): Promise<string | null> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  return user?.id ?? null
+}
+
 export async function updateProperty(propertyId: string, _prev: unknown, form: FormData) {
   const role = await getCallerRole()
   if (!role || !["super_admin", "admin", "moderateur"].includes(role)) {
@@ -133,6 +140,10 @@ export async function deleteProperty(propertyId: string): Promise<{ ok: true } |
   if ((count ?? 0) > 0) {
     return { ok: false, error: "Des transactions sont liées à cette annonce. Suspendez-la plutôt que de la supprimer." }
   }
+
+  // Journalise AVANT suppression (après, l'info est perdue) — alimente les stats.
+  const { logPropertyDeletions } = await import("@/lib/deletion-log")
+  await logPropertyDeletions([propertyId], { source: "admin", deletedBy: await callerId() })
 
   // Dépendances sans ON DELETE CASCADE
   await admin.from("moderation_logs").delete().eq("property_id", propertyId)

@@ -85,6 +85,8 @@ export async function saveSettings(form: FormData): Promise<ActionResult> {
     { key: "followup_frequency_hours", value: Number(str("followup_frequency_hours")) || 24 },
     { key: "followup_statuts", value: followupStatuts.length > 0 ? followupStatuts : ["en_traitement", "contacte", "visite_planifiee"] },
     ...(str("assistant_model") ? [{ key: "assistant_model", value: str("assistant_model") }] : []),
+    // Lien de téléchargement de l'app mobile (page publique /telecharger).
+    { key: "app_apk_url", value: str("app_apk_url") },
     ...(moderationPrompt ? [{ key: "ia_moderation_prompt", value: moderationPrompt }] : []),
   ]
 

@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
-import { Menu, X, Search, PlusCircle, User, KeyRound, LogOut, LayoutDashboard } from "lucide-react"
+import { Menu, X, Search, PlusCircle, User, KeyRound, LogOut, LayoutDashboard, Smartphone } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { postLoginPath } from "@/lib/account-actions"
 
@@ -108,6 +108,11 @@ export default function Navbar() {
                 Connexion
               </Link>
             )}
+            <Link href="/telecharger"
+              className="flex items-center gap-1.5 text-sm text-blue-700 hover:text-blue-800 border border-blue-200 hover:bg-blue-50 px-3 py-2 rounded-xl transition-colors font-semibold">
+              <Smartphone className="w-4 h-4" />
+              L&apos;appli
+            </Link>
             <Link href="/publier"
               className="flex items-center gap-1.5 text-sm bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-xl transition-colors font-semibold shadow-sm">
               <PlusCircle className="w-4 h-4" />
@@ -129,6 +134,9 @@ export default function Navbar() {
           <Link href="/biens?type=vente" className="text-sm text-gray-700 py-2 font-medium" onClick={() => setOpen(false)}>Vente</Link>
           <Link href="/residences" className="text-sm text-gray-700 py-2 font-medium" onClick={() => setOpen(false)}>Résidences meublées</Link>
           <Link href="/biens" className="text-sm text-gray-700 py-2 font-medium" onClick={() => setOpen(false)}>Toutes les annonces</Link>
+          <Link href="/telecharger" className="flex items-center gap-1.5 text-sm text-blue-700 py-2 font-semibold" onClick={() => setOpen(false)}>
+            <Smartphone className="w-4 h-4" /> Télécharger l&apos;application
+          </Link>
           <div className="border-t border-gray-100 pt-3 flex flex-col gap-2">
             <Link href="/publier"
               className="flex items-center justify-center gap-1.5 text-sm bg-amber-500 text-white py-2.5 text-center rounded-xl font-semibold"

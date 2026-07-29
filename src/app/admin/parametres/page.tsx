@@ -161,6 +161,21 @@ export default async function ParametresPage({ searchParams }: PageProps) {
           </div>
         </section>
 
+        {/* Lien de téléchargement de l'application mobile */}
+        <section className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3">
+          <h2 className="text-sm font-semibold text-gray-900">Application mobile — lien de téléchargement</h2>
+          <p className="text-xs text-gray-500">
+            URL du fichier APK proposé sur la page publique <b>/telecharger</b>. Laissez vide pour
+            afficher « bientôt disponible ». Astuce : les liens de build Expo expirent — hébergez
+            l&apos;APK sur un lien stable (ou remettez à jour ici après chaque build).
+          </p>
+          <div>
+            <label className={label}>Lien de l&apos;APK</label>
+            <input name="app_apk_url" type="url" defaultValue={get("app_apk_url")}
+              placeholder="https://…/inaya-immo.apk" className={field} />
+          </div>
+        </section>
+
         {/* Section suivi automatique des leads */}
         <section className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
           <div>

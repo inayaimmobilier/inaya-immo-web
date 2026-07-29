@@ -29,6 +29,13 @@ async function callerRole(): Promise<string | null> {
   return (data as { role: string } | null)?.role ?? null
 }
 
+/** Id de l'utilisateur courant (auteur de la suppression, pour le journal). */
+async function callerId(): Promise<string | null> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  return user?.id ?? null
+}
+
 function hasAnyCriterion(c: DeleteCriteria): boolean {
   return !!(c.type_offre || c.categorie || c.statut || c.prix_min != null || c.prix_max != null || c.date_from || c.date_to)
 }
@@ -88,6 +95,10 @@ export async function bulkDelete(c: DeleteCriteria): Promise<
   const toDelete = ids.filter(id => !linked.has(id))
   const skipped = ids.length - toDelete.length
   if (toDelete.length === 0) return { ok: true, deleted: 0, skipped, capped }
+
+  // Journalise AVANT suppression (alimente les statistiques admin).
+  const { logPropertyDeletions } = await import("@/lib/deletion-log")
+  await logPropertyDeletions(toDelete, { source: "groupee", deletedBy: await callerId() })
 
   // Dépendances sans ON DELETE CASCADE, puis les annonces.
   await admin.from("moderation_logs").delete().in("property_id", toDelete)
