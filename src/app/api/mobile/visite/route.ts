@@ -25,11 +25,16 @@ export async function POST(req: NextRequest) {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "?"
   if (limited(ip)) return NextResponse.json({ error: "Trop de demandes — réessayez dans quelques minutes." }, { status: 429 })
 
-  let body: { property_id?: string; nom?: string; telephone?: string; creneau?: string; message?: string }
+  let body: {
+    property_id?: string; nom?: string; telephone?: string; creneau?: string; message?: string
+    email?: string; sejour_nuits?: number; montant_estime?: number
+  }
   try { body = await req.json() } catch { return NextResponse.json({ error: "Requête invalide" }, { status: 400 }) }
   const nom = body.nom?.trim()
   const tel = body.telephone?.trim()
+  const email = body.email?.trim() || null
   const propertyId = body.property_id?.trim()
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.round(v) : null)
   if (!nom || !tel || !propertyId || !/^[0-9a-f-]{36}$/i.test(propertyId)) {
     return NextResponse.json({ error: "Nom, téléphone et annonce requis." }, { status: 400 })
   }
@@ -44,14 +49,15 @@ export async function POST(req: NextRequest) {
   const token = randomUUID()
   const payload: Record<string, unknown> = {
     property_id: propertyId,
-    contact_nom: nom, contact_telephone: tel,
+    contact_nom: nom, contact_telephone: tel, contact_email: email,
     canal: "app", message: body.message?.trim() || null,
     creneaux: body.creneau?.trim() ? [{ souhaite: body.creneau.trim() }] : [],
     statut: "nouveau", validation_token: token,
+    sejour_nuits: num(body.sejour_nuits), montant_estime: num(body.montant_estime),
   }
   let { data: leadData, error } = await admin.from("leads").insert(payload as never).select("id").single()
   if (error?.code === "42703") { // colonnes récentes absentes → réessai minimal
-    const { validation_token: _t, ...base } = payload
+    const { validation_token: _t, sejour_nuits: _n, montant_estime: _m, ...base } = payload
     const retry = await admin.from("leads").insert(base as never).select("id").single()
     leadData = retry.data; error = retry.error
   }
