@@ -1,63 +1,45 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createAdminClient } from "@/lib/supabase/server"
+import { onCallback, onMessage } from "@/lib/telegram/router"
+
+// ============================================================================
+// Webhook du bot d'administration Telegram (@InayaImmoBot).
+// Règle d'or : TOUJOURS répondre 200. Un code d'erreur pousse Telegram à
+// rejouer la même mise à jour en boucle — une action admin serait rejouée
+// plusieurs fois. Les erreurs sont donc journalisées, jamais propagées.
+// ============================================================================
+export const runtime = "nodejs"
+export const dynamic = "force-dynamic"
+
+const OK = () => NextResponse.json({ ok: true })
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const secret = req.headers.get("x-telegram-bot-api-secret-token")
-  const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET
-  if (webhookSecret && secret !== webhookSecret) {
+  const expected = process.env.TELEGRAM_WEBHOOK_SECRET
+  if (expected && req.headers.get("x-telegram-bot-api-secret-token") !== expected) {
     return NextResponse.json({ ok: false }, { status: 401 })
   }
 
-  let update: Record<string, unknown>
-  try {
-    update = await req.json()
-  } catch {
-    return NextResponse.json({ ok: true })
+  let update: {
+    message?: { chat?: { id?: number | string }; text?: string; from?: { id: number } }
+    callback_query?: {
+      id: string; data?: string; from?: { id: number }
+      message?: { chat?: { id?: number | string }; message_id?: number }
+    }
   }
+  try { update = await req.json() } catch { return OK() }
 
-  const message = update?.message as Record<string, unknown> | undefined
-  if (!message) return NextResponse.json({ ok: true })
-
-  const chat = message?.chat as Record<string, unknown> | undefined
-  const chatId = chat?.id != null ? String(chat.id) : null
-  const text = (message?.text as string | undefined) ?? ""
-  const botToken = process.env.TELEGRAM_BOT_TOKEN
-
-  if (!chatId || !text || !botToken) return NextResponse.json({ ok: true })
-
-  // /start <agent_uuid> — enregistrement du chat_id dans profiles
-  const startMatch = text.match(/^\/start\s+([0-9a-f-]{36})$/i)
-  if (startMatch) {
-    const agentId = startMatch[1]
-    const db = createAdminClient()
-
-    const { data: profile } = await db
-      .from("profiles")
-      .select("id,nom,prenom,role")
-      .eq("id", agentId)
-      .in("role", ["agent", "moderateur", "admin", "super_admin"])
-      .single()
-
-    if (!profile) {
-      await tgSend(botToken, chatId, "❌ Lien invalide ou expiré. Demandez un nouveau lien à votre administrateur.")
-      return NextResponse.json({ ok: true })
+  try {
+    const cq = update.callback_query
+    if (cq?.data && cq.message?.chat?.id != null && cq.message.message_id != null) {
+      await onCallback(String(cq.message.chat.id), cq.message.message_id, cq.data, cq.id)
+      return OK()
     }
 
-    await db.from("profiles").update({ telegram_chat_id: chatId } as never).eq("id", agentId)
-    const p = profile as { nom: string | null; prenom: string | null }
-    const name = `${p.prenom || ""} ${p.nom || ""}`.trim() || "Agent"
-    await tgSend(botToken, chatId,
-      `✅ Bonjour ${name} ! Votre Telegram est maintenant connecté à Inaya Immo.\n\nVous recevrez vos assignations et notifications de leads directement dans cette conversation.`
-    )
+    const msg = update.message
+    if (msg?.text && msg.chat?.id != null) {
+      await onMessage(String(msg.chat.id), msg.text, { id: msg.from?.id ?? 0 })
+    }
+  } catch (e) {
+    console.error("INAYA-TG-WEBHOOK", e)
   }
-
-  return NextResponse.json({ ok: true })
-}
-
-async function tgSend(token: string, chatId: string, text: string): Promise<void> {
-  await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text }),
-  }).catch(() => {})
+  return OK()
 }

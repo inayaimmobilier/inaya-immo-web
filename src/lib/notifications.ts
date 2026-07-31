@@ -93,6 +93,19 @@ export async function notifyStaff(
     console.error("INAYA-NOTIF-001", error)
     return 0
   }
+
+  // Doublon volontaire vers Telegram, envoyé par le site lui-même : les lignes
+  // ci-dessus attendent le service WhatsApp pour partir, or celui-ci tombe
+  // régulièrement. La supervision de l'admin ne doit pas en dépendre.
+  try {
+    const { notifyAdminsTelegram } = await import("@/lib/telegram/notify")
+    const p = notif.payload ?? {}
+    await notifyAdminsTelegram({
+      type: notif.type, titre: notif.titre, contenu: notif.contenu,
+      propertyId: typeof p.propertyId === "string" ? p.propertyId : null,
+    })
+  } catch (e) { console.error("INAYA-NOTIF-TG", e) }
+
   return count ?? rows.length
 }
 
