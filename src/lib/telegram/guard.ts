@@ -21,13 +21,17 @@ const ROLES: StaffRole[] = ["super_admin", "admin", "moderateur", "agent"]
 /** Profil staff associé à ce chat Telegram, ou null si non autorisé. */
 export async function whoIs(chatId: string): Promise<TgUser | null> {
   const admin = createAdminClient()
-  const { data } = await admin.from("profiles")
-    .select("id,nom,prenom,role,statut")
+  // La colonne s'appelle `status` (valeurs : actif | suspendu | banni) et NON
+  // `statut` : une erreur de nom ici renvoie 42703, donc `data` à null, donc un
+  // refus d'accès pour absolument tout le monde.
+  const { data, error } = await admin.from("profiles")
+    .select("id,nom,prenom,role,status")
     .eq("telegram_chat_id", chatId)
     .maybeSingle()
-  const p = data as { id: string; nom: string | null; prenom: string | null; role: string; statut: string | null } | null
+  if (error) { console.error("INAYA-TG-WHOIS", error.code, error.message); return null }
+  const p = data as { id: string; nom: string | null; prenom: string | null; role: string; status: string | null } | null
   if (!p || !ROLES.includes(p.role as StaffRole)) return null
-  if (p.statut && ["suspendu", "supprime", "bloque"].includes(p.statut)) return null
+  if (p.status && p.status !== "actif") return null
 
   const role = p.role as StaffRole
   return {
