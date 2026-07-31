@@ -14,6 +14,24 @@ export function esc(s: unknown): string {
   return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
 }
 
+/**
+ * Prépare un texte rédigé par le modèle pour l'envoi en parse_mode HTML.
+ *   1. On échappe TOUT d'abord : un « < » lâché par le modèle rendrait le HTML
+ *      invalide, Telegram répondrait 400 et le message ne partirait PAS.
+ *   2. On reconvertit ensuite le Markdown que les modèles produisent malgré
+ *      la consigne (`**gras**` s'affichait avec ses astérisques).
+ * Les italiques `_..._` sont volontairement ignorés : ils casseraient les
+ * identifiants du domaine comme en_attente_validation.
+ */
+export function mdToHtml(raw: string): string {
+  return esc(raw)
+    .replace(/```([\s\S]*?)```/g, (_m, c: string) => `<pre>${c.trim()}</pre>`)
+    .replace(/`([^`\n]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>")
+    .replace(/^\s*#{1,6}\s*/gm, "")
+    .replace(/^\s*[*-]\s+/gm, "• ")
+}
+
 export interface Button { text: string; data?: string; url?: string }
 export type Keyboard = Button[][]
 

@@ -4,7 +4,7 @@
 // équipé d'outils. Toute action destructrice passe par une confirmation.
 // ============================================================================
 import { runAssistant, type ToolSpec } from "@/lib/llm"
-import { esc, tgAnswer, tgEdit, tgSend, tgTyping, type Keyboard } from "./api"
+import { esc, mdToHtml, tgAnswer, tgEdit, tgSend, tgTyping, type Keyboard } from "./api"
 import { clearState, getHistory, getState, pushHistory, resetHistory, setState, whoIs, type TgUser } from "./guard"
 import * as ops from "./ops"
 import {
@@ -476,7 +476,6 @@ async function naturalLanguage(chatId: string, me: TgUser, text: string): Promis
     history: [...history, { role: "user", text }],
     tools: TOOLS, exec,
   })
-  const reply = r.ok ? r.reply : `⚠️ ${esc(r.error)}`
-  await tgSend(chatId, reply, MENU)
+  await tgSend(chatId, r.ok ? mdToHtml(r.reply) : `⚠️ ${esc(r.error)}`, MENU)
   if (r.ok) await pushHistory(chatId, me.id, [{ role: "user", text }, { role: "assistant", text: r.reply }])
 }
