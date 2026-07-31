@@ -284,3 +284,112 @@ export async function stats(): Promise<Stats> {
 
   return { publiees, attente, total, nouvelles24h, leads24h, users, vues24h, vues7j, topVues }
 }
+
+// ── Recherche transverse dans les autres bases ──────────────────────────────
+// L'admin et les modérateurs voient ce que le public ne voit jamais : qui a
+// publié une annonce et comment le joindre. C'est le seul endroit de la
+// plateforme où ce contact sort — d'où le contrôle de rôle explicite.
+
+export interface Publieur {
+  contact_nom: string | null; contact_phone: string | null
+  canal: string | null; group_nom: string | null; publie_le: string | null; rang: number | null
+}
+
+/** Coordonnées des publieurs d'une annonce. Réservé admin / modérateur. */
+export async function publishersOf(propertyId: string, by: TgUser): Promise<Publieur[] | null> {
+  if (!["super_admin", "admin", "moderateur"].includes(by.role)) return null
+  const admin = createAdminClient()
+  const { data, error } = await admin.from("property_publishers")
+    .select("contact_nom,contact_phone,canal,group_nom,publie_le,rang")
+    .eq("property_id", propertyId).order("rang", { ascending: true })
+  if (error) { console.error("INAYA-TG-OPS-070", error.message); return [] }
+  return (data ?? []) as Publieur[]
+}
+
+/** Demandes reçues (visites, réservations), avec le titre de l'annonce. */
+export async function recentLeads(opts: { jours?: number; statut?: string; limit?: number }) {
+  const admin = createAdminClient()
+  const since = new Date(Date.now() - (opts.jours ?? 7) * 86_400_000).toISOString()
+  let q = admin.from("leads")
+    .select("id,property_id,contact_nom,contact_telephone,statut,message,creneaux,sejour_nuits,montant_estime,created_at")
+    .gte("created_at", since)
+  if (opts.statut) q = q.eq("statut", opts.statut)
+  const { data, error } = await q.order("created_at", { ascending: false }).limit(opts.limit ?? 15)
+  if (error) { console.error("INAYA-TG-OPS-071", error.message); return [] }
+  const rows = (data ?? []) as (Record<string, unknown> & { property_id: string | null })[]
+
+  const ids = [...new Set(rows.map(r => r.property_id).filter((v): v is string => !!v))]
+  const titres = new Map<string, { titre: string; reference: number | null }>()
+  if (ids.length) {
+    const { data: props } = await admin.from("properties").select("id,titre,reference").in("id", ids)
+    for (const p of (props ?? []) as { id: string; titre: string; reference: number | null }[]) {
+      titres.set(p.id, { titre: p.titre, reference: p.reference })
+    }
+  }
+  return rows.map(r => ({ ...r, annonce: r.property_id ? titres.get(r.property_id) ?? null : null }))
+}
+
+/** Ce que les clients recherchent (demandes enregistrées). */
+export async function clientSearches(jours = 30, limit = 20) {
+  const admin = createAdminClient()
+  const since = new Date(Date.now() - jours * 86_400_000).toISOString()
+  const { data, error } = await admin.from("search_requests")
+    .select("reference,contact_nom,contact_telephone,type_offre,categories,zones,budget_min,budget_max,nb_pieces_min,description_libre,statut,created_at")
+    .gte("created_at", since).order("created_at", { ascending: false }).limit(limit)
+  if (error) { console.error("INAYA-TG-OPS-072", error.message); return [] }
+  return data ?? []
+}
+
+export async function pharmaciesDeGarde() {
+  const admin = createAdminClient()
+  const { data } = await admin.from("pharmacies_garde")
+    .select("nom,ville,quartier,adresse,telephone,date_debut,date_fin")
+    .eq("actif", true).order("ville", { ascending: true }).limit(40)
+  return data ?? []
+}
+
+export async function openSignalements(limit = 15) {
+  const admin = createAdminClient()
+  const { data, error } = await admin.from("signalements")
+    .select("property_id,categorie,motif,contact,statut,created_at")
+    .neq("statut", "traite").order("created_at", { ascending: false }).limit(limit)
+  if (error) { console.error("INAYA-TG-OPS-073", error.message); return [] }
+  return data ?? []
+}
+
+export async function recentDeletions(jours = 7, limit = 30) {
+  const admin = createAdminClient()
+  const since = new Date(Date.now() - jours * 86_400_000).toISOString()
+  const { data, error } = await admin.from("property_deletions")
+    .select("reference,titre,type_offre,prix,ville,quartier,statut_avant,source,deleted_at")
+    .gte("deleted_at", since).order("deleted_at", { ascending: false }).limit(limit)
+  if (error) { console.error("INAYA-TG-OPS-074", error.message); return [] }
+  return data ?? []
+}
+
+/** Chiffre d'affaires et commissions sur une période. */
+export async function financeSummary(jours = 30) {
+  const admin = createAdminClient()
+  const since = new Date(Date.now() - jours * 86_400_000).toISOString()
+  const { data, error } = await admin.from("transactions")
+    .select("montant_transaction,commission_montant_total,commission_part_inaya,commission_part_agent,statut,type_operation,created_at")
+    .gte("created_at", since).limit(500)
+  if (error) { console.error("INAYA-TG-OPS-075", error.message); return null }
+  const rows = (data ?? []) as { montant_transaction: number | null; commission_montant_total: number | null; commission_part_inaya: number | null; statut: string | null }[]
+  const sum = (f: (r: typeof rows[number]) => number | null | undefined) =>
+    rows.reduce((s, r) => s + (f(r) ?? 0), 0)
+  return {
+    periode_jours: jours, nb_transactions: rows.length,
+    volume: sum(r => r.montant_transaction),
+    commissions_totales: sum(r => r.commission_montant_total),
+    part_inaya: sum(r => r.commission_part_inaya),
+  }
+}
+
+export async function zonesList(ville?: string) {
+  const admin = createAdminClient()
+  let q = admin.from("zones").select("nom,ville").eq("actif", true)
+  if (ville) q = q.ilike("ville", `%${ville}%`)
+  const { data } = await q.order("ville", { ascending: true }).limit(200)
+  return data ?? []
+}

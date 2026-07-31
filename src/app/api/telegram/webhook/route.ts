@@ -9,6 +9,11 @@ import { onCallback, onMessage } from "@/lib/telegram/router"
 // ============================================================================
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
+// Une demande en langage naturel enchaîne plusieurs allers-retours avec le
+// modèle et des requêtes en base : mesuré à ~8 s, soit au ras de la limite par
+// défaut de 10 s. Au-delà, Vercel tue la fonction AVANT l'envoi de la réponse —
+// le bot paraît alors muet. D'où ce plafond largement dimensionné.
+export const maxDuration = 60
 
 const OK = () => NextResponse.json({ ok: true })
 

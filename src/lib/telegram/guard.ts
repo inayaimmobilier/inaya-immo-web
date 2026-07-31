@@ -52,16 +52,41 @@ export async function whoIs(chatId: string): Promise<TgUser | null> {
 // ── État de conversation (édition en cours, confirmation en attente) ────────
 
 export interface TgState { kind: string; [k: string]: unknown }
+export interface Turn { role: "user" | "assistant"; text: string }
+
+/** Ligne d'état : `kind` = étape en cours, `h` = historique de conversation. */
+interface Row { state: Record<string, unknown> & { h?: Turn[] }; updated_at: string }
+
+const MAX_TURNS = 12          // ~6 échanges : assez pour le contexte, pas pour noyer le modèle
+const STEP_TTL = 30 * 60_000  // une étape oubliée ne doit pas piéger l'admin
+const CHAT_TTL = 3 * 3600_000 // au-delà, on repart sur une conversation neuve
+
+async function readRow(chatId: string): Promise<Row | null> {
+  const admin = createAdminClient()
+  const { data, error } = await admin.from("telegram_admin_state")
+    .select("state,updated_at").eq("chat_id", chatId).maybeSingle()
+  if (error) { console.error("INAYA-TG-STATE-READ", error.code, error.message); return null }
+  return (data as Row | null) ?? null
+}
+
+/** Écrit en FUSIONNANT : sauvegarder une étape ne doit pas effacer l'historique. */
+async function patchRow(chatId: string, profileId: string, patch: Record<string, unknown>): Promise<boolean> {
+  const current = (await readRow(chatId))?.state ?? {}
+  const admin = createAdminClient()
+  const { error } = await admin.from("telegram_admin_state").upsert({
+    chat_id: chatId, profile_id: profileId,
+    state: { ...current, ...patch }, updated_at: new Date().toISOString(),
+  } as never, { onConflict: "chat_id" })
+  if (error) { console.error("INAYA-TG-STATE", error.code, error.message); return false }
+  return true
+}
 
 export async function getState(chatId: string): Promise<TgState | null> {
-  const admin = createAdminClient()
-  const { data } = await admin.from("telegram_admin_state")
-    .select("state,updated_at").eq("chat_id", chatId).maybeSingle()
-  const row = data as { state: TgState; updated_at: string } | null
-  if (!row?.state?.kind) return null
-  // Une étape oubliée ne doit pas piéger l'admin des heures plus tard.
-  if (Date.now() - new Date(row.updated_at).getTime() > 30 * 60_000) return null
-  return row.state
+  const row = await readRow(chatId)
+  const kind = row?.state?.kind
+  if (typeof kind !== "string" || !kind) return null
+  if (Date.now() - new Date(row!.updated_at).getTime() > STEP_TTL) return null
+  return row!.state as TgState
 }
 
 /**
@@ -70,17 +95,26 @@ export async function getState(chatId: string): Promise<TgState | null> {
  * les actions en deux temps sont indisponibles — et on le dit à l'administrateur
  * plutôt que de le laisser envoyer un prix dans le vide.
  */
-export async function setState(chatId: string, profileId: string, state: TgState | null): Promise<boolean> {
-  const admin = createAdminClient()
-  const { error } = await admin.from("telegram_admin_state").upsert({
-    chat_id: chatId, profile_id: profileId,
-    state: state ?? {}, updated_at: new Date().toISOString(),
-  } as never, { onConflict: "chat_id" })
-  if (error) {
-    console.error("INAYA-TG-STATE", error.code, error.message)
-    return false
-  }
-  return true
+export function setState(chatId: string, profileId: string, state: TgState | null): Promise<boolean> {
+  return patchRow(chatId, profileId, state ?? { kind: null })
 }
 
 export const clearState = (chatId: string, profileId: string) => setState(chatId, profileId, null)
+
+// ── Mémoire de conversation ─────────────────────────────────────────────────
+
+export async function getHistory(chatId: string): Promise<Turn[]> {
+  const row = await readRow(chatId)
+  if (!row?.state?.h?.length) return []
+  if (Date.now() - new Date(row.updated_at).getTime() > CHAT_TTL) return []
+  return row.state.h.slice(-MAX_TURNS)
+}
+
+export async function pushHistory(chatId: string, profileId: string, turns: Turn[]): Promise<void> {
+  const previous = (await readRow(chatId))?.state?.h ?? []
+  await patchRow(chatId, profileId, { h: [...previous, ...turns].slice(-MAX_TURNS) })
+}
+
+export async function resetHistory(chatId: string, profileId: string): Promise<void> {
+  await patchRow(chatId, profileId, { h: [] })
+}

@@ -73,6 +73,11 @@ export function tgAnswer(callbackId: string, text?: string, alert = false) {
   return call("answerCallbackQuery", { callback_query_id: callbackId, text, show_alert: alert })
 }
 
+/** « en train d'écrire… » : une demande en langage naturel prend plusieurs secondes. */
+export function tgTyping(chatId: string) {
+  return call("sendChatAction", { chat_id: chatId, action: "typing" })
+}
+
 export function tgSetCommands(commands: { command: string; description: string }[]) {
   return call("setMyCommands", { commands })
 }

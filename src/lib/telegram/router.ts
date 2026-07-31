@@ -4,8 +4,8 @@
 // équipé d'outils. Toute action destructrice passe par une confirmation.
 // ============================================================================
 import { runAssistant, type ToolSpec } from "@/lib/llm"
-import { esc, tgAnswer, tgEdit, tgSend, type Keyboard } from "./api"
-import { clearState, getState, setState, whoIs, type TgUser } from "./guard"
+import { esc, tgAnswer, tgEdit, tgSend, tgTyping, type Keyboard } from "./api"
+import { clearState, getHistory, getState, pushHistory, resetHistory, setState, whoIs, type TgUser } from "./guard"
 import * as ops from "./ops"
 import {
   HELP, MENU, listKeyboard, propDetail, propKeyboard, propLine,
@@ -95,6 +95,10 @@ export async function onMessage(chatId: string, text: string, from: { id: number
     }
     case "/stats":
       await tgSend(chatId, statsText(await ops.stats()), MENU); return
+    case "/nouvelle":
+    case "/reset":
+      await resetHistory(chatId, me.id)
+      await tgSend(chatId, "🧹 On repart de zéro. De quoi avez-vous besoin ?", MENU); return
     case "/notifs":
       await tgSend(chatId, "<b>🔔 Alertes reçues ici</b>\nTouchez pour activer ou couper.", notifKeyboard(await getNotifPrefs()))
       return
@@ -334,15 +338,77 @@ const TOOLS: ToolSpec[] = [
     description: "Recherche un utilisateur par nom ou numéro de téléphone.",
     parameters: { type: "object", properties: { recherche: { type: "string" } }, required: ["recherche"] },
   },
+  {
+    name: "contact_publieur",
+    description: "Coordonnées de la personne qui a publié une annonce (nom, téléphone, groupe WhatsApp d'origine). Confidentiel : réservé à l'admin et aux modérateurs.",
+    parameters: { type: "object", properties: { reference: { type: "number" } }, required: ["reference"] },
+  },
+  {
+    name: "demandes",
+    description: "Demandes de visite et réservations reçues, avec le contact du client et l'annonce concernée.",
+    parameters: {
+      type: "object",
+      properties: { jours: { type: "number", description: "profondeur en jours, 7 par défaut" }, statut: { type: "string" } },
+    },
+  },
+  {
+    name: "recherches_clients",
+    description: "Ce que les clients recherchent (demandes enregistrées) : budget, zones, type de bien.",
+    parameters: { type: "object", properties: { jours: { type: "number" } } },
+  },
+  {
+    name: "signalements",
+    description: "Signalements d'annonces non encore traités.",
+    parameters: { type: "object", properties: {} },
+  },
+  {
+    name: "annonces_supprimees",
+    description: "Journal des annonces supprimées sur une période.",
+    parameters: { type: "object", properties: { jours: { type: "number" } } },
+  },
+  {
+    name: "finances",
+    description: "Volume de transactions et commissions sur une période.",
+    parameters: { type: "object", properties: { jours: { type: "number" } } },
+  },
+  {
+    name: "pharmacies_de_garde",
+    description: "Pharmacies de garde actuellement enregistrées.",
+    parameters: { type: "object", properties: {} },
+  },
+  {
+    name: "zones",
+    description: "Communes et quartiers couverts par la plateforme.",
+    parameters: { type: "object", properties: { ville: { type: "string" } } },
+  },
 ]
 
-const SYSTEM = `Tu es l'assistant d'administration d'Inaya Immo, plateforme immobilière à Bouaké (Côte d'Ivoire).
-Tu parles à un administrateur via Telegram. Réponds en français, brièvement, sans fioritures.
-Utilise les outils pour lire ou modifier la plateforme. Les annonces sont désignées par leur NUMÉRO DE RÉFÉRENCE.
-Ne prétends JAMAIS avoir fait une action sans avoir appelé l'outil correspondant.
-Tu ne peux pas supprimer d'annonce ni créer de compte : pour cela, indique à l'administrateur d'ouvrir
-l'annonce (« /annonces <référence> ») et d'utiliser le bouton, qui demande une confirmation.
-Formatage : texte simple, éventuellement <b>gras</b>. Pas de Markdown.`
+function systemPrompt(me: TgUser): string {
+  return `Tu es Inaya, l'assistante d'administration de la plateforme immobilière Inaya Immo,
+à Bouaké (Côte d'Ivoire). Tu parles à ${me.nom}, ${me.role.replace("_", " ")}, sur Telegram.
+
+Ton : chaleureux, vivant, direct. Tu es une collègue efficace, pas un formulaire — une
+touche d'humour va bien, jamais au détriment de la précision. Vouvoiement. Réponses
+courtes : on te lit sur un téléphone.
+
+Tu as accès à TOUTES les bases de la plateforme via tes outils : annonces, publieurs,
+demandes de visite et réservations, recherches des clients, comptes, signalements,
+suppressions, finances, pharmacies de garde, zones. Sers-t'en dès que la réponse dépend
+d'une donnée réelle — ne devine jamais un chiffre.
+
+Le contact des publieurs (outil contact_publieur) est confidentiel : il ne sort que pour
+l'admin et les modérateurs, et jamais dans une réponse destinée à un client.
+
+Tu tiens compte de la conversation en cours : si on te dit « et à Air France ? » après une
+recherche, tu comprends qu'il s'agit de la même recherche dans ce quartier.
+
+Les annonces se désignent par leur NUMÉRO DE RÉFÉRENCE. N'affirme JAMAIS avoir fait une
+action sans avoir appelé l'outil correspondant. Tu ne peux ni supprimer une annonce ni
+créer un compte toi-même : renvoie vers /annonces <référence> ou /nouveau_compte, dont les
+boutons demandent confirmation.
+
+Formatage Telegram : texte simple, <b>gras</b> possible. Jamais de Markdown, jamais de #.`
+}
 
 async function naturalLanguage(chatId: string, me: TgUser, text: string): Promise<void> {
   const exec = async (name: string, args: Record<string, unknown>): Promise<unknown> => {
@@ -376,11 +442,41 @@ async function naturalLanguage(chatId: string, me: TgUser, text: string): Promis
         const { rows, total } = await ops.listUsers({ q: String(args.recherche), perPage: 8 })
         return { total, comptes: rows.map(u => ({ nom: `${u.prenom || ""} ${u.nom || ""}`.trim(), role: u.role, telephone: u.telephone, valide: u.verifie })) }
       }
+      case "contact_publieur": {
+        const p = await ops.getByReference(Number(args.reference))
+        if (!p) return { erreur: "annonce introuvable" }
+        const pubs = await ops.publishersOf(p.id, me)
+        if (pubs === null) return { erreur: "contact réservé à l'admin et aux modérateurs" }
+        return { annonce: { reference: p.reference, titre: p.titre }, publieurs: pubs }
+      }
+      case "demandes":
+        return await ops.recentLeads({ jours: Number(args.jours) || 7, statut: args.statut as string | undefined })
+      case "recherches_clients":
+        return await ops.clientSearches(Number(args.jours) || 30)
+      case "signalements":
+        return await ops.openSignalements()
+      case "annonces_supprimees":
+        return await ops.recentDeletions(Number(args.jours) || 7)
+      case "finances":
+        return await ops.financeSummary(Number(args.jours) || 30)
+      case "pharmacies_de_garde":
+        return await ops.pharmaciesDeGarde()
+      case "zones":
+        return await ops.zonesList(args.ville as string | undefined)
       default:
         return { erreur: "outil inconnu" }
     }
   }
 
-  const r = await runAssistant({ system: SYSTEM, history: [{ role: "user", text }], tools: TOOLS, exec })
-  await tgSend(chatId, r.ok ? r.reply : `⚠️ ${esc(r.error)}`, MENU)
+  await tgTyping(chatId) // la réponse prend quelques secondes : on le montre
+  // Historique : sans lui, « et à Air France ? » ne veut rien dire.
+  const history = await getHistory(chatId)
+  const r = await runAssistant({
+    system: systemPrompt(me),
+    history: [...history, { role: "user", text }],
+    tools: TOOLS, exec,
+  })
+  const reply = r.ok ? r.reply : `⚠️ ${esc(r.error)}`
+  await tgSend(chatId, reply, MENU)
+  if (r.ok) await pushHistory(chatId, me.id, [{ role: "user", text }, { role: "assistant", text: r.reply }])
 }
