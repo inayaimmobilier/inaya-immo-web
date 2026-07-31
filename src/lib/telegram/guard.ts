@@ -24,14 +24,20 @@ export async function whoIs(chatId: string): Promise<TgUser | null> {
   // La colonne s'appelle `status` (valeurs : actif | suspendu | banni) et NON
   // `statut` : une erreur de nom ici renvoie 42703, donc `data` à null, donc un
   // refus d'accès pour absolument tout le monde.
+  // Pas de `maybeSingle()` ici : il ÉCHOUE si plusieurs profils portent le même
+  // chat_id (cas réellement rencontré en base). On prend les candidats et on
+  // retient le plus privilégié, pour ne jamais dégrader l'accès d'un admin.
   const { data, error } = await admin.from("profiles")
     .select("id,nom,prenom,role,status")
     .eq("telegram_chat_id", chatId)
-    .maybeSingle()
+    .limit(10)
   if (error) { console.error("INAYA-TG-WHOIS", error.code, error.message); return null }
-  const p = data as { id: string; nom: string | null; prenom: string | null; role: string; status: string | null } | null
-  if (!p || !ROLES.includes(p.role as StaffRole)) return null
-  if (p.status && p.status !== "actif") return null
+
+  const rows = (data ?? []) as { id: string; nom: string | null; prenom: string | null; role: string; status: string | null }[]
+  const eligibles = rows.filter(r => ROLES.includes(r.role as StaffRole) && (!r.status || r.status === "actif"))
+  if (!eligibles.length) return null
+  if (rows.length > 1) console.warn("INAYA-TG-WHOIS-DUP", chatId, rows.length, "profils partagent ce chat")
+  const p = eligibles.sort((a, b) => ROLES.indexOf(a.role as StaffRole) - ROLES.indexOf(b.role as StaffRole))[0]
 
   const role = p.role as StaffRole
   return {

@@ -119,6 +119,11 @@ async function linkAccount(chatId: string, profileId: string): Promise<void> {
     .eq("id", profileId).in("role", ["agent", "moderateur", "admin", "super_admin"]).maybeSingle()
   const p = data as { nom: string | null; prenom: string | null } | null
   if (!p) { await tgSend(chatId, "❌ Lien invalide ou expiré. Demandez un nouveau lien à votre administrateur."); return }
+  // Un chat Telegram ne peut appartenir qu'à UN profil : on détache d'abord
+  // tout autre profil qui le porterait. Sans cela plusieurs profils finissent
+  // par partager le même chat_id et l'identification devient ambiguë.
+  await db.from("profiles").update({ telegram_chat_id: null } as never)
+    .eq("telegram_chat_id", chatId).neq("id", profileId)
   await db.from("profiles").update({ telegram_chat_id: chatId } as never).eq("id", profileId)
   const nom = `${p.prenom || ""} ${p.nom || ""}`.trim() || "Administrateur"
   await tgSend(chatId,
