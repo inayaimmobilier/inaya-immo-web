@@ -12,34 +12,37 @@ const AT_SANDBOX_URL = "https://api.sandbox.africastalking.com/version1/messagin
 
 /**
  * Normalise un numéro vers le format international Côte d'Ivoire (+225XXXXXXXXXX).
- * Accepte : 0707840431 / 225 07 07 840 431 / +2250707840431 / 07840431 (ancien 8 chiffres).
- * Retourne null si le numéro ne peut pas être normalisé.
+ *
+ * CORRECTION : cette fonction complétait TOUT numéro à 8 chiffres par « 07 ».
+ * Or le préfixe ajouté en 2021 identifie l'opérateur d'origine : un numéro Moov
+ * (01xxxxxx) devenait ainsi +2250701xxxxxx, c'est-à-dire un numéro Orange qui
+ * ne lui appartient pas — non remis, ou pire, remis à quelqu'un d'autre.
+ * La table complète vit dans phone-ci.ts, partagée avec l'application SMS pour
+ * que les deux côtés convertissent à l'identique.
  */
-export function normalizeCI(tel: string): string | null {
-  const digits = tel.replace(/\D/g, "")
-  // Déjà en international avec indicatif 225
-  if (digits.startsWith("225") && digits.length >= 11) return `+${digits}`
-  // 10 chiffres commençant par 0 (format local actuel)
-  if (digits.length === 10 && digits.startsWith("0")) return `+225${digits}`
-  // 10 chiffres sans 0 initial (ex : 7 07840431)
-  if (digits.length === 9) return `+2250${digits}`
-  // Ancien format 8 chiffres
-  if (digits.length === 8) return `+22507${digits}`
-  return null
-}
+import { normaliserCI } from "@/lib/phone-ci"
+export { normaliserCI as normalizeCI }
 
 /**
  * Envoie un SMS à un numéro ivoirien.
  * Échoue silencieusement (log only) pour ne pas bloquer le flux client.
  */
 export async function sendSms(to: string | null | undefined, message: string): Promise<void> {
+  // Le telephone passerelle d abord : c est notre propre ligne, sans cout par
+  // message. Africa's Talking ne sert plus que de repli quand la passerelle est
+  // eteinte ou le numero hors Cote d Ivoire.
+  try {
+    const { enfilerSms } = await import("@/lib/sms-gateway")
+    if (await enfilerSms({ telephone: to, message, type: "notification" })) return
+  } catch (e) { console.error("INAYA-SMS-GW", e) }
+
   const apiKey = process.env.AT_API_KEY
   if (!apiKey) {
     console.warn("INAYA-SMS-001 AT_API_KEY absent — SMS ignoré")
     return
   }
 
-  const phone = normalizeCI(to ?? "")
+  const phone = normaliserCI(to ?? "")
   if (!phone) {
     console.warn("INAYA-SMS-002 numéro invalide ou absent", to)
     return
