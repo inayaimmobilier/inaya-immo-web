@@ -54,7 +54,12 @@ export function computeExpireAt(p: PropForExpiry, rules: ExpiryRule[]): string |
  * Balaie les annonces publiées : (a) renseigne expire_at manquant depuis les
  * règles, (b) passe en « expire » celles dont la durée de vie est dépassée.
  */
-export async function runExpirySweep(): Promise<{ ok: boolean; expired: number; backfilled: number; rules: number; error?: string }> {
+export async function runExpirySweep(): Promise<{
+  ok: boolean; expired: number; backfilled: number; rules: number
+  /** Annonces échues qu'il reste à traiter aux passages suivants (voir le garde-fou). */
+  restant?: number
+  error?: string
+}> {
   const admin = createAdminClient()
 
   let rules: ExpiryRule[]
@@ -69,21 +74,39 @@ export async function runExpirySweep(): Promise<{ ok: boolean; expired: number; 
   }
   if (rules.length === 0) return { ok: true, expired: 0, backfilled: 0, rules: 0 }
 
-  const { data: rows, error: qErr } = await admin.from("properties")
-    .select("id, type_offre, categorie, ville, quartier, prix, meuble, created_at, validated_at, expire_at")
-    .eq("statut", "publie").limit(5000)
-  if (qErr) return { ok: false, expired: 0, backfilled: 0, rules: rules.length, error: qErr.message }
+  // PostgREST PLAFONNE les réponses à 1000 lignes : le `.limit(5000)` d'origine
+  // ne levait pas ce plafond et, sans `order`, on ne balayait que les 1000
+  // annonces les PLUS ANCIENNES — les récentes n'expiraient jamais. D'où la
+  // pagination explicite ci-dessous.
+  const PAGE = 1000
+  const rows: PropForExpiry[] = []
+  for (let page = 0; page < 20; page++) {
+    const { data, error } = await admin.from("properties")
+      .select("id, type_offre, categorie, ville, quartier, prix, meuble, created_at, validated_at, expire_at")
+      .eq("statut", "publie")
+      .order("created_at", { ascending: false })
+      .range(page * PAGE, page * PAGE + PAGE - 1)
+    if (error) return { ok: false, expired: 0, backfilled: 0, rules: rules.length, error: error.message }
+    const batch = (data ?? []) as PropForExpiry[]
+    rows.push(...batch)
+    if (batch.length < PAGE) break
+  }
 
   const now = Date.now()
-  const toExpire: string[] = []
+  const echues: { id: string; at: number }[] = []
   const toBackfill: { id: string; expire_at: string }[] = []
 
-  for (const p of (rows ?? []) as PropForExpiry[]) {
+  for (const p of rows) {
     const eat = p.expire_at ?? computeExpireAt(p, rules)
     if (!eat) continue
     if (!p.expire_at) toBackfill.push({ id: p.id, expire_at: eat })
-    if (new Date(eat).getTime() < now) toExpire.push(p.id)
+    const at = new Date(eat).getTime()
+    if (at < now) echues.push({ id: p.id, at })
   }
+  // Les plus anciennement échues d'abord : c'est l'ordre qui compte quand le
+  // garde-fou ci-dessous ne traite qu'une partie de l'arriéré à chaque passage.
+  echues.sort((a, b) => a.at - b.at)
+  const toExpire = echues.map(e => e.id)
 
   // Backfill des expire_at manquants (par lots).
   for (let i = 0; i < toBackfill.length; i += 200) {
@@ -93,16 +116,25 @@ export async function runExpirySweep(): Promise<{ ok: boolean; expired: number; 
     ))
   }
 
-  // Passage en « expire » (par lots).
+  // GARDE-FOU : le balayage ne voyait qu'un millier d'annonces (plafond
+  // PostgREST). Une fois corrigé, il découvre d'un coup tout l'arriéré — mesuré
+  // à plus de 2 000 locations au-delà de leur durée de vie. Les faire disparaître
+  // en une nuit viderait la moitié du catalogue et ferait chuter le référencement.
+  // On draine donc par paliers, les plus anciennes d'abord ; l'arriéré se résorbe
+  // en quelques jours et le régime permanent, lui, passe sans jamais toucher ce plafond.
+  const MAX_PAR_PASSAGE = 400
+  const restant = Math.max(0, toExpire.length - MAX_PAR_PASSAGE)
+  const lot = toExpire.slice(0, MAX_PAR_PASSAGE)
+
   let expired = 0
-  for (let i = 0; i < toExpire.length; i += 200) {
-    const chunk = toExpire.slice(i, i + 200)
+  for (let i = 0; i < lot.length; i += 200) {
+    const chunk = lot.slice(i, i + 200)
     const { error } = await admin.from("properties").update({ statut: "expire" } as never).in("id", chunk)
     if (!error) expired += chunk.length
     else console.error("INAYA-EXPIRE-SWEEP", error.message)
   }
 
-  return { ok: true, expired, backfilled: toBackfill.length, rules: rules.length }
+  return { ok: true, expired, backfilled: toBackfill.length, rules: rules.length, restant }
 }
 
 /** expire_at d'une annonce précise (à la publication). Best-effort. */
