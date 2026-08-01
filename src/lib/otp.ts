@@ -119,7 +119,8 @@ export async function issueOtp(userId: string, canal: OtpCanal, destination: str
   const texte = `Inaya Immo : votre code de verification est ${code}. Il expire dans ${OTP_TTL_MIN} minutes. Ne le partagez avec personne.`
 
   if (canal === "sms") {
-    await sendSms(dest, texte)
+    // type "otp" : contourne la passerelle SMS (voir sms.ts).
+    await sendSms(dest, texte, { type: "otp" })
   } else if (canal === "email") {
     const html = `<div style="font-family:system-ui,Arial,sans-serif;max-width:420px;margin:auto">
       <h2 style="color:#1d4ed8">Inaya <span style="color:#f59e0b">Immo</span></h2>

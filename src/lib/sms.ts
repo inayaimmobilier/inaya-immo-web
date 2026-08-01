@@ -27,14 +27,25 @@ export { normaliserCI as normalizeCI }
  * Envoie un SMS à un numéro ivoirien.
  * Échoue silencieusement (log only) pour ne pas bloquer le flux client.
  */
-export async function sendSms(to: string | null | undefined, message: string): Promise<void> {
+export async function sendSms(
+  to: string | null | undefined,
+  message: string,
+  opts: { type?: "match" | "notification" | "otp" } = {},
+): Promise<void> {
   // Le telephone passerelle d abord : c est notre propre ligne, sans cout par
   // message. Africa's Talking ne sert plus que de repli quand la passerelle est
-  // eteinte ou le numero hors Cote d Ivoire.
-  try {
-    const { enfilerSms } = await import("@/lib/sms-gateway")
-    if (await enfilerSms({ telephone: to, message, type: "notification" })) return
-  } catch (e) { console.error("INAYA-SMS-GW", e) }
+  // eteinte ou le numero est hors Cote d Ivoire.
+  //
+  // SAUF pour un OTP : un code de verification ne doit dependre ni de l etat de
+  // charge d un telephone, ni de sa couverture reseau. Il part par le canal
+  // eprouve, sans passer par la file.
+  const type = opts.type ?? "notification"
+  if (type !== "otp") {
+    try {
+      const { enfilerSms } = await import("@/lib/sms-gateway")
+      if (await enfilerSms({ telephone: to, message, type })) return
+    } catch (e) { console.error("INAYA-SMS-GW", e) }
+  }
 
   const apiKey = process.env.AT_API_KEY
   if (!apiKey) {

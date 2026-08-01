@@ -12,13 +12,20 @@
 import { createAdminClient } from "@/lib/supabase/server"
 import { estIvoirien, normaliserCI } from "@/lib/phone-ci"
 
-export type TypeSms = "otp" | "match" | "notification"
+/**
+ * DÉCISION : les codes de vérification restent sur WhatsApp et ne passent
+ * JAMAIS par cette file. Un OTP tolère mal le moindre aléa — téléphone
+ * passerelle éteint, hors réseau, batterie vide — et un code qui n'arrive pas
+ * bloque une inscription. WhatsApp, lui, est déjà éprouvé pour cet usage.
+ * D'où l'absence volontaire d'un type « otp » ici.
+ */
+export type TypeSms = "match" | "notification"
 
-/** Un OTP passe devant : il expire, une alerte non. */
-const PRIORITE: Record<TypeSms, number> = { otp: 100, match: 10, notification: 0 }
+/** Une alerte de correspondance passe avant une notification ordinaire. */
+const PRIORITE: Record<TypeSms, number> = { match: 10, notification: 0 }
 
-/** Au-delà, l'envoi n'a plus d'intérêt — surtout pour un code de vérification. */
-const DUREE_VIE_MIN: Record<TypeSms, number> = { otp: 10, match: 240, notification: 240 }
+/** Au-delà, la notification n'a plus d'intérêt pour le destinataire. */
+const DUREE_VIE_MIN: Record<TypeSms, number> = { match: 240, notification: 240 }
 
 /** La passerelle est-elle activée ? Réglable sans redéploiement. */
 export async function passerelleActive(): Promise<boolean> {

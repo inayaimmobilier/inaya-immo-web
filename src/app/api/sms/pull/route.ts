@@ -32,8 +32,8 @@ export async function GET(req: NextRequest) {
   const maintenant = new Date().toISOString()
 
   try {
-    // Les périmés ne partent jamais : un OTP reçu vingt minutes trop tard est
-    // pire qu'un OTP absent, l'utilisateur a déjà redemandé un code.
+    // Les périmés ne partent jamais : une alerte « ce bien vient d'arriver »
+    // envoyée le lendemain dessert plus qu'elle ne sert.
     await admin.from("sms_queue")
       .update({ statut: "echec", erreur: "expiré avant envoi" } as never)
       .eq("statut", "en_attente").lt("expire_le", maintenant)

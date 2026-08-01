@@ -221,21 +221,43 @@ export async function notifySearcher(args: {
 
   const rows: Record<string, unknown>[] = []
 
+  // Version courte pour le SMS : un SMS se paie au segment de 160 caractères,
+  // et les trois lignes du message WhatsApp en feraient trois.
+  const texteSms = `Inaya Immo : ${intro.toLowerCase()} — « ${titreCourt} »${lieu}. ${url} · Stop : ${stopUrl}`
+
+  /**
+   * Numéro ivoirien → SMS depuis notre propre ligne. Renvoie true si le message
+   * est parti par ce canal, auquel cas on n'ajoute PAS de ligne WhatsApp : le
+   * client recevrait deux fois la même alerte.
+   */
+  const tenterSms = async (tel: string | null | undefined): Promise<boolean> => {
+    if (!tel) return false
+    try {
+      const { enfilerSms } = await import("@/lib/sms-gateway")
+      return await enfilerSms({ telephone: tel, message: texteSms, type: "match" })
+    } catch (e) { console.error("INAYA-MATCH-SMS", e); return false }
+  }
+
   if (args.userId) {
     // Connecté : notification push in-app (TOUJOURS — jamais bornée)…
     rows.push({ ...base, user_id: args.userId, canal: "push" as NotifCanal })
-    // …+ WhatsApp sur le numéro de son profil, SEULEMENT si le plafond anti-ban
-    // l'autorise (≤ 1 alerte / COOLDOWN, jamais 2× le même bien).
     const { data: prof } = await db
       .from("profiles").select("telephone").eq("id", args.userId).single()
     const tel = (prof as { telephone: string | null } | null)?.telephone?.trim()
-    if (tel && await waMatchAlertAllowed(db, { waNumber: tel, userId: args.userId, propertyId: args.propertyId })) {
-      rows.push({ ...base, user_id: args.userId, contact_telephone: tel, canal: "whatsapp" as NotifCanal })
+    // …+ SMS si le numéro est ivoirien. Le plafond anti-ban ne s'applique pas
+    // ici : il protège le compte WhatsApp, pas notre propre carte SIM.
+    if (!(await tenterSms(tel))) {
+      // Sinon WhatsApp, sous plafond anti-ban (≤ 1 alerte / COOLDOWN, jamais 2× le même bien).
+      if (tel && await waMatchAlertAllowed(db, { waNumber: tel, userId: args.userId, propertyId: args.propertyId })) {
+        rows.push({ ...base, user_id: args.userId, contact_telephone: tel, canal: "whatsapp" as NotifCanal })
+      }
     }
   } else if (args.contactTel) {
-    // Anonyme : WhatsApp sur le numéro fourni, sous plafond anti-ban.
-    if (await waMatchAlertAllowed(db, { waNumber: args.contactTel, propertyId: args.propertyId })) {
-      rows.push({ ...base, contact_telephone: args.contactTel, canal: "whatsapp" as NotifCanal })
+    if (!(await tenterSms(args.contactTel))) {
+      // Anonyme : WhatsApp sur le numéro fourni, sous plafond anti-ban.
+      if (await waMatchAlertAllowed(db, { waNumber: args.contactTel, propertyId: args.propertyId })) {
+        rows.push({ ...base, contact_telephone: args.contactTel, canal: "whatsapp" as NotifCanal })
+      }
     }
   }
 
