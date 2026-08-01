@@ -53,6 +53,7 @@ export default function QuickContactButtons({
   const [err, setErr] = useState<string | null>(null)
   const [envoi, setEnvoi] = useState(false)
   const [pret, setPret] = useState(false)                 // validé → lien d'ouverture affiché
+  const [alerte, setAlerte] = useState(true)              // proposé activé : c'est le service rendu
 
   // localStorage n'existe qu'au navigateur : lecture après montage.
   useEffect(() => { setConnu(c => c ?? getVisitorContact()) }, [])
@@ -96,7 +97,7 @@ export default function QuickContactButtons({
     setVisitorContact({ nom: n, telephone: t })
     setConnu({ nom: n, telephone: t })
     try {
-      await createContactLead({ propertyId, nom: n, telephone: t, message })
+      await createContactLead({ propertyId, nom: n, telephone: t, message, alerte })
       recordContactClick(propertyId, canal ?? "whatsapp", true)
     } catch { /* l'essentiel reste d'ouvrir la conversation */ }
     setEnvoi(false); setPret(true)
@@ -151,6 +152,11 @@ export default function QuickContactButtons({
                 <p className="text-sm text-gray-600">
                   Un agent Inaya suit votre demande. Ouvrez la conversation pour lui écrire.
                 </p>
+                {alerte && (
+                  <p className="text-xs text-blue-800 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2">
+                    Nous vous écrirons aussi dès qu&apos;un bien similaire sera disponible.
+                  </p>
+                )}
                 <a
                   href={lien(canal)}
                   target={canal === "whatsapp" ? "_blank" : undefined}
@@ -172,6 +178,14 @@ export default function QuickContactButtons({
                   className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:border-blue-400" />
                 <input value={tel} onChange={e => setTel(e.target.value)} type="tel" placeholder="Votre numéro WhatsApp"
                   className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:border-blue-400" />
+                <label className="flex items-start gap-2 cursor-pointer bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5">
+                  <input type="checkbox" checked={alerte} onChange={e => setAlerte(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 accent-blue-600 flex-shrink-0" />
+                  <span className="text-xs text-blue-900 leading-relaxed">
+                    <strong className="font-semibold">Prévenez-moi</strong> dès qu&apos;un bien
+                    similaire arrive — même quartier, budget proche. Sans inscription.
+                  </span>
+                </label>
                 {err && <p className="text-xs text-red-600">{err}</p>}
                 <button type="submit" disabled={envoi}
                   className={`${base} w-full bg-blue-700 hover:bg-blue-600 disabled:opacity-60`}>

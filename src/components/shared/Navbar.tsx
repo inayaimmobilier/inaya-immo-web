@@ -74,6 +74,9 @@ export default function Navbar() {
             <Link href="/residences" className="text-sm text-teal-700 hover:text-teal-800 transition-colors font-semibold">
               Résidences meublées
             </Link>
+            <Link href="/immobilier" className="text-sm text-gray-800 hover:text-blue-700 transition-colors font-semibold">
+              Par quartier
+            </Link>
             <Link href="/biens" className="text-sm text-gray-800 hover:text-blue-700 transition-colors font-semibold">
               Toutes les annonces
             </Link>
@@ -133,6 +136,7 @@ export default function Navbar() {
           <Link href="/biens?type=location" className="text-sm text-gray-700 py-2 font-medium" onClick={() => setOpen(false)}>Location</Link>
           <Link href="/biens?type=vente" className="text-sm text-gray-700 py-2 font-medium" onClick={() => setOpen(false)}>Vente</Link>
           <Link href="/residences" className="text-sm text-gray-700 py-2 font-medium" onClick={() => setOpen(false)}>Résidences meublées</Link>
+          <Link href="/immobilier" className="text-sm text-gray-700 py-2 font-medium" onClick={() => setOpen(false)}>Par quartier</Link>
           <Link href="/biens" className="text-sm text-gray-700 py-2 font-medium" onClick={() => setOpen(false)}>Toutes les annonces</Link>
           <Link href="/telecharger" className="flex items-center gap-1.5 text-sm text-blue-700 py-2 font-semibold" onClick={() => setOpen(false)}>
             <Smartphone className="w-4 h-4" /> Télécharger l&apos;application

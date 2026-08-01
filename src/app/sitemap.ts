@@ -12,7 +12,23 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${SITE_URL}/biens`,      changeFrequency: "hourly", priority: 0.9 },
     { url: `${SITE_URL}/residences`, changeFrequency: "daily",  priority: 0.8 },
     { url: `${SITE_URL}/publier`,    changeFrequency: "monthly", priority: 0.5 },
+    { url: `${SITE_URL}/immobilier`, changeFrequency: "daily",  priority: 0.9 },
   ]
+
+  // Pages par quartier : c'est là que se joue la recherche réelle des visiteurs
+  // (« location maison Air France Bouaké »), pas sur la liste générale.
+  let zones: MetadataRoute.Sitemap = []
+  try {
+    const { allCombos, cheminCombo } = await import("@/lib/zone-pages")
+    zones = (await allCombos()).map(c => ({
+      url: `${SITE_URL}${cheminCombo(c)}`,
+      changeFrequency: "daily" as const,
+      // Un quartier bien fourni mérite un peu plus de poids qu'un quartier limite.
+      priority: c.total >= 50 ? 0.8 : 0.6,
+    }))
+  } catch (e) {
+    console.error("INAYA-SITEMAP-ZONES", e)
+  }
 
   let listings: MetadataRoute.Sitemap = []
   try {
@@ -33,5 +49,5 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     // Base injoignable au build → on renvoie au moins les pages statiques.
   }
 
-  return [...staticRoutes, ...listings]
+  return [...staticRoutes, ...zones, ...listings]
 }
