@@ -87,6 +87,9 @@ export async function saveSettings(form: FormData): Promise<ActionResult> {
     ...(str("assistant_model") ? [{ key: "assistant_model", value: str("assistant_model") }] : []),
     // Lien de téléchargement de l'app mobile (page publique /telecharger).
     { key: "app_apk_url", value: str("app_apk_url") },
+    // Empreinte(s) de signature Android : alimente /.well-known/assetlinks.json,
+    // qui autorise les liens du site à s'ouvrir dans l'application.
+    { key: "android_cert_sha256", value: str("android_cert_sha256") },
     ...(moderationPrompt ? [{ key: "ia_moderation_prompt", value: moderationPrompt }] : []),
   ]
 

@@ -174,6 +174,17 @@ export default async function ParametresPage({ searchParams }: PageProps) {
             <input name="app_apk_url" type="url" defaultValue={get("app_apk_url")}
               placeholder="https://…/inaya-immo.apk" className={field} />
           </div>
+          <div>
+            <label className={label}>Empreinte de signature Android (SHA-256)</label>
+            <input name="android_cert_sha256" defaultValue={get("android_cert_sha256")}
+              placeholder="AA:BB:CC:… (plusieurs séparées par des virgules)" className={field} />
+            <p className="text-[11px] text-gray-500 mt-1 leading-relaxed">
+              Permet aux liens <strong>inaya.ci/biens/…</strong> d&apos;ouvrir directement
+              l&apos;application. À copier depuis Play Console → Configuration → Intégrité de
+              l&apos;application → <em>Certificat de la clé de signature de l&apos;application</em>.
+              Tant qu&apos;elle est vide, les liens continuent d&apos;ouvrir le site.
+            </p>
+          </div>
         </section>
 
         {/* Section suivi automatique des leads */}
