@@ -165,6 +165,7 @@ export async function runMatchingForProperty(propertyId: string): Promise<number
         userId: req.user_id, contactTel: req.contact_telephone,
         propertyTitre: property.titre, quartier: property.quartier,
         propertyId, requestId: req.id, type: m.type,
+        prix: property.prix, typeOffre: property.type_offre,
       })
       await db.from("matches").update({ statut: "notifie", notifie_le: new Date().toISOString() } as never)
         .eq("property_id", propertyId).eq("search_request_id", req.id)
@@ -210,6 +211,7 @@ export async function runMatchingForRequest(requestId: string, opts: { notify?: 
         userId: request.user_id, contactTel: request.contact_telephone,
         propertyTitre: property.titre, quartier: property.quartier,
         propertyId: property.id, requestId, type: m.type,
+        prix: property.prix, typeOffre: property.type_offre,
       })
       await db.from("matches").update({ statut: "notifie", notifie_le: new Date().toISOString() } as never)
         .eq("property_id", property.id).eq("search_request_id", requestId)

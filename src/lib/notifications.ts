@@ -180,11 +180,19 @@ export async function notifySearcher(args: {
   propertyId: string
   requestId: string
   type: "exacte" | "similaire"
+  /** Le prix est l'information la plus attendue : sans lui le message oblige à ouvrir le lien. */
+  prix?: number | null
+  typeOffre?: string | null
 }): Promise<void> {
   const db = createAdminClient()
   const lieu = args.quartier ? ` à ${args.quartier}` : ""
   const titreCourt = clampTitre(args.propertyTitre)
-  const intro = args.type === "exacte" ? "Un bien correspond à votre recherche" : "Un bien similaire à votre recherche est disponible"
+  const intro = args.type === "exacte" ? "Un bien correspond à votre recherche" : "Un bien similaire est disponible"
+  const suffixePrix = args.typeOffre === "residence_meublee" ? " /nuit"
+    : args.typeOffre === "location" ? " /mois" : ""
+  const lignePrix = args.prix && args.prix > 0
+    ? `${args.prix.toLocaleString("fr-FR")} FCFA${suffixePrix}`
+    : "Prix sur demande"
   const url = absoluteUrl(`/biens/${args.propertyId}`)
 
   // Jeton d'arrêt PROPRE À CETTE recherche : le numéro court « 820 » si la colonne
@@ -223,7 +231,15 @@ export async function notifySearcher(args: {
 
   // Version courte pour le SMS : un SMS se paie au segment de 160 caractères,
   // et les trois lignes du message WhatsApp en feraient trois.
-  const texteSms = `Inaya Immo : ${intro.toLowerCase()} — « ${titreCourt} »${lieu}. ${url} · Stop : ${stopUrl}`
+  // Un SMS se paie au segment de 160 caracteres : pas d'emoji (chaque emoji fait
+  // basculer le message en Unicode, qui tombe a 70 caracteres par segment).
+  const texteSms = [
+    `INAYA IMMO - ${intro}`,
+    `${titreCourt}${lieu}`,
+    lignePrix,
+    `Voir : ${url}`,
+    `Stop : ${stopUrl}`,
+  ].join("\n")
 
   /**
    * Numéro ivoirien → SMS depuis notre propre ligne. Renvoie true si le message
