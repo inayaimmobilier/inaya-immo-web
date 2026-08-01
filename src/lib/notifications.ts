@@ -288,8 +288,12 @@ export async function notifySearcher(args: {
 // Notifications liées à une demande de visite (WhatsApp vers un numéro précis).
 // ---------------------------------------------------------------------------
 
-/** Envoie une notification WhatsApp à un numéro de téléphone donné. */
-async function notifyPhone(args: {
+/**
+ * Envoie une notification WhatsApp à un numéro de téléphone donné.
+ * Exportée : c'est le seul chemin pour joindre un contact ANONYME (la plupart
+ * des demandes n'ont pas de compte, et `notifyUser` n'écrit rien sans `userId`).
+ */
+export async function notifyPhone(args: {
   telephone: string | null | undefined
   type: string
   titre: string

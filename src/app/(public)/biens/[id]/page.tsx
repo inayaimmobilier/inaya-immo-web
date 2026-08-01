@@ -190,6 +190,15 @@ export default async function BienDetailPage({ params }: PageProps) {
     },
     ...(property.surface != null && { additionalProperty: [{ "@type": "PropertyValue", name: "Surface", value: `${property.surface} m²` }] }),
     areaServed: { "@type": "City", name: property.ville || "Bouaké" },
+    // Position du QUARTIER (jamais l'adresse exacte, que nous ne publions pas).
+    // Elle suffit à rattacher l'annonce à un secteur dans les résultats locaux.
+    ...((property as unknown as { latitude?: number | null; longitude?: number | null }).latitude != null && {
+      geo: {
+        "@type": "GeoCoordinates",
+        latitude: (property as unknown as { latitude: number }).latitude,
+        longitude: (property as unknown as { longitude: number }).longitude,
+      },
+    }),
   }
 
   return (

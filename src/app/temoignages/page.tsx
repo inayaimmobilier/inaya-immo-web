@@ -2,6 +2,7 @@ import Navbar from "@/components/shared/Navbar"
 import { Star } from "lucide-react"
 import { getPublishedTestimonials } from "@/lib/testimonials"
 import { formatRelativeDate } from "@/lib/utils"
+import { SITE_NAME, absoluteUrl } from "@/lib/site"
 import TestimonialForm from "./TestimonialForm"
 
 export const dynamic = "force-dynamic"
@@ -23,8 +24,26 @@ function Stars({ note, size = "w-4 h-4" }: { note: number; size?: string }) {
 export default async function TemoignagesPage() {
   const { items, average, count } = await getPublishedTestimonials()
 
+  // Note agrégée : c'est elle qui fait apparaître les étoiles sous le lien dans
+  // les résultats Google. Omise s'il n'y a aucun avis — annoncer une note sans
+  // avis serait faux.
+  const jsonLd = count > 0 ? {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    name: SITE_NAME,
+    url: absoluteUrl("/"),
+    aggregateRating: {
+      "@type": "AggregateRating",
+      ratingValue: average, bestRating: 5, worstRating: 1, ratingCount: count,
+    },
+  } : null
+
   return (
     <>
+      {jsonLd && (
+        <script type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
+      )}
       <Navbar />
       <main className="min-h-screen bg-gray-50">
         <div className="bg-white border-b border-gray-100">

@@ -37,6 +37,14 @@ export async function setLeadStatut(leadId: string, statut: string): Promise<Res
     .single()
   const lb = leadBefore as { agent_id: string | null; contact_nom: string | null; property_id: string; properties: { titre: string } | { titre: string }[] | null } | null
 
+  // Affaire conclue → on demande son avis au client. C'est le seul moment où il
+  // vient d'obtenir ce qu'il cherchait ; deux avis seulement figuraient sur le
+  // site faute d'avoir jamais posé la question.
+  if (statut === "conclu") {
+    const { requestReviewForLead } = await import("@/lib/review-request")
+    await requestReviewForLead(leadId).catch(() => false)
+  }
+
   const patch: Record<string, unknown> = { statut }
   // Première prise en charge → on enregistre l'agent et l'horodatage.
   if (statut === "en_traitement") {
