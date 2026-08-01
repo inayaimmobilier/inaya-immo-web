@@ -90,6 +90,8 @@ export async function saveSettings(form: FormData): Promise<ActionResult> {
     // Empreinte(s) de signature Android : alimente /.well-known/assetlinks.json,
     // qui autorise les liens du site à s'ouvrir dans l'application.
     { key: "android_cert_sha256", value: str("android_cert_sha256") },
+    // Team ID Apple : alimente /.well-known/apple-app-site-association.
+    { key: "apple_team_id", value: str("apple_team_id") },
     ...(moderationPrompt ? [{ key: "ia_moderation_prompt", value: moderationPrompt }] : []),
   ]
 

@@ -185,6 +185,16 @@ export default async function ParametresPage({ searchParams }: PageProps) {
               Tant qu&apos;elle est vide, les liens continuent d&apos;ouvrir le site.
             </p>
           </div>
+          <div>
+            <label className={label}>Identifiant d&apos;équipe Apple (Team ID)</label>
+            <input name="apple_team_id" defaultValue={get("apple_team_id")}
+              placeholder="ABCDE12345" className={field} />
+            <p className="text-[11px] text-gray-500 mt-1 leading-relaxed">
+              Même rôle que ci-dessus, pour iPhone. À copier depuis
+              developer.apple.com → Membership. Requis seulement le jour où
+              l&apos;application sera publiée sur l&apos;App Store.
+            </p>
+          </div>
         </section>
 
         {/* Section suivi automatique des leads */}
