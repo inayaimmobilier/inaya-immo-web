@@ -85,6 +85,10 @@ export default async function AdminResidencesPage({ searchParams }: PageProps) {
           <Sofa className="w-6 h-6 text-teal-600" /> Résidences meublées
         </h1>
         <p className="text-sm text-gray-500 mt-0.5">Gestion des résidences, des réservations et des commissions.</p>
+        <a href="/admin/residences/prospection"
+          className="inline-flex items-center gap-1.5 mt-3 text-sm font-semibold text-teal-700 hover:text-teal-800">
+          Trouver de nouveaux meublés à convertir →
+        </a>
       </div>
 
       {/* Vue d'ensemble */}

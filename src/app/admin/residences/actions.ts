@@ -89,3 +89,36 @@ export async function setDisponibilite(propertyId: string, disponible: boolean):
   revalidatePath("/admin/residences")
   return { ok: true }
 }
+
+/**
+ * Convertit une annonce ordinaire en RÉSIDENCE MEUBLÉE.
+ * Le tarif reste celui saisi par l'annonceur ; on ne devine pas un prix à la
+ * nuitée à partir d'un loyer mensuel, ce serait afficher un montant faux. La
+ * période est posée à « mois » par défaut : l'agent l'ajustera après accord
+ * avec le propriétaire.
+ */
+export async function convertirEnMeublee(propertyId: string): Promise<Result> {
+  if (!(await staffRole())) return { ok: false, error: "Action réservée au staff." }
+  const admin = createAdminClient()
+
+  const { data } = await admin.from("properties")
+    .select("id, type_offre").eq("id", propertyId).maybeSingle()
+  const p = data as { type_offre: string } | null
+  if (!p) return { ok: false, error: "Annonce introuvable." }
+  if (p.type_offre === "residence_meublee") return { ok: true }
+
+  let { error } = await admin.from("properties").update({
+    type_offre: "residence_meublee", meuble: true, tarif_periode: "mois", disponible: true,
+  } as never).eq("id", propertyId)
+  if (error?.code === "42703") {
+    // Colonnes récentes absentes → conversion minimale, l'essentiel est le type.
+    const retry = await admin.from("properties")
+      .update({ type_offre: "residence_meublee", meuble: true } as never).eq("id", propertyId)
+    error = retry.error
+  }
+  if (error) { console.error("INAYA-PROSP-020", error.message); return { ok: false, error: "Conversion impossible." } }
+
+  revalidatePath("/admin/residences")
+  revalidatePath("/admin/residences/prospection")
+  return { ok: true }
+}
