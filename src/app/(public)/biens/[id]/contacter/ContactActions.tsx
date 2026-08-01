@@ -1,9 +1,10 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { MessageCircle, Phone, Loader2 } from "lucide-react"
 import { createContactLead } from "./actions"
 import { fbTrack } from "@/lib/analytics"
+import { getVisitorContact, recordContactClick, setVisitorContact } from "@/lib/contact-memory"
 
 // Normalise un numéro ivoirien pour wa.me / tel: (format international sans « + »).
 function intlNumber(raw: string): string {
@@ -29,6 +30,14 @@ export default function ContactActions({
   const [loading, setLoading] = useState<null | "wa" | "call">(null)
   const [error, setError] = useState<string | null>(null)
 
+  // Coordonnées déjà laissées sur cet appareil : on ne les redemande pas.
+  useEffect(() => {
+    const c = getVisitorContact()
+    if (!c) return
+    setNom(n => n || c.nom)
+    setTel(t => t || c.telephone)
+  }, [])
+
   const num = phone ? intlNumber(phone) : ""
   const full = `${msg}\n\n${listingUrl}`
   const wa = phone ? `https://wa.me/${num}?text=${encodeURIComponent(full)}` : null
@@ -45,8 +54,13 @@ export default function ContactActions({
     // Conversion Pixel Meta : prise de contact.
     fbTrack("Contact", { content_category: kind === "wa" ? "whatsapp" : "call", content_ids: [propertyId] })
 
-    if (nom.trim() && tel.replace(/\D/g, "").length >= 8) {
+    const identifie = !!nom.trim() && tel.replace(/\D/g, "").length >= 8
+    // Le clic est enregistré dans TOUS les cas — c'est lui qui mesure l'intérêt réel.
+    recordContactClick(propertyId, kind === "wa" ? "whatsapp" : "appel", identifie)
+
+    if (identifie) {
       setLoading(kind)
+      setVisitorContact({ nom: nom.trim(), telephone: tel.trim() })
       try { await createContactLead({ propertyId, nom, telephone: tel, message: msg }) } catch { /* best-effort */ }
     }
     // Navigation (pas window.open → évite le blocage de pop-up) : ouvre WhatsApp

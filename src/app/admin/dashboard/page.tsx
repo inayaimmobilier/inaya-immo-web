@@ -1,10 +1,37 @@
 import { createClient, createAdminClient } from "@/lib/supabase/server"
-import { Home, MessageSquare, Wallet, Clock, AlertCircle, Eye, Users } from "lucide-react"
+import { Home, MessageSquare, Wallet, Clock, AlertCircle, Eye, Users, MessageCircle } from "lucide-react"
 import { formatPrix } from "@/lib/utils"
 import AutoRefresh from "@/components/shared/AutoRefresh"
 
 // Données temps réel (ingestion WhatsApp) : jamais de cache, toujours frais.
 export const dynamic = "force-dynamic"
+
+/**
+ * Prises de contact (clics WhatsApp / appel sur une annonce) sur 24 h / 7 j / 30 j,
+ * en distinguant celles où le visiteur a laissé son numéro. C'est le chaînon qui
+ * manquait entre « pages vues » et « demandes reçues ».
+ */
+async function getContactStats() {
+  const vide = { total: 0, identifies: 0 }
+  const empty = { j1: { ...vide }, j7: { ...vide }, j30: { ...vide } }
+  try {
+    const admin = createAdminClient()
+    const since = new Date(Date.now() - 30 * 86400_000).toISOString()
+    const { data, error } = await admin.from("contact_clicks")
+      .select("created_at,avec_contact")
+      .gte("created_at", since)
+      .order("created_at", { ascending: false })
+      .limit(1000)
+    if (error) { console.error("INAYA-STATS-CONTACTS", error.message); return empty }
+    const rows = (data ?? []) as { created_at: string; avec_contact: boolean }[]
+    const agg = (ms: number) => {
+      const cut = Date.now() - ms
+      const r = rows.filter(x => new Date(x.created_at).getTime() >= cut)
+      return { total: r.length, identifies: r.filter(x => x.avec_contact).length }
+    }
+    return { j1: agg(86400_000), j7: agg(7 * 86400_000), j30: agg(30 * 86400_000) }
+  } catch { return empty }
+}
 
 /**
  * Fréquentation du site (visiteurs uniques + pages vues) sur 24 h / 7 j / 30 j.
@@ -130,7 +157,9 @@ const STATUT_LABEL_DASH: Record<string, string> = {
 }
 
 export default async function DashboardPage() {
-  const [stats, visits] = await Promise.all([getDashboardStats(), getVisitStats()])
+  const [stats, visits, contacts] = await Promise.all([
+    getDashboardStats(), getVisitStats(), getContactStats(),
+  ])
 
   const kpis = [
     {
@@ -200,6 +229,25 @@ export default async function DashboardPage() {
               </p>
               <p className="text-xs text-gray-500 mt-1">{d.p.toLocaleString("fr-FR")} pages vues</p>
               <p className="text-[11px] text-gray-400 mt-0.5">{label}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Prises de contact : l'étape entre « regarder » et « demander ». */}
+        <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-3 gap-4">
+          {([
+            { label: "Aujourd'hui (24 h)", d: contacts.j1 },
+            { label: "7 derniers jours", d: contacts.j7 },
+            { label: "30 derniers jours", d: contacts.j30 },
+          ]).map(({ label, d }) => (
+            <div key={label} className="text-center">
+              <p className="text-2xl font-bold text-gray-900 flex items-center justify-center gap-1.5">
+                <MessageCircle className="w-5 h-5 text-green-600" /> {d.total.toLocaleString("fr-FR")}
+              </p>
+              <p className="text-xs text-gray-500 mt-1">
+                dont {d.identifies.toLocaleString("fr-FR")} avec numéro
+              </p>
+              <p className="text-[11px] text-gray-400 mt-0.5">contacts · {label}</p>
             </div>
           ))}
         </div>
