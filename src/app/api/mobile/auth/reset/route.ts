@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/server"
 import { verifyOtp } from "@/lib/otp"
 import { signMobileToken } from "@/lib/mobile-session"
 import { resolveAccount } from "@/lib/mobile-auth"
+import { cleIdentifiant, ipDe, limiteAtteinte, TROP_DE_TENTATIVES } from "@/lib/rate-limit"
 
 // ============================================================================
 // Mot de passe oublié — étape 2 : vérifie le code OTP puis fixe le nouveau mot
@@ -20,6 +21,13 @@ export async function POST(req: NextRequest) {
   if (!identifier) return NextResponse.json({ error: "Identifiant manquant." }, { status: 400 })
   if (code.length !== 6) return NextResponse.json({ error: "Le code doit comporter 6 chiffres." }, { status: 400 })
   if (password.length < 6) return NextResponse.json({ error: "Le mot de passe doit comporter au moins 6 caractères." }, { status: 400 })
+
+  // Second verrou, en amont des 5 essais autorisés par code : il empêche de
+  // redemander un code puis de recommencer indéfiniment.
+  if (limiteAtteinte(`reset:id:${cleIdentifiant(identifier)}`, 10, 15 * 60_000) ||
+      limiteAtteinte(`reset:ip:${ipDe(req)}`, 20, 15 * 60_000)) {
+    return NextResponse.json({ error: TROP_DE_TENTATIVES }, { status: 429 })
+  }
 
   const acc = await resolveAccount(identifier)
   if (!acc) return NextResponse.json({ error: "Aucun compte trouvé pour cet identifiant." }, { status: 404 })

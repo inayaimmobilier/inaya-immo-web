@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/server"
+import { ipDe, limiteAtteinte, TROP_DE_TENTATIVES } from "@/lib/rate-limit"
 import { signMobileToken } from "@/lib/mobile-session"
 import { synthEmail } from "@/lib/mobile-auth"
 import { checkBlacklist, BLOCKED_MESSAGE } from "@/lib/blacklist"
@@ -14,6 +15,11 @@ export const runtime = "nodejs"
 export async function POST(req: NextRequest) {
   let body: { nom?: string; telephone?: string; email?: string; password?: string; commune?: string }
   try { body = await req.json() } catch { return NextResponse.json({ error: "Requête invalide." }, { status: 400 }) }
+
+  // Sans plafond, on peut créer des comptes en masse depuis un script.
+  if (limiteAtteinte(`register:ip:${ipDe(req)}`, 5, 60 * 60_000)) {
+    return NextResponse.json({ error: TROP_DE_TENTATIVES }, { status: 429 })
+  }
 
   const nom = (body.nom ?? "").trim()
   const telephone = normalizePhone(body.telephone ?? "")

@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/server"
 import { signMobileToken } from "@/lib/mobile-session"
 import { resolveAccount, verifyPassword, isRealEmail } from "@/lib/mobile-auth"
 import { checkBlacklist, BLOCKED_MESSAGE } from "@/lib/blacklist"
+import { cleIdentifiant, ipDe, limiteAtteinte, TROP_DE_TENTATIVES } from "@/lib/rate-limit"
 
 // ============================================================================
 // Connexion mobile par MOT DE PASSE. Identifiant = téléphone (indicatif+numéro)
@@ -17,6 +18,15 @@ export async function POST(req: NextRequest) {
   const identifier = (body.identifier ?? "").trim()
   const password = body.password ?? ""
   if (!identifier || !password) return NextResponse.json({ error: "Identifiant et mot de passe requis." }, { status: 400 })
+
+  // Deux compteurs : par COMPTE visé (empêche d'essayer mille mots de passe sur
+  // un numéro donné, même en changeant d'adresse) et par ADRESSE (empêche de
+  // balayer beaucoup de comptes depuis un même point).
+  const fenetre = 10 * 60_000
+  if (limiteAtteinte(`login:id:${cleIdentifiant(identifier)}`, 8, fenetre) ||
+      limiteAtteinte(`login:ip:${ipDe(req)}`, 30, fenetre)) {
+    return NextResponse.json({ error: TROP_DE_TENTATIVES }, { status: 429 })
+  }
 
   const acc = await resolveAccount(identifier)
   if (!acc) return NextResponse.json({ error: "Identifiant ou mot de passe incorrect." }, { status: 401 })
