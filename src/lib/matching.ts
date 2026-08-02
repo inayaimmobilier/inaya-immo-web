@@ -61,6 +61,26 @@ function mayNotify(req: MatchableRequest, allowGroupAlerts: boolean): boolean {
 }
 
 /**
+ * La demande exprime-t-elle un besoin ASSEZ PRÉCIS pour être démarchée ?
+ *
+ * Une demande sans le moindre critère — ni quartier, ni budget, ni pièces —
+ * correspond à TOUT ce qui se publie. 35 numéros étaient dans ce cas : ils
+ * recevaient une alerte pour chaque annonce, présentée comme « correspond à
+ * votre recherche » alors qu'aucune recherche n'avait été formulée.
+ *
+ * Ces demandes restent enregistrées et leurs `matches` créés : un agent peut
+ * les rappeler pour préciser le besoin. C'est seulement l'alerte AUTOMATIQUE
+ * qu'on retient — démarcher quelqu'un sur tout le catalogue n'est pas un
+ * service, et c'est le plus sûr moyen de faire résilier.
+ */
+function demandeExploitable(r: MatchableRequest): boolean {
+  return (r.zones?.length ?? 0) > 0
+    || r.budget_max != null || r.budget_min != null
+    || r.nb_pieces_min != null || r.surface_min != null
+    || r.meuble === true
+}
+
+/**
  * Les demandes ingérées d'un groupe WhatsApp peuvent-elles être démarchées ?
  * Politique DG (2026-07-16) : OUI par défaut — on contacte tous les demandeurs.
  * `app_settings.alertes_groupe = false` reste un INTERRUPTEUR D'ARRÊT d'urgence
@@ -102,11 +122,24 @@ export function evaluateMatch(p: MatchableProperty, r: MatchableRequest): MatchS
   // (tolérant : accents + sous-chaîne) dans la ville, le quartier, le titre et la
   // description du bien. Ainsi la COMMUNE est bien prise en compte (avant : on ne
   // comparait qu'au quartier, en égalité stricte → commune ignorée).
+  //
+  // CRITÈRE BLOQUANT, et non plus une simple pénalité.
+  //
+  // Un −0.35 laissait 0.65, très au-dessus du seuil de 0.4 : une personne qui
+  // cherchait à Assoumankro recevait une alerte pour un bien à Laraba. Sur une
+  // annonce réelle, 294 des 379 alertes (78 %) partaient vers des gens ayant
+  // nommé un AUTRE quartier.
+  //
+  // Or le quartier est le critère le plus décisif de l'immobilier : celui qui
+  // le nomme dit aussi où il n'ira pas — proximité du travail, de l'école, de
+  // la famille. Le lui opposer n'est pas une approximation tolérable, c'est se
+  // tromper sur l'essentiel. La tolérance reste large côté correspondance
+  // (accents, sous-chaîne, commune incluse) : qui saisit « Bouaké » matche
+  // toute la ville.
   if (r.zones && r.zones.length > 0) {
     const hay = stripAccents(`${p.quartier ?? ""} ${p.ville ?? ""} ${p.titre ?? ""} ${p.description ?? ""}`)
     const zones = r.zones.map(stripAccents).filter(Boolean)
-    const hit = zones.some(z => hay.includes(z))
-    if (!hit) { score -= 0.35; soft++ }
+    if (zones.length > 0 && !zones.some(z => hay.includes(z))) return null
   }
   // Surface minimale
   if (r.surface_min != null && p.surface != null && p.surface < r.surface_min) { score -= 0.15; soft++ }
@@ -182,7 +215,7 @@ export async function runMatchingForProperty(propertyId: string): Promise<number
     // Alerte UNIQUEMENT les chercheurs consentis (plateforme). Les demandes de
     // groupe restent enregistrées (match créé) mais ne sont pas démarchées.
     const cle = destinataire(req)
-    if (mayNotify(req, allowGroup) && !dejaAlertes.has(cle)) {
+    if (mayNotify(req, allowGroup) && demandeExploitable(req) && !dejaAlertes.has(cle)) {
       dejaAlertes.add(cle)
       await notifySearcher({
         userId: req.user_id, contactTel: req.contact_telephone,
@@ -229,7 +262,7 @@ export async function runMatchingForRequest(requestId: string, opts: { notify?: 
     } as never)
     if (error) { if (error.code !== "23505") console.error("INAYA-MATCH-002", error.message); continue }
 
-    if (opts.notify && mayNotify(request, await groupAlertsEnabled(db))) {
+    if (opts.notify && mayNotify(request, await groupAlertsEnabled(db)) && demandeExploitable(request)) {
       await notifySearcher({
         userId: request.user_id, contactTel: request.contact_telephone,
         propertyTitre: property.titre, quartier: property.quartier,
