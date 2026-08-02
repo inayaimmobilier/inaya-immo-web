@@ -65,6 +65,20 @@ export async function GET(req: NextRequest) {
   const maintenant = new Date().toISOString()
 
   try {
+    // La pause doit VRAIMENT mettre en pause.
+    //
+    // `sms_gateway_active` ne bloquait que la mise en file : le téléphone
+    // continuait à vider ce qui s'y trouvait déjà. Un administrateur qui coupe
+    // la passerelle pour stopper un envoi en cours voyait donc les messages
+    // continuer de partir — un bouton d'arrêt qui n'arrête rien est pire que
+    // pas de bouton du tout.
+    const { data: actif } = await admin.from("app_settings")
+      .select("value").eq("key", "sms_gateway_active").maybeSingle()
+    const v = (actif as { value: unknown } | null)?.value
+    if (!(v === true || v === "true" || v === "1")) {
+      return NextResponse.json({ messages: [], pause: true })
+    }
+
     const verrou = await appareilAutorise(admin, deviceId)
     if (!verrou.ok) {
       return NextResponse.json({

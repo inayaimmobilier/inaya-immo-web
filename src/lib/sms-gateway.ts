@@ -61,6 +61,24 @@ export async function enfilerSms(args: {
   const type: TypeSms = args.type ?? "notification"
   try {
     const admin = createAdminClient()
+
+    // DERNIER REMPART contre l'envoi répété.
+    //
+    // Un même message au même numéro n'a aucune valeur la deuxième fois : il
+    // coûte, il agace, et il fait passer l'agence pour un robot déréglé. La
+    // cause peut être n'importe où en amont — un matching trop large, un
+    // double clic, une reprise de traitement. On refuse donc ici, au seul
+    // point de passage obligé, plutôt que de compter sur chaque appelant.
+    //
+    // Fenêtre de 24 h : au-delà, un rappel espacé redevient légitime.
+    const depuis = new Date(Date.now() - 24 * 3600_000).toISOString()
+    const { count } = await admin.from("sms_queue")
+      .select("id", { count: "exact", head: true })
+      .eq("telephone", numero)
+      .eq("message", texte)
+      .gte("created_at", depuis)
+    if ((count ?? 0) > 0) return true // déjà pris en charge : succès, pas échec
+
     const { error } = await admin.from("sms_queue").insert({
       telephone: numero,
       message: texte,

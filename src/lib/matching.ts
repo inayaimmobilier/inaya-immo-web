@@ -146,10 +146,31 @@ export async function runMatchingForProperty(propertyId: string): Promise<number
   const already = new Set((existing ?? []).map(m => (m as { search_request_id: string }).search_request_id))
   const allowGroup = await groupAlertsEnabled(db)
 
+  // UNE personne, UNE alerte par annonce.
+  //
+  // Le garde-fou `already` ne dédoublonne que par DEMANDE. Or une même personne
+  // enregistre plusieurs recherches — jusqu'à 40 pour un même numéro en
+  // production. Une annonce publiée déclenchait donc une alerte PAR RECHERCHE :
+  // 40 SMS identiques au même client, en quelques secondes. Du démarchage
+  // agressif payé au message, et le plus sûr moyen de faire fuir précisément
+  // les clients les plus engagés.
+  //
+  // Les matches, eux, restent tous créés : ils servent au suivi et à
+  // l'historique. Seule l'ALERTE est unique par destinataire.
+  const dejaAlertes = new Set<string>()
+  const destinataire = (r: MatchableRequest) =>
+    (r.user_id ?? r.contact_telephone ?? "").replace(/\D/g, "") || r.id
+
+  // Les correspondances exactes d'abord : si une personne a une recherche
+  // exacte et cinq approchantes, elle doit recevoir « correspond à votre
+  // recherche », pas « un bien similaire ».
+  const parPertinence = requests
+    .map(r => ({ r, m: already.has(r.id) ? null : evaluateMatch(property, r) }))
+    .sort((a, b) => (b.m?.score ?? 0) - (a.m?.score ?? 0))
+
   let created = 0
-  for (const req of requests) {
+  for (const { r: req, m } of parPertinence) {
     if (already.has(req.id)) continue
-    const m = evaluateMatch(property, req)
     if (!m) continue
 
     const { error } = await db.from("matches").insert({
@@ -160,7 +181,9 @@ export async function runMatchingForProperty(propertyId: string): Promise<number
     created++
     // Alerte UNIQUEMENT les chercheurs consentis (plateforme). Les demandes de
     // groupe restent enregistrées (match créé) mais ne sont pas démarchées.
-    if (mayNotify(req, allowGroup)) {
+    const cle = destinataire(req)
+    if (mayNotify(req, allowGroup) && !dejaAlertes.has(cle)) {
+      dejaAlertes.add(cle)
       await notifySearcher({
         userId: req.user_id, contactTel: req.contact_telephone,
         propertyTitre: property.titre, quartier: property.quartier,
