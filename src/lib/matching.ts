@@ -11,6 +11,7 @@
 import { createAdminClient } from "@/lib/supabase/server"
 import { notifySearcher } from "@/lib/notifications"
 import { isSearchExpired } from "@/lib/alert-expiry"
+import { deduireCriteres } from "@/lib/demande-criteres"
 import type { PropertyCat, PropertyType, MatchType } from "@/types/database"
 
 export interface MatchableProperty {
@@ -42,6 +43,8 @@ export interface MatchableRequest {
   surface_min: number | null
   nb_pieces_min: number | null
   meuble: boolean | null
+  /** Texte de la demande : seule source des critères quand les colonnes sont vides. */
+  description_libre?: string | null
   /** NULL = alerte permanente (client final) ; renseigné = fin de vie (pro). */
   expire_at?: string | null
 }
@@ -61,19 +64,6 @@ function mayNotify(req: MatchableRequest, allowGroupAlerts: boolean): boolean {
 }
 
 /**
- * La demande exprime-t-elle un besoin ASSEZ PRÉCIS pour être démarchée ?
- *
- * Une demande sans le moindre critère — ni quartier, ni budget, ni pièces —
- * correspond à TOUT ce qui se publie. 35 numéros étaient dans ce cas : ils
- * recevaient une alerte pour chaque annonce, présentée comme « correspond à
- * votre recherche » alors qu'aucune recherche n'avait été formulée.
- *
- * Ces demandes restent enregistrées et leurs `matches` créés : un agent peut
- * les rappeler pour préciser le besoin. C'est seulement l'alerte AUTOMATIQUE
- * qu'on retient — démarcher quelqu'un sur tout le catalogue n'est pas un
- * service, et c'est le plus sûr moyen de faire résilier.
- */
-/**
  * Sous-ensemble des champs qui font qu'une demande est exploitable. Volontairement
  * plus permissif que `MatchableRequest` : les écrans d'administration n'exposent
  * pas toujours `surface_min`, et exiger un champ absent obligerait à recopier la
@@ -88,6 +78,19 @@ export interface CriteresDemande {
   meuble: boolean | null
 }
 
+/**
+ * La demande exprime-t-elle un besoin ASSEZ PRÉCIS pour être démarchée ?
+ *
+ * Une demande sans le moindre critère — ni quartier, ni budget, ni pièces —
+ * correspond à TOUT ce qui se publie. 35 numéros étaient dans ce cas : ils
+ * recevaient une alerte pour chaque annonce, présentée comme « correspond à
+ * votre recherche » alors qu'aucune recherche n'avait été formulée.
+ *
+ * Ces demandes restent enregistrées et leurs `matches` créés : un agent peut
+ * les rappeler pour préciser le besoin. C'est seulement l'alerte AUTOMATIQUE
+ * qu'on retient — démarcher quelqu'un sur tout le catalogue n'est pas un
+ * service, et c'est le plus sûr moyen de faire résilier.
+ */
 export function demandeExploitable(r: CriteresDemande): boolean {
   return (r.zones?.length ?? 0) > 0
     || r.budget_max != null || r.budget_min != null
@@ -117,9 +120,18 @@ const round2 = (n: number) => Math.round(n * 100) / 100
  * Renvoie null si critère bloquant non respecté ou score trop faible.
  */
 export function evaluateMatch(p: MatchableProperty, r: MatchableRequest): MatchScore | null {
+  // Une colonne vide ne veut pas dire « tout convient » : elle veut dire que
+  // l'extraction n'a pas su remplir le champ. Le texte de la demande, lui, le
+  // dit presque toujours. Sans cette lecture, une personne réclamant « deux ou
+  // trois chambres salon » recevait des studios, et « non renseigné » servait
+  // de laissez-passer à toutes les catégories.
+  const deduits = deduireCriteres(r.description_libre)
+  const categories = r.categories?.length ? r.categories : deduits.categories
+  const typeOffre  = r.type_offre ?? deduits.typeOffre
+
   // Critères bloquants
-  if (r.type_offre && p.type_offre !== r.type_offre) return null
-  if (r.categories && r.categories.length > 0 && !r.categories.includes(p.categorie)) return null
+  if (typeOffre && p.type_offre !== typeOffre) return null
+  if (categories && categories.length > 0 && !categories.includes(p.categorie)) return null
 
   let score = 1
   let soft = 0

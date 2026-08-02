@@ -208,8 +208,15 @@ export async function notifySearcher(args: {
   // `reference` existe (migration 041), sinon l'UUID de la requête — qui fonctionne
   // SANS migration et garantit qu'on arrête bien CETTE recherche (jamais une autre).
   // Fini le « R77 pour tout le monde » : chaque alerte a son propre lien d'arrêt.
-  const { data: reqRow } = await db.from("search_requests").select("reference").eq("id", args.requestId).maybeSingle()
+  const [{ data: reqRow }, { data: propRow }] = await Promise.all([
+    db.from("search_requests").select("reference").eq("id", args.requestId).maybeSingle(),
+    db.from("properties").select("reference").eq("id", args.propertyId).maybeSingle(),
+  ])
   const reqRef = (reqRow as { reference: number | null } | null)?.reference ?? null
+  // Lien court /b/5335 quand la référence existe : 27 caractères au lieu de 69,
+  // et surtout une forme qui ne se confond plus avec le lien d'arrêt.
+  const propRef = (propRow as { reference: number | null } | null)?.reference ?? null
+  const urlCourte = propRef != null ? absoluteUrl(`/b/${propRef}`) : url
   const stopToken = reqRef != null ? String(reqRef) : args.requestId
   const stopUrl = absoluteUrl(`/a/stop/${stopToken}`)
 
