@@ -12,6 +12,8 @@ import { createAdminClient } from "@/lib/supabase/server"
 import { notifySearcher } from "@/lib/notifications"
 import { isSearchExpired } from "@/lib/alert-expiry"
 import { deduireCriteres } from "@/lib/demande-criteres"
+import { analyserDemande, type Vocabulaire } from "@/lib/demande-completude"
+import { chargerVocabulaireLieux } from "@/lib/vocabulaire-lieux"
 import type { PropertyCat, PropertyType, MatchType } from "@/types/database"
 
 export interface MatchableProperty {
@@ -45,6 +47,14 @@ export interface MatchableRequest {
   meuble: boolean | null
   /** Texte de la demande : seule source des critères quand les colonnes sont vides. */
   description_libre?: string | null
+  /** Commune, distincte des quartiers de `zones` (migration 054). */
+  commune?: string | null
+  /**
+   * `complete` | `a_valider` | `validee` | `rejetee` (migration 054).
+   * ABSENT tant que la migration n'est pas appliquée : on retombe alors sur la
+   * complétude calculée, qui applique la même règle sans la colonne.
+   */
+  statut_validation?: string | null
   /** NULL = alerte permanente (client final) ; renseigné = fin de vie (pro). */
   expire_at?: string | null
 }
@@ -76,6 +86,35 @@ export interface CriteresDemande {
   surface_min?: number | null
   nb_pieces_min: number | null
   meuble: boolean | null
+}
+
+/**
+ * La demande a-t-elle le droit de DÉCLENCHER une alerte ?
+ *
+ * Règle de la direction : on n'écrit à quelqu'un que si le bien répond
+ * réellement à ce qu'il cherche — ce qui suppose de savoir ce qu'il cherche.
+ * Une demande dont un critère clé reste indéterminé est enregistrée, mais
+ * n'envoie rien jusqu'à ce qu'un administrateur l'ait vérifiée et validée.
+ *
+ * Deux sources, dans cet ordre :
+ *  1. la colonne `statut_validation`, qui porte la décision HUMAINE ;
+ *  2. à défaut — colonne absente avant la migration 054 — la complétude
+ *     calculée, qui applique la même règle.
+ *
+ * Le doute profite au client : tout ce qui n'est pas explicitement autorisé
+ * reste muet.
+ */
+export function peutAlerter(r: MatchableRequest, vocab: Vocabulaire): boolean {
+  const etat = r.statut_validation
+  if (etat === "complete" || etat === "validee") return true
+  if (etat === "a_valider" || etat === "rejetee") return false
+
+  // Colonne absente : on tranche par le calcul.
+  return analyserDemande({
+    type_offre: r.type_offre, categories: r.categories, commune: r.commune,
+    zones: r.zones, budget_min: r.budget_min, budget_max: r.budget_max,
+    nb_pieces_min: r.nb_pieces_min, description_libre: r.description_libre,
+  }, vocab).complete
 }
 
 /**
@@ -217,6 +256,9 @@ export async function runMatchingForProperty(propertyId: string): Promise<number
   //
   // Les matches, eux, restent tous créés : ils servent au suivi et à
   // l'historique. Seule l'ALERTE est unique par destinataire.
+  // Chargé UNE fois pour toute l'annonce : la complétude est évaluée pour
+  // chaque demande, et relire le parc à chaque fois serait absurde.
+  const vocab = await chargerVocabulaireLieux()
   const dejaAlertes = new Set<string>()
   const destinataire = (r: MatchableRequest) =>
     (r.user_id ?? r.contact_telephone ?? "").replace(/\D/g, "") || r.id
@@ -242,7 +284,8 @@ export async function runMatchingForProperty(propertyId: string): Promise<number
     // Alerte UNIQUEMENT les chercheurs consentis (plateforme). Les demandes de
     // groupe restent enregistrées (match créé) mais ne sont pas démarchées.
     const cle = destinataire(req)
-    if (mayNotify(req, allowGroup) && demandeExploitable(req) && !dejaAlertes.has(cle)) {
+    if (mayNotify(req, allowGroup) && demandeExploitable(req)
+        && peutAlerter(req, vocab) && !dejaAlertes.has(cle)) {
       dejaAlertes.add(cle)
       await notifySearcher({
         userId: req.user_id, contactTel: req.contact_telephone,
@@ -289,7 +332,9 @@ export async function runMatchingForRequest(requestId: string, opts: { notify?: 
     } as never)
     if (error) { if (error.code !== "23505") console.error("INAYA-MATCH-002", error.message); continue }
 
-    if (opts.notify && mayNotify(request, await groupAlertsEnabled(db)) && demandeExploitable(request)) {
+    if (opts.notify && mayNotify(request, await groupAlertsEnabled(db))
+        && demandeExploitable(request)
+        && peutAlerter(request, await chargerVocabulaireLieux())) {
       await notifySearcher({
         userId: request.user_id, contactTel: request.contact_telephone,
         propertyTitre: property.titre, quartier: property.quartier,
