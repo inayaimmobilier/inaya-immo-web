@@ -5,6 +5,8 @@ import ChatWidget from "@/components/assistant/ChatWidget"
 import VisitTracker from "@/components/shared/VisitTracker"
 import MetaPixel from "@/components/shared/MetaPixel"
 import CookieConsent from "@/components/shared/CookieConsent"
+import AppDownloadBanner from "@/components/shared/AppDownloadBanner"
+import { getApkUrl } from "@/lib/app-apk"
 import { unstable_cache } from "next/cache"
 import { createAdminClient } from "@/lib/supabase/server"
 import { SITE_URL, SITE_NAME, SITE_DESCRIPTION, absoluteUrl } from "@/lib/site"
@@ -86,6 +88,9 @@ export default async function RootLayout({
   children: React.ReactNode
 }) {
   const metaPixelId = await getMetaPixelId()
+  // L'application n'est pas sur le Play Store : le site est le seul canal de
+  // distribution, la bannière est donc sur TOUTES les pages publiques.
+  const apkUrl = await getApkUrl()
   return (
     <html lang="fr" className={`${geist.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
@@ -96,6 +101,7 @@ export default async function RootLayout({
         <VisitTracker />
         <MetaPixel pixelId={metaPixelId} />
         <CookieConsent />
+        <AppDownloadBanner apkUrl={apkUrl ?? ""} />
       </body>
     </html>
   )

@@ -1,22 +1,12 @@
 import Link from "next/link"
 import { Smartphone, Download, ShieldCheck, Bell, Heart, Search } from "lucide-react"
-import { createAdminClient } from "@/lib/supabase/server"
+import { getApkUrl } from "@/lib/app-apk"
 
 export const metadata = {
   title: "Télécharger l'application Inaya Immo",
   description: "Installez l'application Inaya Immo sur votre téléphone Android : annonces vérifiées, alertes et assistant en direct.",
 }
 export const revalidate = 300
-
-/** URL de l'APK, réglable par l'admin (Paramètres → clé app_apk_url). */
-async function getApkUrl(): Promise<string | null> {
-  try {
-    const admin = createAdminClient()
-    const { data } = await admin.from("app_settings").select("value").eq("key", "app_apk_url").maybeSingle()
-    const v = (data as { value: unknown } | null)?.value
-    return typeof v === "string" && v.startsWith("http") ? v : null
-  } catch { return null }
-}
 
 const ATOUTS = [
   { icon: Search, titre: "Toutes les annonces", texte: "Location, vente, cession et résidences meublées — filtrées par commune, quartier, type et budget." },
