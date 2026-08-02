@@ -24,6 +24,39 @@ function jetonValide(req: NextRequest): boolean {
   return fourni === attendu
 }
 
+/**
+ * VERROU D'APPAREIL.
+ *
+ * Le jeton seul ne suffit pas : tout téléphone qui le détient vide la file. Or
+ * le numéro d'expéditeur vu par le destinataire est celui de la SIM de
+ * l'appareil qui émet. Deux téléphones actifs, et les messages se répartissent
+ * au hasard entre deux numéros — c'est exactement ce qui est arrivé : les SMS
+ * partaient d'une SIM Orange alors que le numéro de l'agence est sur MTN.
+ *
+ * Le premier appareil à interroger la file la revendique. Tout autre est
+ * refusé, avec un motif explicite plutôt qu'un silence. Pour changer de
+ * téléphone, l'administrateur remet `sms_gateway_device` à vide.
+ */
+async function appareilAutorise(
+  admin: ReturnType<typeof createAdminClient>,
+  deviceId: string,
+): Promise<{ ok: true } | { ok: false; titulaire: string }> {
+  const { data } = await admin.from("app_settings")
+    .select("value").eq("key", "sms_gateway_device").maybeSingle()
+
+  const brut = (data as { value: unknown } | null)?.value
+  const titulaire = typeof brut === "string" ? brut.trim() : ""
+
+  if (titulaire === deviceId) return { ok: true }
+  if (titulaire) return { ok: false, titulaire }
+
+  // Première prise : on inscrit l'appareil. `upsert` et non `insert` car la
+  // clé peut exister avec une valeur vide après une remise à zéro.
+  await admin.from("app_settings")
+    .upsert({ key: "sms_gateway_device", value: deviceId } as never, { onConflict: "key" })
+  return { ok: true }
+}
+
 export async function GET(req: NextRequest) {
   if (!jetonValide(req)) return NextResponse.json({ error: "non_autorise" }, { status: 401 })
 
@@ -32,6 +65,17 @@ export async function GET(req: NextRequest) {
   const maintenant = new Date().toISOString()
 
   try {
+    const verrou = await appareilAutorise(admin, deviceId)
+    if (!verrou.ok) {
+      return NextResponse.json({
+        error: "appareil_non_autorise",
+        message:
+          "Un autre téléphone assure déjà la passerelle. Désactivez-la ici, " +
+          "ou libérez l'appareil titulaire depuis l'administration Inaya.",
+        messages: [],
+      }, { status: 403 })
+    }
+
     // Les périmés ne partent jamais : une alerte « ce bien vient d'arriver »
     // envoyée le lendemain dessert plus qu'elle ne sert.
     await admin.from("sms_queue")

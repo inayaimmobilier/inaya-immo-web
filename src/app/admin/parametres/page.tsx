@@ -197,6 +197,47 @@ export default async function ParametresPage({ searchParams }: PageProps) {
           </div>
         </section>
 
+        {/*
+          Passerelle SMS. Deux réglages seulement, mais tous deux décisifs :
+          sans le premier aucune notification ne part en SMS, et le second
+          détermine DE QUEL NUMÉRO elles partent — celui de la carte SIM du
+          téléphone titulaire.
+        */}
+        <section className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3">
+          <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+            <Smartphone className="w-4 h-4 text-blue-600" /> Passerelle SMS (téléphone de l&apos;agence)
+          </h2>
+          <p className="text-xs text-gray-500 leading-relaxed">
+            Les notifications aux numéros ivoiriens partent par SMS depuis un téléphone
+            de l&apos;agence. Les codes de vérification, eux, restent sur WhatsApp.
+          </p>
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input type="checkbox" name="sms_gateway_active" value="true"
+              defaultChecked={String(settings.get("sms_gateway_active")) === "true"}
+              className="w-4 h-4 rounded" />
+            Activer l&apos;envoi par SMS
+          </label>
+
+          <div className="pt-2 border-t border-gray-100">
+            <label className={label}>Téléphone titulaire</label>
+            <div className="text-sm text-gray-900 font-mono">
+              {get("sms_gateway_device") || <span className="font-sans text-gray-500">aucun — le prochain téléphone qui se connecte devient titulaire</span>}
+            </div>
+            <label className="flex items-center gap-2 text-sm text-gray-700 mt-2">
+              <input type="checkbox" name="sms_gateway_device_reset" value="true" className="w-4 h-4 rounded" />
+              Libérer cet appareil
+            </label>
+            <p className="text-[11px] text-gray-500 mt-1.5 leading-relaxed">
+              Un seul téléphone à la fois peut servir la passerelle. Le numéro que voient
+              vos clients est celui de <strong>sa carte SIM</strong> : deux téléphones actifs,
+              et les messages partiraient tantôt d&apos;un numéro, tantôt de l&apos;autre.
+              Libérez l&apos;appareil pour confier la passerelle à un autre téléphone —
+              activez d&apos;abord la passerelle sur le nouveau, il la revendiquera à sa
+              première connexion.
+            </p>
+          </div>
+        </section>
+
         {/* Section suivi automatique des leads */}
         <section className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
           <div>

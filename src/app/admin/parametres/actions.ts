@@ -93,6 +93,15 @@ export async function saveSettings(form: FormData): Promise<ActionResult> {
     // Team ID Apple : alimente /.well-known/apple-app-site-association.
     { key: "apple_team_id", value: str("apple_team_id") },
     ...(moderationPrompt ? [{ key: "ia_moderation_prompt", value: moderationPrompt }] : []),
+    // Passerelle SMS : envoi actif, et téléphone titulaire.
+    { key: "sms_gateway_active", value: str("sms_gateway_active") === "true" },
+    // On n'écrit `sms_gateway_device` QUE pour le vider. L'attribution se fait
+    // à la première connexion d'un téléphone : la saisir à la main obligerait
+    // l'administrateur à connaître un identifiant technique qu'il n'a nulle
+    // part sous les yeux.
+    ...(str("sms_gateway_device_reset") === "true"
+      ? [{ key: "sms_gateway_device", value: "" }]
+      : []),
   ]
 
   for (const u of updates) {
