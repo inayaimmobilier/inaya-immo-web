@@ -6,7 +6,7 @@ import { useState } from "react"
 import {
   LayoutDashboard, Home, Users, MessageSquare, Wallet,
   Settings, ChevronLeft, ChevronRight, LogOut,
-  Bell, Smartphone, TrendingUp, MapPin, Megaphone, Sofa, Building2, HandCoins, Clock, Star, UserCircle, Bot, BellRing, ImagePlus, ShieldBan, Cross, BarChart3, Gauge
+  Bell, Smartphone, TrendingUp, MapPin, Megaphone, Sofa, Building2, HandCoins, Clock, Star, UserCircle, Bot, BellRing, ImagePlus, ShieldBan, Cross, BarChart3, Gauge, ShieldCheck
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -20,6 +20,11 @@ const NAV = [
   { href: "/admin/expiration",    icon: Clock,           label: "Durée des annonces", roles: ["super_admin","admin"] },
   { href: "/admin/leads",         icon: MessageSquare,   label: "Tâches / Leads",   roles: ["super_admin","admin","agent"] },
   { href: "/admin/recherches",    icon: BellRing,        label: "Recherches / Alertes", roles: ["super_admin","admin","moderateur","agent"] },
+  // Placée juste après les recherches : c'est la file d'attente de celles qui
+  // n'alertent personne tant qu'un humain n'y est pas passé. Agents exclus —
+  // valider engage l'agence sur des envois, ils créent les demandes sans
+  // décider des alertes.
+  { href: "/admin/validation",    icon: ShieldCheck,     label: "Demandes à valider", roles: ["super_admin","admin","moderateur"] },
   { href: "/admin/agents",        icon: TrendingUp,      label: "Agents",           roles: ["super_admin","admin"] },
   { href: "/admin/gestion",       icon: Building2,       label: "Gestion locative", roles: ["super_admin","admin","moderateur","comptable"] },
   { href: "/admin/apports",       icon: HandCoins,       label: "Apports",          roles: ["super_admin","admin","comptable"] },
