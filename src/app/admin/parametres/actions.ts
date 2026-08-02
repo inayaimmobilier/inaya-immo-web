@@ -95,6 +95,8 @@ export async function saveSettings(form: FormData): Promise<ActionResult> {
     ...(moderationPrompt ? [{ key: "ia_moderation_prompt", value: moderationPrompt }] : []),
     // Passerelle SMS : envoi actif, et téléphone titulaire.
     { key: "sms_gateway_active", value: str("sms_gateway_active") === "true" },
+    // Décoché par défaut : l'emoji double le nombre de segments facturés.
+    { key: "sms_emoji", value: str("sms_emoji") === "true" },
     // On n'écrit `sms_gateway_device` QUE pour le vider. L'attribution se fait
     // à la première connexion d'un téléphone : la saisir à la main obligerait
     // l'administrateur à connaître un identifiant technique qu'il n'a nulle

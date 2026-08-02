@@ -245,16 +245,44 @@ export async function notifySearcher(args: {
 
   const rows: Record<string, unknown>[] = []
 
-  // Version courte pour le SMS : un SMS se paie au segment de 160 caractères,
-  // et les trois lignes du message WhatsApp en feraient trois.
-  // Un SMS se paie au segment de 160 caracteres : pas d'emoji (chaque emoji fait
-  // basculer le message en Unicode, qui tombe a 70 caracteres par segment).
+  // Réglage « sms_emoji » — DÉFAUT : sans pictogramme.
+  //
+  // Le défaut d'un réglage qui coûte de l'argent doit être le moins cher : une
+  // clé absente, une base fraîche ou une lecture en échec ne doivent jamais
+  // doubler la facture à l'insu de l'agence. Seul un `true` explicite l'active.
+  let avecEmoji = false
+  try {
+    const { data } = await db.from("app_settings").select("value").eq("key", "sms_emoji").maybeSingle()
+    const v = (data as { value: unknown } | null)?.value
+    avecEmoji = v === true || v === "true" || v === "1"
+  } catch { avecEmoji = false }
+
+  // ── Mise en forme du SMS ──────────────────────────────────────────────────
+  //
+  // Les cinq lignes collées d'avant se lisaient comme un bloc, et les deux
+  // adresses se suivaient immédiatement : deux longues suites de caractères
+  // presque identiques à l'œil, au risque qu'on arrête ses alertes en croyant
+  // ouvrir l'annonce. On sépare donc en blocs — qui, quoi, où cliquer — avec
+  // une ligne vide entre chacun, DEUX avant le lien d'arrêt, lequel porte
+  // désormais une phrase entière plutôt qu'un « Stop : » ambigu.
+  //
+  // Le pictogramme, lui, se règle : il fait basculer le SMS en Unicode, soit 67
+  // caractères par segment facturé au lieu de 153 — une alerte passe de 2 à 4
+  // segments. La mise en forme ci-dessous est identique dans les deux cas ;
+  // c'est elle qui fait la lisibilité, pas le pictogramme.
   const texteSms = [
-    `INAYA IMMO - ${intro}`,
+    "INAYA IMMO",
+    intro,
+    "",
     `${titreCourt}${lieu}`,
     lignePrix,
-    `Voir : ${url}`,
-    `Stop : ${stopUrl}`,
+    "",
+    avecEmoji ? "👉 Voir le bien :" : "Voir le bien :",
+    urlCourte,
+    "",
+    "",
+    "Pour ne plus recevoir ces alertes :",
+    stopUrl,
   ].join("\n")
 
   /**

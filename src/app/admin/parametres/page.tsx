@@ -218,6 +218,27 @@ export default async function ParametresPage({ searchParams }: PageProps) {
             Activer l&apos;envoi par SMS
           </label>
 
+          {/*
+            Réglage à conséquence directe sur la facture, d'où le chiffre affiché
+            plutôt qu'un simple interrupteur : rien dans l'interface ne laisserait
+            deviner qu'un pictogramme double le prix d'un message.
+          */}
+          <div className="pt-2 border-t border-gray-100">
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input type="checkbox" name="sms_emoji" value="true"
+                defaultChecked={String(settings.get("sms_emoji")) === "true"}
+                className="w-4 h-4 rounded" />
+              Mettre un 👉 devant le lien de l&apos;annonce
+            </label>
+            <p className="text-[11px] text-gray-500 mt-1.5 leading-relaxed">
+              <strong>Double le coût de chaque SMS.</strong> Un seul pictogramme fait
+              basculer tout le message en Unicode : 67 caractères par segment facturé
+              au lieu de 153. Une alerte passe ainsi de 2 à 4 segments — sur 900
+              alertes, environ 1 800 segments de plus. Décoché, le message garde
+              exactement la même mise en forme, sans le pictogramme.
+            </p>
+          </div>
+
           <div className="pt-2 border-t border-gray-100">
             <label className={label}>Téléphone titulaire</label>
             <div className="text-sm text-gray-900 font-mono">
