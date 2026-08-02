@@ -185,8 +185,17 @@ export async function notifySearcher(args: {
   typeOffre?: string | null
 }): Promise<void> {
   const db = createAdminClient()
-  const lieu = args.quartier ? ` à ${args.quartier}` : ""
   const titreCourt = clampTitre(args.propertyTitre)
+  // Le quartier n'est ajouté que s'il ne figure PAS déjà dans le titre. Les
+  // annonces ingérées des groupes WhatsApp le portent presque toujours, d'où
+  // des alertes « à louer à Kokrenou à Kokrenou » — visible par le client, sur
+  // chaque message, et gratuitement fautif. Comparaison sans accents ni casse :
+  // « Nimbo » et « nimbo » sont le même quartier.
+  const sansAccents = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
+  const dejaDansTitre = args.quartier
+    ? sansAccents(titreCourt).includes(sansAccents(args.quartier))
+    : true
+  const lieu = args.quartier && !dejaDansTitre ? ` à ${args.quartier}` : ""
   const intro = args.type === "exacte" ? "Un bien correspond à votre recherche" : "Un bien similaire est disponible"
   const suffixePrix = args.typeOffre === "residence_meublee" ? " /nuit"
     : args.typeOffre === "location" ? " /mois" : ""
