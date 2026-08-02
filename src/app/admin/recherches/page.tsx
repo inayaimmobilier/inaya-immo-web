@@ -3,6 +3,10 @@ import Link from "next/link"
 import { createClient, createAdminClient } from "@/lib/supabase/server"
 import { Search, BellRing } from "lucide-react"
 import type { UserRole } from "@/types/database"
+// MÊME règle que le moteur d'alertes, importée et non recopiée : deux
+// définitions parallèles finiraient par diverger, et la liste montrerait
+// alors autre chose que ce que le moteur applique réellement.
+import { demandeExploitable as estExploitable, type CriteresDemande as CritereRow } from "@/lib/matching"
 import { getAlerteProTtl } from "@/lib/alert-expiry"
 import RecherchesManager, { type SearchRow } from "./RecherchesManager"
 
@@ -11,7 +15,7 @@ export const dynamic = "force-dynamic"
 
 const STAFF: UserRole[] = ["super_admin", "admin", "moderateur", "agent"]
 
-interface PageProps { searchParams: Promise<{ statut?: string; q?: string }> }
+interface PageProps { searchParams: Promise<{ statut?: string; q?: string; vue?: string }> }
 
 export default async function RecherchesPage({ searchParams }: PageProps) {
   const params = await searchParams
@@ -44,6 +48,15 @@ export default async function RecherchesPage({ searchParams }: PageProps) {
         .filter(Boolean).some(v => String(v).toLowerCase().includes(needle)))
   }
 
+  // Vue « à qualifier » : les demandes sans le moindre critère exploitable.
+  //
+  // Elles ne déclenchent plus d'alerte automatique — sans quartier, budget ni
+  // nombre de pièces, elles correspondent à TOUT ce qui se publie, et le client
+  // recevait un SMS par annonce. Mais ce sont de vrais prospects : les taire
+  // sans le dire les perdrait purement et simplement. Ils apparaissent donc
+  // ici, à rappeler pour préciser le besoin.
+  if (params.vue === "a_qualifier") raws = raws.filter(r => !estExploitable(r))
+
   const rows: SearchRow[] = raws.map(r => ({ ...r, expire_at: r.expire_at ?? null, hasAccount: !!r.user_id }))
 
   // Durées de vie configurées pour les alertes des profils professionnels
@@ -55,6 +68,12 @@ export default async function RecherchesPage({ searchParams }: PageProps) {
   const counts = { active: 0, satisfaite: 0, expiree: 0 } as Record<string, number>
   for (const s of (allStatuts ?? []) as { statut: string }[]) counts[s.statut] = (counts[s.statut] ?? 0) + 1
   const total = (allStatuts ?? []).length
+
+  // Décompte des demandes à qualifier — même règle que le moteur d'alertes.
+  const { data: actives } = await admin.from("search_requests")
+    .select("zones,budget_min,budget_max,surface_min,nb_pieces_min,meuble")
+    .eq("statut", "active").limit(2000)
+  const nAQualifier = ((actives ?? []) as CritereRow[]).filter(r => !estExploitable(r)).length
 
   const filters: { key: string; label: string; n: number }[] = [
     { key: "", label: "Toutes", n: total },
@@ -78,7 +97,7 @@ export default async function RecherchesPage({ searchParams }: PageProps) {
       {/* Filtres par statut */}
       <div className="flex items-center gap-2 flex-wrap">
         {filters.map(f => {
-          const active = (params.statut || "") === f.key
+          const active = (params.statut || "") === f.key && params.vue !== "a_qualifier"
           const href = `/admin/recherches${f.key ? `?statut=${f.key}` : ""}`
           return (
             <Link key={f.key || "all"} href={href}
@@ -88,7 +107,23 @@ export default async function RecherchesPage({ searchParams }: PageProps) {
             </Link>
           )
         })}
+        <Link href="/admin/recherches?statut=active&vue=a_qualifier"
+          className={`inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full border ${
+            params.vue === "a_qualifier"
+              ? "bg-amber-500 text-white border-amber-500"
+              : "bg-white text-amber-700 border-amber-200 hover:border-amber-400"}`}>
+          <BellRing className="w-3.5 h-3.5" /> À qualifier <span className="opacity-70">({nAQualifier})</span>
+        </Link>
       </div>
+
+      {params.vue === "a_qualifier" && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-xl px-4 py-3 leading-relaxed">
+          Ces demandes n&apos;indiquent <strong>ni quartier, ni budget, ni nombre de pièces</strong> : elles
+          correspondraient à toutes les annonces publiées. Elles ne déclenchent donc pas d&apos;alerte
+          automatique — le client recevrait un message par annonce. Rappelez-les pour préciser le besoin :
+          une seule information suffit à réactiver leurs alertes.
+        </div>
+      )}
 
       <RecherchesManager rows={rows} canDelete={canDelete} isAdmin={["super_admin", "admin"].includes(role)} ttl={ttl} />
     </div>

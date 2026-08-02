@@ -73,7 +73,22 @@ function mayNotify(req: MatchableRequest, allowGroupAlerts: boolean): boolean {
  * qu'on retient — démarcher quelqu'un sur tout le catalogue n'est pas un
  * service, et c'est le plus sûr moyen de faire résilier.
  */
-function demandeExploitable(r: MatchableRequest): boolean {
+/**
+ * Sous-ensemble des champs qui font qu'une demande est exploitable. Volontairement
+ * plus permissif que `MatchableRequest` : les écrans d'administration n'exposent
+ * pas toujours `surface_min`, et exiger un champ absent obligerait à recopier la
+ * règle au lieu de l'importer — la divergence commence toujours là.
+ */
+export interface CriteresDemande {
+  zones: string[] | null
+  budget_min: number | null
+  budget_max: number | null
+  surface_min?: number | null
+  nb_pieces_min: number | null
+  meuble: boolean | null
+}
+
+export function demandeExploitable(r: CriteresDemande): boolean {
   return (r.zones?.length ?? 0) > 0
     || r.budget_max != null || r.budget_min != null
     || r.nb_pieces_min != null || r.surface_min != null
