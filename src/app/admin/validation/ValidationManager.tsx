@@ -4,6 +4,7 @@ import { useState, useTransition } from "react"
 import { AlertTriangle, Check, RefreshCw, X, Wand2 } from "lucide-react"
 import { validerDemande, rejeterDemande, recalculerCompletude } from "./actions"
 import { LIBELLE_CRITERE } from "@/lib/demande-completude"
+import SelecteurLieux from "@/components/admin/SelecteurLieux"
 import type { PropertyCat, PropertyType } from "@/types/database"
 
 export interface DemandeAValider {
@@ -33,12 +34,11 @@ const champ = "w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:
 const label = "block text-[11px] font-medium text-gray-500 mb-1"
 
 export default function ValidationManager({
-  demandes, totalEnAttente, totalActives, communes,
+  demandes, totalEnAttente, totalActives,
 }: {
   demandes: DemandeAValider[]
   totalEnAttente: number
   totalActives: number
-  communes: string[]
 }) {
   const [ouverte, setOuverte] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
@@ -86,7 +86,7 @@ export default function ValidationManager({
           Aucune demande en attente de validation.
         </div>
       ) : demandes.map(d => (
-        <Carte key={d.id} d={d} communes={communes}
+        <Carte key={d.id} d={d}
           ouverte={ouverte === d.id}
           onBasculer={() => setOuverte(ouverte === d.id ? null : d.id)}
           onMessage={setMessage} />
@@ -102,17 +102,18 @@ export default function ValidationManager({
   )
 }
 
-function Carte({ d, communes, ouverte, onBasculer, onMessage }: {
+function Carte({ d, ouverte, onBasculer, onMessage }: {
   d: DemandeAValider
-  communes: string[]
   ouverte: boolean
   onBasculer: () => void
   onMessage: (m: string) => void
 }) {
   const [typeOffre, setTypeOffre] = useState<string>(d.propose.type_offre ?? "")
   const [cats, setCats] = useState<string[]>(d.propose.categories ?? [])
-  const [commune, setCommune] = useState(d.propose.commune ?? "")
-  const [zones, setZones] = useState((d.propose.zones ?? []).join(", "))
+  const [communes, setCommunes] = useState<string[]>(
+    d.propose.commune ? [d.propose.commune] : [],
+  )
+  const [zones, setZones] = useState<string[]>(d.propose.zones ?? [])
   const [budget, setBudget] = useState(d.propose.budget_max?.toString() ?? "")
   const [pieces, setPieces] = useState(d.propose.nb_pieces_min?.toString() ?? "")
   const [enCours, demarrer] = useTransition()
@@ -121,8 +122,8 @@ function Carte({ d, communes, ouverte, onBasculer, onMessage }: {
     const r = await validerDemande(d.id, {
       type_offre: (typeOffre || null) as PropertyType | null,
       categories: cats.length ? (cats as PropertyCat[]) : null,
-      commune: commune.trim() || null,
-      zones: zones.split(",").map(z => z.trim()).filter(Boolean),
+      communes,
+      zones,
       budget_max: budget.trim() ? Number(budget.replace(/\D/g, "")) : null,
       nb_pieces_min: pieces.trim() ? Number(pieces) : null,
     })
@@ -170,25 +171,21 @@ function Carte({ d, communes, ouverte, onBasculer, onMessage }: {
 
       {ouverte && (
         <div className="pt-3 border-t border-gray-100 space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className={label}>Type d&apos;annonce</label>
-              <select value={typeOffre} onChange={e => setTypeOffre(e.target.value)} className={champ}>
-                <option value="">— à préciser —</option>
-                <option value="location">Location</option>
-                <option value="vente">Vente</option>
-                <option value="residence_meublee">Résidence meublée</option>
-              </select>
-            </div>
-            <div>
-              <label className={label}>Commune</label>
-              <input list="communes-connues" value={commune} onChange={e => setCommune(e.target.value)}
-                placeholder="Bouaké, Yamoussoukro…" className={champ} />
-              <datalist id="communes-connues">
-                {communes.map(c => <option key={c} value={c} />)}
-              </datalist>
-            </div>
+          <div>
+            <label className={label}>Type d&apos;annonce</label>
+            <select value={typeOffre} onChange={e => setTypeOffre(e.target.value)} className={champ}>
+              <option value="">— à préciser —</option>
+              <option value="location">Location</option>
+              <option value="vente">Vente</option>
+              <option value="residence_meublee">Résidence meublée</option>
+            </select>
           </div>
+
+          {/* Communes et quartiers se choisissent dans le référentiel : saisis à
+              la main, « ahougnassou » et « Ahougnassou » cohabitaient dans une
+              même demande et le rapprochement les traitait comme deux lieux. */}
+          <SelecteurLieux communes={communes} quartiers={zones}
+            onChange={(c, q) => { setCommunes(c); setZones(q) }} />
 
           <div>
             <label className={label}>Type de bien</label>
@@ -208,12 +205,7 @@ function Carte({ d, communes, ouverte, onBasculer, onMessage }: {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="sm:col-span-1">
-              <label className={label}>Quartier(s), séparés par des virgules</label>
-              <input value={zones} onChange={e => setZones(e.target.value)}
-                placeholder="Air France, Kennedy" className={champ} />
-            </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className={label}>Budget (FCFA)</label>
               <input value={budget} onChange={e => setBudget(e.target.value)}

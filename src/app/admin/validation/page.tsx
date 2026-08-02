@@ -91,7 +91,6 @@ export default async function ValidationPage() {
         demandes={demandes}
         totalEnAttente={total ?? 0}
         totalActives={completes ?? 0}
-        communes={vocab.communes}
       />
     </div>
   )

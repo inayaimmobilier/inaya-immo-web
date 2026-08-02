@@ -35,7 +35,7 @@ async function exigerValidateur() {
 export interface CriteresValides {
   type_offre: PropertyType | null
   categories: PropertyCat[] | null
-  commune: string | null
+  communes: string[]
   zones: string[] | null
   budget_max: number | null
   nb_pieces_min: number | null
@@ -55,7 +55,7 @@ export async function validerDemande(id: string, c: CriteresValides): Promise<Re
   const manquants: string[] = []
   if (!c.type_offre) manquants.push("type_offre")
   if (!c.categories?.length) manquants.push("categorie")
-  if (!c.commune?.trim()) manquants.push("commune")
+  if (!c.communes?.length) manquants.push("commune")
   if (!c.zones?.length) manquants.push("quartier")
   if (c.budget_max == null) manquants.push("budget")
   if (c.categories?.some(x => x === "maison" || x === "appartement") && c.nb_pieces_min == null) {
@@ -69,10 +69,13 @@ export async function validerDemande(id: string, c: CriteresValides): Promise<Re
   }
 
   const admin = createAdminClient()
-  const { error } = await admin.from("search_requests").update({
+
+  const commun = {
     type_offre: c.type_offre,
     categories: c.categories,
-    commune: c.commune?.trim() || null,
+    // `commune` au singulier reste tenue à jour : du code la lit encore, et la
+    // laisser diverger ferait juger incomplète une demande pourtant validée.
+    commune: c.communes[0] ?? null,
     zones: c.zones,
     budget_max: c.budget_max,
     nb_pieces_min: c.nb_pieces_min,
@@ -80,7 +83,18 @@ export async function validerDemande(id: string, c: CriteresValides): Promise<Re
     criteres_manquants: null,
     validee_par: validateurId,
     validee_le: new Date().toISOString(),
-  } as never).eq("id", id)
+  }
+
+  // `communes` (pluriel) vient de la migration 055. Tant qu'elle n'est pas
+  // appliquée, la colonne n'existe pas et l'écriture échoue en 42703 — l'écran
+  // de validation serait alors inutilisable. On réessaie donc sans elle : le
+  // modérateur peut travailler dès aujourd'hui, la première commune est
+  // enregistrée, et le multi-commune s'active de lui-même après la migration.
+  let { error } = await admin.from("search_requests")
+    .update({ ...commun, communes: c.communes } as never).eq("id", id)
+  if (error && error.code === "42703") {
+    ({ error } = await admin.from("search_requests").update(commun as never).eq("id", id))
+  }
   if (error) return { ok: false, error: error.message }
 
   // Rattrapage : la demande a pu passer à côté d'annonces publiées pendant
