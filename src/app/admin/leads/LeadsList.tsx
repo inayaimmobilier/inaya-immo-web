@@ -61,7 +61,7 @@ export default function LeadsList({
     startTransition(async () => {
       const res = await deleteLeads(ids)
       if (res.ok) {
-        setMsg(`${res.count} lead(s) supprimé(s).`)
+        setMsg([`${res.count} lead(s) supprimé(s).`, res.message].filter(Boolean).join(" "))
         exitSelect()
         router.refresh()
       } else setMsg(res.error)
@@ -74,7 +74,7 @@ export default function LeadsList({
     startTransition(async () => {
       const res = await deleteAllLeads({ statut: statut || undefined, confirm: confirmWord })
       if (res.ok) {
-        setMsg(`${res.count} lead(s) supprimé(s).`)
+        setMsg([`${res.count} lead(s) supprimé(s).`, res.message].filter(Boolean).join(" "))
         setShowDeleteAll(false); setConfirmWord(""); exitSelect()
         router.refresh()
       } else setMsg(res.error)
