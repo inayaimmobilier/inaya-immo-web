@@ -19,6 +19,7 @@
 // ============================================================================
 import { NextResponse } from "next/server"
 import { createAdminClient, createClient } from "@/lib/supabase/server"
+import { userIdFromAuthHeader } from "@/lib/mobile-session"
 
 export const dynamic = "force-dynamic"
 
@@ -51,6 +52,10 @@ export async function POST(req: Request): Promise<NextResponse> {
     await rattacherLead(admin, {
       propertyId, voie, visiteur,
       clicId: (clic as { id: string } | null)?.id ?? null,
+      // L'APPLICATION MOBILE ne porte pas de cookie : elle s'authentifie par
+      // en-tête Bearer. Sans cette lecture, un contact depuis l'application
+      // produisait un lead anonyme alors qu'on connaît parfaitement la personne.
+      userIdMobile: userIdFromAuthHeader(req.headers.get("authorization")),
     })
     return NextResponse.json({ ok: true })
   } catch {
@@ -61,7 +66,10 @@ export async function POST(req: Request): Promise<NextResponse> {
 
 async function rattacherLead(
   admin: ReturnType<typeof createAdminClient>,
-  a: { propertyId: string; voie: "appel" | "whatsapp"; visiteur: string | null; clicId: string | null },
+  a: {
+    propertyId: string; voie: "appel" | "whatsapp"; visiteur: string | null
+    clicId: string | null; userIdMobile?: string | null
+  },
 ) {
   try {
     // MÊME VISITEUR, MÊME BIEN : on réutilise le lead existant. Sans cela,
@@ -91,10 +99,11 @@ async function rattacherLead(
     let clientId: string | null = null
     try {
       const { data: { user } } = await (await createClient()).auth.getUser()
-      if (user) {
-        clientId = user.id
+      const id = user?.id ?? a.userIdMobile ?? null
+      if (id) {
+        clientId = id
         const { data: p } = await admin.from("profiles")
-          .select("nom, telephone").eq("id", user.id).maybeSingle()
+          .select("nom, telephone").eq("id", id).maybeSingle()
         const prof = p as { nom: string | null; telephone: string | null } | null
         nom = prof?.nom ?? null
         tel = prof?.telephone ?? null
