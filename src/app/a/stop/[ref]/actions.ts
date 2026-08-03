@@ -1,6 +1,9 @@
 "use server"
 
+import { headers } from "next/headers"
 import { createAdminClient } from "@/lib/supabase/server"
+import { verifierJetonStop } from "@/lib/stop-token"
+import { limiteAtteinte } from "@/lib/rate-limit"
 
 type Res = { ok: true; already?: boolean } | { ok: false; error: string }
 
@@ -16,8 +19,24 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * chargement de la page (les robots d'aperçu de lien ne doivent rien désactiver).
  */
 export async function stopAlert(token: string): Promise<Res> {
-  const raw = String(token ?? "").trim()
-  if (!raw) return { ok: false, error: "Référence invalide." }
+  const brut = String(token ?? "").trim()
+  if (!brut) return { ok: false, error: "Référence invalide." }
+
+  // Jeton SIGNÉ : la signature prouve qu'on tient le lien reçu par SMS.
+  const { cible: raw, signe } = verifierJetonStop(brut)
+
+  // Jeton NON signé — les SMS déjà partis en contiennent, et un client doit
+  // toujours pouvoir se désabonner. Mais c'est aussi la voie qu'emprunterait
+  // une énumération de /a/stop/1, /2, /3… : on la limite donc par adresse.
+  // Cinq arrêts par heure suffisent largement à une personne réelle, et
+  // rendent inatteignables les centaines de recherches de la base.
+  if (!signe) {
+    const ip = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim() || "inconnue"
+    if (limiteAtteinte(`stop:${ip}`, 5, 60 * 60_000)) {
+      return { ok: false, error: "Trop de tentatives. Réessayez dans une heure." }
+    }
+  }
+
   const admin = createAdminClient()
 
   let req: { id: string; statut: string } | null = null

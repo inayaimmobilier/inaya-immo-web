@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { Pencil, X, Save, CheckCircle, XCircle, Clock, RefreshCw, Trash2 } from "lucide-react"
 import { updateProperty, changeStatut, deleteProperty } from "./actions"
 import { usePropertyTypes } from "@/hooks/usePropertyTypes"
+import ChoixVilleQuartier from "@/components/admin/ChoixVilleQuartier"
 
 const TYPE_OPTIONS = [
   { value: "location", label: "Location" },
@@ -215,11 +216,6 @@ export default function PropertyEditForm({ propertyId, initial }: Props) {
                 <input name="prix" type="number" defaultValue={initial.prix} required min={0}
                   className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-400 bg-gray-50" />
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Quartier</label>
-                <input name="quartier" defaultValue={initial.quartier ?? ""}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-400 bg-gray-50" />
-              </div>
             </div>
 
             {selectedCategorie === "terrain" && (
@@ -235,10 +231,16 @@ export default function PropertyEditForm({ propertyId, initial }: Props) {
               </div>
             )}
 
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Ville *</label>
-              <input name="ville" defaultValue={initial.ville}
-                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-400 bg-gray-50" />
+            {/* Ville et quartier viennent du référentiel : saisis à la main,
+                « Tollakouadiokro » et « Tolakouadiokro » devenaient deux lieux
+                distincts pour le rapprochement, et le bien n'atteignait jamais
+                la personne qui le cherchait. La liste des quartiers dépend de
+                la ville — « Kokrenou » existe dans deux communes. */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <ChoixVilleQuartier
+                villeInitiale={initial.ville}
+                quartierInitial={initial.quartier ?? ""}
+              />
             </div>
 
             <div>

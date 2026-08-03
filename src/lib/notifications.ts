@@ -7,6 +7,7 @@
 // ============================================================================
 
 import { createAdminClient } from "@/lib/supabase/server"
+import { jetonStop } from "@/lib/stop-token"
 import type { NotifCanal } from "@/types/database"
 import { sendSms } from "@/lib/sms"
 import { absoluteUrl } from "@/lib/site"
@@ -217,7 +218,9 @@ export async function notifySearcher(args: {
   // et surtout une forme qui ne se confond plus avec le lien d'arrêt.
   const propRef = (propRow as { reference: number | null } | null)?.reference ?? null
   const urlCourte = propRef != null ? absoluteUrl(`/b/${propRef}`) : url
-  const stopToken = reqRef != null ? String(reqRef) : args.requestId
+  // Jeton SIGNÉ : le numéro seul était séquentiel et figurait dans chaque SMS,
+  // si bien qu'une boucle sur /a/stop/1, /2, /3… désabonnait toute la base.
+  const stopToken = jetonStop(reqRef != null ? String(reqRef) : args.requestId)
   const stopUrl = absoluteUrl(`/a/stop/${stopToken}`)
 
   // Le lien du bien ET le lien d'arrêt sont DANS le texte (auto-cliquables par
