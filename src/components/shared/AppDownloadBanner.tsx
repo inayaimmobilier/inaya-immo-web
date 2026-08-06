@@ -33,6 +33,7 @@ export default function AppDownloadBanner({ apkUrl }: { apkUrl: string }) {
   const pathname = usePathname()
   const [visible, setVisible] = useState(false)
   const [iOS, setIOS] = useState(false)
+  const [vid, setVid] = useState("")
 
   useEffect(() => {
     // Lecture APRÈS le montage : `localStorage` n'existe pas au rendu serveur,
@@ -45,6 +46,8 @@ export default function AppDownloadBanner({ apkUrl }: { apkUrl: string }) {
     // visiteur doit savoir que l'application existe — mais on l'envoie vers la
     // page d'explication au lieu de lui servir un fichier inutilisable.
     setIOS(/iPad|iPhone|iPod/.test(navigator.userAgent))
+    // Identifiant de visite, pour distinguer téléchargements et personnes.
+    try { setVid(localStorage.getItem("inaya_vid") ?? "") } catch { /* sans effet */ }
     setVisible(true)
   }, [])
 
@@ -93,7 +96,9 @@ export default function AppDownloadBanner({ apkUrl }: { apkUrl: string }) {
           </Link>
         ) : (
           <a
-            href={apkUrl}
+            // On passe par /telecharger/apk : le lien direct partait sans
+            // laisser de trace, impossible de savoir si la bannière servait.
+            href={`/telecharger/apk${vid ? `?vid=${encodeURIComponent(vid)}` : ""}`}
             // `download` ne suffit pas sur un fichier servi par un autre
             // domaine : c'est l'en-tête du serveur qui décide. On garde
             // l'attribut pour le cas favorable, sans compter dessus.

@@ -1,5 +1,5 @@
 import { createClient, createAdminClient } from "@/lib/supabase/server"
-import { Home, MessageSquare, Wallet, Clock, AlertCircle, Eye, Users, MessageCircle } from "lucide-react"
+import { Home, MessageSquare, Wallet, Clock, AlertCircle, Eye, Users, MessageCircle, Smartphone } from "lucide-react"
 import { formatPrix } from "@/lib/utils"
 import AutoRefresh from "@/components/shared/AutoRefresh"
 
@@ -34,6 +34,33 @@ async function getContactStats() {
 }
 
 /**
+ * TÉLÉCHARGEMENTS de l'application depuis le site, sur 24 h / 7 j / 30 j.
+ *
+ * L'application n'étant pas sur le Play Store, le site est le seul canal de
+ * distribution : sans ce chiffre, impossible de savoir si la bannière sert à
+ * quelque chose. On compte les clics ET les personnes distinctes — dix clics
+ * du même visiteur ne font pas dix installations.
+ */
+async function getTelechargements() {
+  const vide = { j1: { c: 0, v: 0 }, j7: { c: 0, v: 0 }, j30: { c: 0, v: 0 } }
+  try {
+    const { data } = await createAdminClient().from("page_views")
+      .select("visitor_id, created_at")
+      .eq("path", "/telechargement-app")
+      .gte("created_at", new Date(Date.now() - 30 * 86400_000).toISOString())
+      .order("created_at", { ascending: false })
+      .range(0, 4999)
+    const lignes = (data ?? []) as { visitor_id: string | null; created_at: string }[]
+    const agg = (ms: number) => {
+      const seuil = Date.now() - ms
+      const dans = lignes.filter(l => new Date(l.created_at).getTime() >= seuil)
+      return { c: dans.length, v: new Set(dans.map(l => l.visitor_id ?? Math.random())).size }
+    }
+    return { j1: agg(86400_000), j7: agg(7 * 86400_000), j30: agg(30 * 86400_000) }
+  } catch { return vide }
+}
+
+/**
  * Fréquentation du site (visiteurs uniques + pages vues) sur 24 h / 7 j / 30 j.
  * Lecture via le client ADMIN (la table page_views est en RLS, aucune lecture
  * publique). Best-effort : table absente (migration 043) → tout à zéro.
@@ -57,6 +84,10 @@ async function getVisitStats() {
       const { data, error } = await admin.from("page_views")
         .select("visitor_id, created_at")
         .gte("created_at", since30)
+        // Le clic « Télécharger » est enregistré comme une vue de chemin
+        // dédié : l'inclure gonflerait la fréquentation d'une ligne par
+        // téléchargement, alors que ce n'est pas une page consultée.
+        .neq("path", "/telechargement-app")
         .order("created_at", { ascending: false })
         .range(page * PAGE, page * PAGE + PAGE - 1)
       if (error) { console.error("INAYA-STATS-VIEWS", error.message); break }
@@ -157,8 +188,8 @@ const STATUT_LABEL_DASH: Record<string, string> = {
 }
 
 export default async function DashboardPage() {
-  const [stats, visits, contacts] = await Promise.all([
-    getDashboardStats(), getVisitStats(), getContactStats(),
+  const [stats, visits, contacts, apk] = await Promise.all([
+    getDashboardStats(), getVisitStats(), getContactStats(), getTelechargements(),
   ])
 
   const kpis = [
@@ -229,6 +260,26 @@ export default async function DashboardPage() {
               </p>
               <p className="text-xs text-gray-500 mt-1">{d.p.toLocaleString("fr-FR")} pages vues</p>
               <p className="text-[11px] text-gray-400 mt-0.5">{label}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Téléchargements de l'application : le site est le seul canal de
+            distribution tant qu'elle n'est pas sur le Play Store. */}
+        <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-3 gap-4">
+          {([
+            { label: "Aujourd'hui (24 h)", d: apk.j1 },
+            { label: "7 derniers jours", d: apk.j7 },
+            { label: "30 derniers jours", d: apk.j30 },
+          ]).map(({ label, d }) => (
+            <div key={`apk-${label}`} className="text-center">
+              <p className="text-2xl font-bold text-gray-900 flex items-center justify-center gap-1.5">
+                <Smartphone className="w-5 h-5 text-emerald-500" /> {d.c.toLocaleString("fr-FR")}
+              </p>
+              <p className="text-xs text-gray-500 mt-1">
+                dont {d.v.toLocaleString("fr-FR")} personne{d.v > 1 ? "s" : ""}
+              </p>
+              <p className="text-[11px] text-gray-400 mt-0.5">téléchargements de l&apos;app · {label}</p>
             </div>
           ))}
         </div>

@@ -32,7 +32,7 @@ export default async function TelechargerPage() {
 
         <div className="mt-7">
           {apkUrl ? (
-            <a href={apkUrl}
+            <a href="/telecharger/apk"
               className="inline-flex items-center gap-2 bg-blue-700 hover:bg-blue-600 text-white font-bold px-7 py-4 rounded-xl transition-colors">
               <Download className="w-5 h-5" /> Télécharger pour Android
             </a>
