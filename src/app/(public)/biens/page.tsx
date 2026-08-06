@@ -1,4 +1,5 @@
 import { Suspense } from "react"
+import { TRANCHES_SURFACE, extraireSurfaceTerrain, usageTerrain } from "@/lib/terrain"
 import { createClient, createAdminClient } from "@/lib/supabase/server"
 import PropertyCard from "@/components/properties/PropertyCard"
 import PropertyFilters from "@/components/properties/PropertyFilters"
@@ -25,6 +26,9 @@ interface PageProps {
     prix_min?: string
     prix_max?: string
     pieces_min?: string
+    /** Terrain : tranche de surface et usage (voir lib/terrain). */
+    surface?: string
+    usage?: string
     q?: string
     page?: string
   }>
@@ -101,6 +105,8 @@ async function PropertiesList({ searchParams }: PageProps) {
     reference?: number | null
     quartier?: string | null; ville?: string | null; titre?: string | null; description?: string | null
     categorie?: string | null; prix?: number | null; nb_pieces?: number | null; zones?: { nom?: string | null } | null
+    /** Surface en m² — indispensable au filtrage des terrains. */
+    surface?: number | null
   }
   // Concatène tous les champs texte pertinents d'une annonce. Inclut le numéro
   // d'annonce (référence) pour permettre la recherche par « N°1234 » ou « 1234 ».
@@ -187,6 +193,27 @@ async function PropertiesList({ searchParams }: PageProps) {
   // inconnue (null) — sinon on génère de faux « aucune annonce ».
   if (params.prix_min)   { const n = Number(params.prix_min);   rows = rows.filter(r => r.prix == null || Number(r.prix) >= n) }
   if (params.pieces_min) { const n = Number(params.pieces_min); rows = rows.filter(r => r.nb_pieces == null || Number(r.nb_pieces) >= n) }
+
+  // ── Terrains : surface et usage ─────────────────────────────────────────
+  //
+  // La surface manque sur un terrain sur cinq. On la relit alors dans le texte
+  // (« 600 m² », « 3 hectares ») plutôt que d'écarter l'annonce : un bien exclu
+  // faute de donnée est un bien invendu.
+  if (params.surface) {
+    const t = TRANCHES_SURFACE.find(x => x.cle === params.surface)
+    if (t) rows = rows.filter(r => {
+      const s = r.surface ?? extraireSurfaceTerrain(`${r.titre ?? ""} ${r.description ?? ""}`)
+      if (s == null) return false
+      if (t.min != null && s < t.min) return false
+      if (t.max != null && s >= t.max) return false
+      return true
+    })
+  }
+
+  if (params.usage) {
+    rows = rows.filter(r =>
+      usageTerrain(`${r.titre ?? ""} ${r.description ?? ""}`, r.surface) === params.usage)
+  }
 
   // Budget : si AUCUNE annonce n'entre exactement dans le budget, on propose des
   // biens légèrement au-dessus (jusqu'à +25 %) au lieu d'un « aucune annonce ».

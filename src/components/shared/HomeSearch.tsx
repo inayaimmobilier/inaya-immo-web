@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { TRANCHES_SURFACE } from "@/lib/terrain"
 import { useRouter } from "next/navigation"
 import { Search } from "lucide-react"
 import MultiSelect from "@/components/shared/MultiSelect"
@@ -24,6 +25,13 @@ export default function HomeSearch({ villes }: { villes: Zone[] }) {
   const [selCats, setSelCats] = useState<string[]>([])
   const [cats, setCats] = useState(DEFAULT_CATS)
   const [piecesMin, setPiecesMin] = useState("")
+  // Filtres propres au TERRAIN : le nombre de pièces n'y veut rien dire. Ce
+  // sont la surface et l'usage qui séparent le lot à bâtir de 500 m² de la
+  // plantation de plusieurs hectares — deux marchés sans rapport, mesurés à
+  // 515 lots contre 72 parcelles d'un hectare et plus.
+  const [trancheSurface, setTrancheSurface] = useState("")
+  const [usage, setUsage] = useState("")
+  const terrainSeul = selCats.length > 0 && selCats.every(c => c === "terrain")
   const [prixMax, setPrixMax] = useState("")
 
   // Liste des types de biens gérée par l'admin (repli sur DEFAULT_CATS si indispo).
@@ -62,7 +70,9 @@ export default function HomeSearch({ villes }: { villes: Zone[] }) {
     if (villeNom) p.set("ville", villeNom)
     if (selQuartiers.length) p.set("quartier", selQuartiers.join(","))
     if (selCats.length) p.set("categorie", selCats.join(","))
-    if (piecesMin) p.set("pieces_min", piecesMin)
+    if (piecesMin && !terrainSeul) p.set("pieces_min", piecesMin)
+    if (terrainSeul && trancheSurface) p.set("surface", trancheSurface)
+    if (terrainSeul && usage) p.set("usage", usage)
     if (prixMax.trim()) p.set("prix_max", prixMax.trim())
     fbTrack("Search", { search_string: p.toString(), content_category: type || undefined })
     router.push(`/biens?${p.toString()}`)
@@ -112,13 +122,30 @@ export default function HomeSearch({ villes }: { villes: Zone[] }) {
             buttonClass="px-4 py-4 text-sm text-gray-600 bg-white"
           />
 
-          {/* Nombre de pièces */}
-          <select value={piecesMin} onChange={e => setPiecesMin(e.target.value)} className={selectCls}>
-            <option value="">Pièces (toutes)</option>
-            {[1, 2, 3, 4, 5].map(n => (
-              <option key={n} value={n}>{n} pièce{n > 1 ? "s" : ""}{n === 5 ? " ou +" : " min"}</option>
-            ))}
-          </select>
+          {/* Terrain : surface + usage. Sinon : nombre de pièces. */}
+          {terrainSeul ? (
+            <>
+              <select value={trancheSurface} onChange={e => setTrancheSurface(e.target.value)} className={selectCls}>
+                <option value="">Surface (toutes)</option>
+                {TRANCHES_SURFACE.map(t => (
+                  <option key={t.cle} value={t.cle}>{t.label}</option>
+                ))}
+              </select>
+              <select value={usage} onChange={e => setUsage(e.target.value)} className={selectCls}>
+                <option value="">Usage (tous)</option>
+                <option value="habitation">Lot à bâtir</option>
+                <option value="agricole">Agricole / plantation</option>
+                <option value="commercial">Commercial / industriel</option>
+              </select>
+            </>
+          ) : (
+            <select value={piecesMin} onChange={e => setPiecesMin(e.target.value)} className={selectCls}>
+              <option value="">Pièces (toutes)</option>
+              {[1, 2, 3, 4, 5].map(n => (
+                <option key={n} value={n}>{n} pièce{n > 1 ? "s" : ""}{n === 5 ? " ou +" : " min"}</option>
+              ))}
+            </select>
+          )}
         </div>
 
         {/* Budget (maximum uniquement) */}
