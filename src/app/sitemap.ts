@@ -32,13 +32,30 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   let listings: MetadataRoute.Sitemap = []
   try {
-    const { data } = await createAdminClient()
-      .from("properties")
-      .select("id, updated_at, validated_at, created_at")
-      .eq("statut", "publie")
-      .order("validated_at", { ascending: false })
-      .limit(5000)
-    listings = ((data ?? []) as { id: string; updated_at: string | null; validated_at: string | null; created_at: string }[])
+    // `.limit(5000)` ne lève PAS le plafond PostgREST de 1 000 lignes : sur
+    // 5 229 annonces publiées, le plan du site n'en déclarait que 1 000. Les
+    // quatre cinquièmes du catalogue n'étaient jamais soumis à Google — pour
+    // un site dont le trafic vient de la recherche, c'est autant de visiteurs
+    // qui ne pouvaient pas nous trouver. Seule la pagination par `range` lève
+    // ce plafond.
+    const admin = createAdminClient()
+    const PAS = 1000
+    const lignes: { id: string; updated_at: string | null; validated_at: string | null; created_at: string }[] = []
+    // 50 000 URL est la limite d'un plan de site : au-delà il faudrait un
+    // index de plans, ce qui n'a pas lieu d'être aujourd'hui.
+    for (let debut = 0; debut < 50_000; debut += PAS) {
+      const { data: lot } = await admin
+        .from("properties")
+        .select("id, updated_at, validated_at, created_at")
+        .eq("statut", "publie")
+        .order("validated_at", { ascending: false })
+        .order("id", { ascending: false })
+        .range(debut, debut + PAS - 1)
+      const arr = (lot ?? []) as typeof lignes
+      lignes.push(...arr)
+      if (arr.length < PAS) break
+    }
+    listings = lignes
       .map(p => ({
         url: `${SITE_URL}/biens/${p.id}`,
         lastModified: new Date(p.updated_at ?? p.validated_at ?? p.created_at),

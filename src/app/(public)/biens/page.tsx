@@ -77,30 +77,58 @@ async function PropertiesList({ searchParams }: PageProps) {
   // casse + multi-champs), car les annonces ingérées par l'IA utilisent des libellés
   // libres (« Bouake » sans accent, quartier dans le titre plutôt que la colonne…).
   // Les résidences meublées ont leur propre catalogue (/residences) → exclues d'ici.
-  let dataQ = supabase.from("properties")
-    .select("id,reference,titre,description,type_offre,categorie,prix,quartier,ville,statut,surface,nb_pieces,nb_chambres,nb_sdb,meuble,created_at,validated_at,property_media(url,type,ordre,thumbnail_url),zones(nom)")
-    .eq("statut", "publie")
-    .neq("type_offre", "residence_meublee")
-    .order("created_at", { ascending: false })
-    .limit(1000)
-
-  if (params.type) dataQ = dataQ.eq("type_offre", params.type as never)
-
-  // COMMUNE FILTRÉE EN BASE, et non plus en mémoire.
+  // ── LECTURE DE TOUT LE CATALOGUE, PAR PAGES ────────────────────────────────
   //
-  // La requête ne ramène que les 1 000 annonces les plus récentes (plafond
-  // PostgREST) avant de filtrer en JavaScript. Sur 5 229 annonces publiées,
-  // 81 % du parc était donc INVISIBLE à toute recherche : Sakassou affichait
-  // « aucun résultat » alors que six biens y existent, Cocody en montrait 6
-  // sur 16.
+  // La requête se limitait aux 1 000 annonces les plus récentes (plafond
+  // PostgREST, que `limit` ne relève pas) avant de filtrer en mémoire. Sur
+  // 5 229 annonces publiées, 4 229 n'étaient donc atteignables par AUCUNE
+  // recherche : Sakassou affichait « aucun résultat » alors que six biens y
+  // existent, Toumodi 1 sur 10.
   //
-  // Les noms viennent du référentiel `villes`, donc ils correspondent
-  // exactement à la colonne : une égalité stricte suffit, et elle ramène cette
-  // fois TOUTES les annonces de la commune.
+  // Le filtrage par catégorie et par quartier s'appuie sur le TEXTE des
+  // annonces (une « entrée couchée » classée « autre » est un logement) : le
+  // porter en SQL fidèlement serait fragile. On lit donc tout, mais SANS les
+  // médias — ils ne servent qu'aux douze annonces affichées, et les joindre
+  // sur 5 000 lignes multiplierait le volume transféré par dix.
+  const colonnes = "id,reference,titre,description,type_offre,categorie,prix,quartier,ville,statut,surface,nb_pieces,nb_chambres,nb_sdb,meuble,created_at,validated_at,zones(nom)"
+
   const villesDemandees = villeNom ? csv(villeNom).filter(Boolean) : []
-  if (villesDemandees.length > 0) dataQ = dataQ.in("ville", villesDemandees as never)
 
-  const { data, error } = await dataQ
+  // Le constructeur est RECONSTRUIT à chaque page : un même objet requête
+  // ré-`await`é après modification de sa plage est une source d'erreurs
+  // silencieuses. Le tri secondaire sur `id` rend l'ordre total — sans lui,
+  // deux annonces créées à la même seconde peuvent apparaître deux fois, ou
+  // disparaître, à la frontière entre deux pages.
+  const requete = () => {
+    let q = supabase.from("properties")
+      .select(colonnes)
+      .eq("statut", "publie")
+      .neq("type_offre", "residence_meublee")
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+    if (params.type) q = q.eq("type_offre", params.type as never)
+    // COMMUNE FILTRÉE EN BASE : les noms viennent du référentiel `villes`,
+    // donc ils correspondent exactement à la colonne.
+    if (villesDemandees.length > 0) q = q.in("ville", villesDemandees as never)
+    return q
+  }
+
+  // Pagination explicite : `range` est le SEUL moyen de dépasser le millier.
+  // La borne haute évite qu'un jour un bug de filtre ne déclenche une boucle
+  // sans fin : au-delà, mieux vaut un résultat tronqué qu'une page qui ne
+  // répond jamais.
+  const PAS = 1000
+  const PLAFOND = 20_000
+  const toutes: unknown[] = []
+  let error: { message: string } | null = null
+  for (let debut = 0; debut < PLAFOND; debut += PAS) {
+    const { data: lot, error: e } = await requete().range(debut, debut + PAS - 1)
+    if (e) { error = e; break }
+    const arr = (lot ?? []) as unknown[]
+    toutes.push(...arr)
+    if (arr.length < PAS) break
+  }
+  const data = toutes
   if (error) {
     console.error("INAYA-DB-001", error)
     return (
@@ -265,7 +293,27 @@ async function PropertiesList({ searchParams }: PageProps) {
 
   const total = rows.length
   const totalPages = Math.ceil(total / PER_PAGE)
-  const properties = rows.slice(from, to + 1) as unknown[]
+  const visibles = rows.slice(from, to + 1)
+
+  // ── MÉDIAS : chargés SEULEMENT pour les annonces affichées ─────────────────
+  //
+  // Les joindre à la requête principale les aurait ramenés pour les cinq mille
+  // annonces lues, alors que douze au plus sont montrées. Une seule requête
+  // supplémentaire, sur douze identifiants, coûte infiniment moins.
+  const medias = new Map<string, unknown[]>()
+  if (visibles.length > 0) {
+    const { data: m } = await supabase
+      .from("property_media")
+      .select("property_id,url,type,ordre,thumbnail_url")
+      .in("property_id", visibles.map(r => r.id))
+      .order("ordre")
+    for (const ligne of (m ?? []) as { property_id: string }[]) {
+      const liste = medias.get(ligne.property_id) ?? []
+      liste.push(ligne)
+      medias.set(ligne.property_id, liste)
+    }
+  }
+  const properties = visibles.map(r => ({ ...r, property_media: medias.get(r.id) ?? [] })) as unknown[]
 
   if (!properties || properties.length === 0) {
     return (
