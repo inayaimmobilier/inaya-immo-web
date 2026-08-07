@@ -174,6 +174,53 @@ export default async function ParametresPage({ searchParams }: PageProps) {
             <input name="app_apk_url" type="url" defaultValue={get("app_apk_url")}
               placeholder="https://…/inaya-immo.apk" className={field} />
           </div>
+          {/* ── Version publiée : ce qui déclenche la mise à jour sur les
+              téléphones déjà équipés. Hors Play Store, rien ne prévient
+              l'utilisateur qu'une correction existe : ces trois champs sont le
+              seul canal. ── */}
+          <div className="pt-3 mt-1 border-t border-gray-100 space-y-3">
+            <h3 className="text-xs font-semibold text-gray-900">Version publiée</h3>
+            <p className="text-[11px] text-gray-500 leading-relaxed">
+              À renseigner <strong>au moment où vous déposez un nouvel APK</strong>. Les
+              applications déjà installées comparent ce numéro au leur au démarrage et
+              proposent la mise à jour. Le numéro de build figure sur la page du build Expo
+              (« Version code »). Laissez à 0 pour ne rien proposer.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={label}>Numéro de build</label>
+                <input name="app_version_code" type="number" min={0}
+                  defaultValue={get("app_version_code")} placeholder="12" className={field} />
+              </div>
+              <div>
+                <label className={label}>Version affichée</label>
+                <input name="app_version_nom" defaultValue={get("app_version_nom")}
+                  placeholder="1.1.0" className={field} />
+              </div>
+            </div>
+            <div>
+              <label className={label}>Ce qu&apos;apporte la mise à jour</label>
+              <textarea name="app_version_notes" rows={3} defaultValue={get("app_version_notes")}
+                placeholder="Téléchargement des vidéos, lecture automatique, signalement d'annonce…"
+                className={field} />
+              <p className="text-[11px] text-gray-500 mt-1">
+                Affiché tel quel dans l&apos;application. Écrivez-le pour un client, pas pour un
+                développeur.
+              </p>
+            </div>
+            <label className="flex items-center gap-2 text-xs text-gray-700">
+              <input type="checkbox" name="app_version_forcee" value="true"
+                defaultChecked={get("app_version_forcee") === "true"} className="w-4 h-4 rounded" />
+              Mise à jour <strong>obligatoire</strong> — l&apos;écran ne peut pas être ignoré
+            </label>
+            <p className="text-[11px] text-amber-700 leading-relaxed">
+              À réserver aux cas où rester sur l&apos;ancienne version ne mène à rien de bon
+              (faille, rupture avec le serveur). Autrement, laissez le choix : une application
+              qu&apos;on ne peut plus ouvrir tant qu&apos;on n&apos;a pas 60 Mo de données
+              disponibles se fait désinstaller.
+            </p>
+          </div>
+
           <div>
             <label className={label}>Empreinte de signature Android (SHA-256)</label>
             <input name="android_cert_sha256" defaultValue={get("android_cert_sha256")}

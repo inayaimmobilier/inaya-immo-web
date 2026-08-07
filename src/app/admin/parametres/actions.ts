@@ -93,6 +93,13 @@ export async function saveSettings(form: FormData): Promise<ActionResult> {
     // Team ID Apple : alimente /.well-known/apple-app-site-association.
     { key: "apple_team_id", value: str("apple_team_id") },
     ...(moderationPrompt ? [{ key: "ia_moderation_prompt", value: moderationPrompt }] : []),
+    // VERSION DE L'APPLICATION MOBILE. Ces valeurs vivent en base et non dans
+    // le code : déposer un nouvel APK ne doit pas exiger un déploiement du
+    // site. L'application les lit au démarrage et propose la mise à jour.
+    { key: "app_version_code", value: str("app_version_code") },
+    { key: "app_version_nom", value: str("app_version_nom") },
+    { key: "app_version_notes", value: str("app_version_notes") },
+    { key: "app_version_forcee", value: str("app_version_forcee") === "true" ? "true" : "false" },
     // Passerelle SMS : envoi actif, et téléphone titulaire.
     { key: "sms_gateway_active", value: str("sms_gateway_active") === "true" },
     // Décoché par défaut : l'emoji double le nombre de segments facturés.
