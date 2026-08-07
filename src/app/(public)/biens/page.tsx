@@ -86,6 +86,20 @@ async function PropertiesList({ searchParams }: PageProps) {
 
   if (params.type) dataQ = dataQ.eq("type_offre", params.type as never)
 
+  // COMMUNE FILTRÉE EN BASE, et non plus en mémoire.
+  //
+  // La requête ne ramène que les 1 000 annonces les plus récentes (plafond
+  // PostgREST) avant de filtrer en JavaScript. Sur 5 229 annonces publiées,
+  // 81 % du parc était donc INVISIBLE à toute recherche : Sakassou affichait
+  // « aucun résultat » alors que six biens y existent, Cocody en montrait 6
+  // sur 16.
+  //
+  // Les noms viennent du référentiel `villes`, donc ils correspondent
+  // exactement à la colonne : une égalité stricte suffit, et elle ramène cette
+  // fois TOUTES les annonces de la commune.
+  const villesDemandees = villeNom ? csv(villeNom).filter(Boolean) : []
+  if (villesDemandees.length > 0) dataQ = dataQ.in("ville", villesDemandees as never)
+
   const { data, error } = await dataQ
   if (error) {
     console.error("INAYA-DB-001", error)
@@ -173,10 +187,10 @@ async function PropertiesList({ searchParams }: PageProps) {
     // Recall élevé : on cherche chaque libellé dans tous les champs (titre/description…).
     const qs = quartierNoms.map(norm)
     rows = rows.filter(r => { const h = hay(r); return qs.some(q => h.includes(q)) })
-  } else if (villeNom) {
+  } else if (villesDemandees.length > 0) {
     // PLUSIEURS communes possibles (« Bouaké,Yamoussoukro ») : on garde une
     // annonce si elle correspond à AU MOINS UNE.
-    const villes = csv(villeNom).map(norm).filter(Boolean)
+    const villes = villesDemandees.map(norm).filter(Boolean)
 
     // On compare la COLONNE `ville`, et elle seule.
     //
