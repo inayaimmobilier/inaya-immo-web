@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/server"
+import { extraireSurfaceTerrain, usageTerrain, TRANCHES_SURFACE } from "@/lib/terrain"
 import { searchProperties, type SearchArgs } from "@/lib/property-search"
 
 // ============================================================================
@@ -25,7 +26,9 @@ export async function GET(req: NextRequest) {
   const args: SearchArgs = {
     type_offre: p.get("type_offre") ?? undefined,
     categories: cats.length ? cats : undefined,
-    commune: p.get("commune") ?? undefined,
+    // `commune` accepte plusieurs valeurs séparées par des virgules, comme sur
+    // le site : chercher de part et d'autre d'une limite communale est courant.
+    communes: csv(p.get("commune")).length ? csv(p.get("commune")) : undefined,
     quartier: p.get("quartier") ?? undefined,
     prix_max: p.get("prix_max") ? Number(p.get("prix_max")) : undefined,
     prix_min: p.get("prix_min") ? Number(p.get("prix_min")) : undefined,
@@ -38,9 +41,41 @@ export async function GET(req: NextRequest) {
   }
   const limit = Math.min(Number(p.get("limit")) || 24, 200)
 
+  // ── TERRAINS : surface et usage, au lieu du nombre de pièces ───────────────
+  //
+  // « Terrain » recouvre deux marchés distincts : le lot à bâtir de 400 à
+  // 600 m² et la parcelle agricole de plusieurs hectares. Demander un nombre
+  // de pièces n'y a aucun sens ; c'est la surface et l'usage qui trient.
+  //
+  // Le filtre s'applique ICI et non dans l'application : appliqué après coup
+  // sur la page reçue, il ne verrait que les vingt-quatre premiers résultats.
+  const trancheDemandee = TRANCHES_SURFACE.find(t => t.cle === p.get("surface"))
+  const usageDemande = p.get("usage") ?? ""
+
   let rows
-  try { rows = await searchProperties(args, { limit }) }
+  try {
+    // Le tri par tranche écarte beaucoup d'annonces : on lit plus large pour
+    // qu'il reste de quoi remplir la page.
+    const brut = trancheDemandee || usageDemande ? Math.min(limit * 8, 400) : limit
+    rows = await searchProperties(args, { limit: brut })
+  }
   catch { return NextResponse.json({ error: "indisponible" }, { status: 503 }) }
+
+  if (trancheDemandee || usageDemande) {
+    rows = rows.filter(r => {
+      const texte = `${r.titre ?? ""} ${r.description ?? ""}`
+      // La colonne est vide sur un terrain sur cinq : on retombe alors sur la
+      // surface écrite dans l'annonce plutôt que d'écarter le bien.
+      const surface = r.surface ?? extraireSurfaceTerrain(texte)
+      if (trancheDemandee) {
+        if (surface == null) return false
+        if (trancheDemandee.min != null && surface < trancheDemandee.min) return false
+        if (trancheDemandee.max != null && surface >= trancheDemandee.max) return false
+      }
+      if (usageDemande && usageTerrain(texte, surface) !== usageDemande) return false
+      return true
+    }).slice(0, limit)
+  }
 
   // Couvertures : 1 requête pour tous les médias de la page.
   const ids = rows.map(r => r.id)

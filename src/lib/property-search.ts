@@ -26,6 +26,8 @@ export type SearchArgs = {
   categorie?: string
   categories?: string[]
   commune?: string
+  /** Plusieurs communes à la fois (le web et l'app le permettent désormais). */
+  communes?: string[]
   quartier?: string          // peut contenir plusieurs quartiers (« Nimbo, Air France »)
   quartiers?: string[]
   prix_min?: number
@@ -152,7 +154,13 @@ export async function searchProperties(args: SearchArgs, opts: { limit?: number 
   const kw = kwRaw ? stripAccents(kwRaw) : ""
   const isEntreeCouchee = !!kwRaw && ENTREE_COUCHEE_RE.test(kwRaw)
 
-  const communeWanted = args.commune ? stripAccents(args.commune.trim()) : ""
+  // Une ou PLUSIEURS communes : chercher dans deux quartiers voisins séparés
+  // par une limite communale est un besoin courant, et obliger à relancer la
+  // recherche commune par commune revenait à cacher la moitié du marché.
+  const communesVoulues = [
+    ...(args.communes ?? []),
+    ...(args.commune ? [args.commune] : []),
+  ].map(c => stripAccents(c.trim())).filter(Boolean)
 
   const scored: ScoredProperty[] = []
   for (const p of rows) {
@@ -161,16 +169,18 @@ export async function searchProperties(args: SearchArgs, opts: { limit?: number 
 
     // ── Commune (ville) ── filtre STRICT quand une commune est demandée ────────
     // Sélectionner « Yamoussoukro » ne doit JAMAIS renvoyer des biens de Bouaké.
-    if (communeWanted) {
+    if (communesVoulues.length) {
       const pVille = stripAccents(p.ville ?? "")
-      if (pVille) {
-        // Ville renseignée mais différente → hors commune, on exclut franchement.
-        if (pVille !== communeWanted && !pVille.includes(communeWanted) && !communeWanted.includes(pVille)) continue
-      } else {
+      const dansUne = communesVoulues.some(voulue => {
+        if (pVille) {
+          // Ville renseignée : elle doit correspondre à l'une des communes.
+          return pVille === voulue || pVille.includes(voulue) || voulue.includes(pVille)
+        }
         // Ville inconnue : on n'accepte que si la commune apparaît dans le texte.
         const hay = stripAccents(`${p.quartier ?? ""} ${p.titre} ${p.description ?? ""}`)
-        if (!hay.includes(communeWanted)) continue
-      }
+        return hay.includes(voulue)
+      })
+      if (!dansUne) continue
     }
 
     // ── Catégorie ────────────────────────────────────────────────────────────
