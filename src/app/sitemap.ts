@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next"
+import { lireTout } from "@/lib/lecture-complete"
 import { createAdminClient } from "@/lib/supabase/server"
 import { SITE_URL } from "@/lib/site"
 
@@ -39,22 +40,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     // qui ne pouvaient pas nous trouver. Seule la pagination par `range` lève
     // ce plafond.
     const admin = createAdminClient()
-    const PAS = 1000
-    const lignes: { id: string; updated_at: string | null; validated_at: string | null; created_at: string }[] = []
+    type Ligne = { id: string; updated_at: string | null; validated_at: string | null; created_at: string }
     // 50 000 URL est la limite d'un plan de site : au-delà il faudrait un
     // index de plans, ce qui n'a pas lieu d'être aujourd'hui.
-    for (let debut = 0; debut < 50_000; debut += PAS) {
-      const { data: lot } = await admin
-        .from("properties")
-        .select("id, updated_at, validated_at, created_at")
-        .eq("statut", "publie")
-        .order("validated_at", { ascending: false })
-        .order("id", { ascending: false })
-        .range(debut, debut + PAS - 1)
-      const arr = (lot ?? []) as typeof lignes
-      lignes.push(...arr)
-      if (arr.length < PAS) break
-    }
+    const { lignes } = await lireTout<Ligne>(() => admin
+      .from("properties")
+      .select("id, updated_at, validated_at, created_at", { count: "exact" })
+      .eq("statut", "publie")
+      .order("validated_at", { ascending: false })
+      .order("id", { ascending: false }), { plafond: 50_000 })
     listings = lignes
       .map(p => ({
         url: `${SITE_URL}/biens/${p.id}`,

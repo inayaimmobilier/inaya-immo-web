@@ -1,4 +1,5 @@
 import { Suspense } from "react"
+import { lireTout } from "@/lib/lecture-complete"
 import { TRANCHES_SURFACE, extraireSurfaceTerrain, usageTerrain } from "@/lib/terrain"
 import { createClient, createAdminClient } from "@/lib/supabase/server"
 import PropertyCard from "@/components/properties/PropertyCard"
@@ -101,7 +102,9 @@ async function PropertiesList({ searchParams }: PageProps) {
   // disparaître, à la frontière entre deux pages.
   const requete = () => {
     let q = supabase.from("properties")
-      .select(colonnes)
+      // `count: "exact"` renseigne le nombre total : sans lui, `lireTout` doit
+      // enchaîner les pages au lieu de les demander toutes d'un coup.
+      .select(colonnes, { count: "exact" })
       .eq("statut", "publie")
       .neq("type_offre", "residence_meublee")
       .order("created_at", { ascending: false })
@@ -113,22 +116,10 @@ async function PropertiesList({ searchParams }: PageProps) {
     return q
   }
 
-  // Pagination explicite : `range` est le SEUL moyen de dépasser le millier.
-  // La borne haute évite qu'un jour un bug de filtre ne déclenche une boucle
-  // sans fin : au-delà, mieux vaut un résultat tronqué qu'une page qui ne
-  // répond jamais.
-  const PAS = 1000
-  const PLAFOND = 20_000
-  const toutes: unknown[] = []
-  let error: { message: string } | null = null
-  for (let debut = 0; debut < PLAFOND; debut += PAS) {
-    const { data: lot, error: e } = await requete().range(debut, debut + PAS - 1)
-    if (e) { error = e; break }
-    const arr = (lot ?? []) as unknown[]
-    toutes.push(...arr)
-    if (arr.length < PAS) break
-  }
-  const data = toutes
+  // `range` est le SEUL moyen de dépasser le millier. Les pages sont demandées
+  // en parallèle (voir `lireTout`) : enchaînées, elles coûteraient une
+  // demi-seconde chacune sur une page que le visiteur attend.
+  const { lignes: data, error } = await lireTout<unknown>(requete)
   if (error) {
     console.error("INAYA-DB-001", error)
     return (

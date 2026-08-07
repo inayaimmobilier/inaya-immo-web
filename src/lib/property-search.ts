@@ -19,6 +19,7 @@
 // ============================================================================
 
 import { createAdminClient } from "@/lib/supabase/server"
+import { lireTout } from "@/lib/lecture-complete"
 
 export type SearchArgs = {
   type_offre?: string
@@ -119,15 +120,31 @@ export async function searchProperties(args: SearchArgs, opts: { limit?: number 
 
   // Pré-filtre LARGE : uniquement statut + univers (type_offre). Tout le reste est
   // marqué en mémoire pour ne jamais exclure une annonce à colonne nulle.
-  let q = admin.from("properties").select("*").eq("statut", "publie").limit(600)
-  if (wantResidence) q = q.eq("type_offre", "residence_meublee")
-  else if (args.type_offre) q = q.eq("type_offre", args.type_offre)
-  else q = q.neq("type_offre", "residence_meublee")
-  q = q.order("created_at", { ascending: false })
+  //
+  // Ce pré-filtre s'arrêtait aux 600 annonces les plus récentes. Comme TOUT le
+  // reste (commune, quartier, catégorie, mots-clés) est jugé en mémoire, ces
+  // 600 lignes étaient l'univers entier de la recherche : sur 5 229 annonces
+  // publiées, neuf sur dix étaient introuvables — pour l'application mobile
+  // comme pour les deux assistants, qui partagent ce moteur.
+  //
+  // On lit donc tout, en demandant le décompte exact pour réclamer les pages
+  // suivantes EN PARALLÈLE : deux allers-retours au lieu de six.
+  const construire = () => {
+    let q = admin.from("properties")
+      .select("*", { count: "exact" })
+      .eq("statut", "publie")
+    if (wantResidence) q = q.eq("type_offre", "residence_meublee")
+    else if (args.type_offre) q = q.eq("type_offre", args.type_offre)
+    else q = q.neq("type_offre", "residence_meublee")
+    // Tri TOTAL : `created_at` seul laisse deux annonces de la même seconde
+    // changer de place d'une page à l'autre, donc apparaître deux fois ou
+    // disparaître. `id` tranche.
+    return q.order("created_at", { ascending: false }).order("id", { ascending: false })
+  }
 
-  const { data, error } = await q
-  if (error) throw new Error(error.message)
-  const rows = (data ?? []) as RawProperty[]
+  const { lignes, error } = await lireTout<RawProperty>(construire)
+  if (error) throw new Error((error as { message?: string }).message ?? "lecture des annonces")
+  const rows = lignes
 
   const cats = args.categories?.length ? args.categories : (args.categorie ? [args.categorie] : [])
   const zones = splitZones(args).map(stripAccents).filter(Boolean)
