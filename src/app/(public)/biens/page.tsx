@@ -175,12 +175,23 @@ async function PropertiesList({ searchParams }: PageProps) {
     rows = rows.filter(r => { const h = hay(r); return qs.some(q => h.includes(q)) })
   } else if (villeNom) {
     // PLUSIEURS communes possibles (« Bouaké,Yamoussoukro ») : on garde une
-    // annonce si elle correspond à AU MOINS UNE. Chercher la chaîne entière
-    // ne trouverait évidemment rien.
+    // annonce si elle correspond à AU MOINS UNE.
     const villes = csv(villeNom).map(norm).filter(Boolean)
-    // On conserve aussi les annonces sans commune renseignée, pour éviter les
-    // faux négatifs sur un parc où la colonne n'est pas toujours remplie.
-    rows = rows.filter(r => { const h = hay(r); return villes.some(v => h.includes(v)) || !norm(r.ville) })
+
+    // On compare la COLONNE `ville`, et elle seule.
+    //
+    // La comparaison portait avant sur tout le texte de l'annonce, description
+    // comprise : « terrain sur l'axe Yamoussoukro-Sinfra » faisait remonter un
+    // bien de Bouaké dans une recherche à Yamoussoukro. C'est précisément
+    // l'erreur qu'on cherche à éliminer — proposer un bien d'une autre ville.
+    //
+    // L'ancien repli « garder les annonces sans commune » disparaît : mesuré
+    // sur les 5 229 annonces publiées, AUCUNE n'a de commune vide. Il ne
+    // protégeait plus de rien et laissait passer n'importe quoi.
+    rows = rows.filter(r => {
+      const v = norm(r.ville)
+      return v ? villes.some(x => v.includes(x) || x.includes(v)) : false
+    })
   }
   if (params.q) {
     const t = norm(params.q)
