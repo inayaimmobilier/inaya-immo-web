@@ -163,3 +163,76 @@ export async function retirerDeLaDiffusion(form: FormData): Promise<Res> {
   revalidatePath("/admin/credits")
   return { ok: true, message: "Ce numéro ne sera plus transmis." }
 }
+
+// ── RÉCLAMATIONS ───────────────────────────────────────────────────────────
+
+/**
+ * Tranche une réclamation.
+ *
+ * Le remboursement passe par le grand livre comme tout mouvement : il ne
+ * « défait » pas le débit d'origine, il ajoute une écriture inverse. Effacer
+ * l'écriture initiale ferait disparaître la trace de ce qui s'est réellement
+ * passé, et c'est précisément cette trace qui protège les deux parties.
+ *
+ * L'achat n'est PAS supprimé : le professionnel garde le contact qu'il a déjà
+ * lu. Le rembourser ET le lui reprendre serait une double peine ; le lui
+ * laisser sans rembourser serait un vol. On rembourse, et il garde.
+ */
+export async function trancherReclamation(form: FormData): Promise<Res> {
+  const auteur = await caissier()
+  if (!auteur) return { ok: false, error: "Action réservée à la direction." }
+
+  const id = String(form.get("id") || "")
+  const decision = String(form.get("decision") || "")
+  const note = String(form.get("note") || "").trim()
+  if (!id) return { ok: false, error: "Réclamation introuvable." }
+  if (decision !== "rembourser" && decision !== "refuser") {
+    return { ok: false, error: "Décision invalide." }
+  }
+  // Un refus non motivé est incontestable pour l'agence, donc inacceptable.
+  if (decision === "refuser" && !note) {
+    return { ok: false, error: "Un refus doit être motivé — l'agence doit pouvoir le comprendre." }
+  }
+
+  const admin = createAdminClient()
+  const { data } = await admin.from("contact_reclamations")
+    .select("id, statut, user_id, unlock_id").eq("id", id).maybeSingle()
+  const rec = data as unknown as { statut: string; user_id: string; unlock_id: string } | null
+  if (!rec) return { ok: false, error: "Réclamation introuvable." }
+  if (rec.statut !== "ouverte") return { ok: false, error: "Cette réclamation est déjà tranchée." }
+
+  if (decision === "rembourser") {
+    const { data: u } = await admin.from("contact_unlocks")
+      .select("cout, property_id").eq("id", rec.unlock_id).single()
+    const unlock = u as unknown as { cout: number; property_id: string }
+
+    if (unlock.cout > 0) {
+      const r = await mouvementAdmin({
+        userId: rec.user_id,
+        montant: unlock.cout,
+        type: "remboursement",
+        motif: `Réclamation ${id.slice(0, 8)} — ${note || "contact inexploitable"}`,
+        auteur,
+      })
+      if (!r.ok) return r
+    }
+  }
+
+  const { error } = await admin.from("contact_reclamations").update({
+    statut: decision === "rembourser" ? "remboursee" : "refusee",
+    decision_par: auteur,
+    decision_le: new Date().toISOString(),
+    decision_note: note || null,
+  } as never).eq("id", id)
+
+  if (error) {
+    // Le remboursement est déjà passé : on le dit franchement plutôt que de
+    // laisser croire que rien ne s'est produit, sans quoi un second clic
+    // rembourserait deux fois.
+    console.error("INAYA-CREDIT-012", error)
+    return { ok: false, error: "Le crédit a été rendu mais la réclamation n'a pas pu être close. Vérifiez avant de recommencer." }
+  }
+
+  revalidatePath("/admin/credits")
+  return { ok: true, message: decision === "rembourser" ? "Crédit rendu." : "Réclamation refusée." }
+}
