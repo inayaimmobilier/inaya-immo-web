@@ -1,19 +1,23 @@
 "use server"
 
 import { createAdminClient } from "@/lib/supabase/server"
+import { resoudreTache } from "@/lib/garde-tache"
 import { selectRule, computeCommission, type CommissionRule } from "@/lib/commissions"
 import type { PropertyCat, PropertyType } from "@/types/database"
 
 type Res = { ok: true; commission?: { inaya: number; agent: number } } | { ok: false; error: string }
 
-/** Retrouve le lead + agent à partir du numéro de tâche (ref). */
+/**
+ * Retrouve le lead + agent à partir du JETON de tâche.
+ *
+ * La résolution passe désormais par `resoudreTache`, qui vérifie la signature
+ * du jeton avant toute lecture. Sans elle, la référence à quatre caractères
+ * hexadécimaux s'énumérait en quelques minutes — et `concludeTask` crée une
+ * transaction avec commission.
+ */
 async function findLead(ref: string): Promise<{ leadId: string; agentId: string | null } | null> {
-  const admin = createAdminClient()
-  const { data } = await admin.from("lead_followups")
-    .select("lead_id, agent_id").eq("ref", ref.toUpperCase())
-    .order("envoye_le", { ascending: false }).limit(1).maybeSingle()
-  const f = data as { lead_id: string; agent_id: string | null } | null
-  return f ? { leadId: f.lead_id, agentId: f.agent_id } : null
+  const t = await resoudreTache(ref)
+  return t.ok ? { leadId: t.leadId, agentId: t.agentId } : null
 }
 
 /** Clôt les relances non répondues du lead (le scheduler ne re-relance plus). */

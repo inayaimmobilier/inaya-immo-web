@@ -1,6 +1,7 @@
 "use server"
 
 import { createAdminClient } from "@/lib/supabase/server"
+import { resoudreTache } from "@/lib/garde-tache"
 
 type Res = { ok: true } | { ok: false; error: string }
 
@@ -15,19 +16,16 @@ export async function normalizeRef(raw: string): Promise<string> {
  * `leads.agent_confirmation_le`, on clôt le followup en attente de confirmation
  * et on passe le lead en « en_traitement ».
  *
- * Sécurité : la référence courte joue le rôle de jeton (comme /t/{ref} et
- * /a/stop/{ref}) — elle n'est connue que de l'agent destinataire du message.
+ * Sécurité : le jeton porte une SIGNATURE (voir `jetonTache`). La référence
+ * courte seule ne prouvait rien — quatre caractères hexadécimaux dérivés de
+ * l'UUID du lead, donc devinables et énumérables.
  */
 export async function confirmTask(refRaw: string): Promise<Res> {
-  const refCode = await normalizeRef(refRaw)
-  if (refCode.length !== 4) return { ok: false, error: "Référence invalide." }
+  const t = await resoudreTache(refRaw)
+  if (!t.ok) return t
+  const leadId = t.leadId
 
   const admin = createAdminClient()
-  const { data: fu } = await admin.from("lead_followups")
-    .select("lead_id").eq("ref", refCode)
-    .order("envoye_le", { ascending: false }).limit(1).maybeSingle()
-  const leadId = (fu as { lead_id: string } | null)?.lead_id ?? null
-  if (!leadId) return { ok: false, error: "Tâche introuvable ou expirée." }
 
   const now = new Date().toISOString()
 

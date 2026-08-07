@@ -1,6 +1,7 @@
 "use server"
 
 import { createAdminClient } from "@/lib/supabase/server"
+import { resoudreTache } from "@/lib/garde-tache"
 import { notifyAgentAssignment } from "@/lib/notifications"
 
 type Res = { ok: true; agentNom: string } | { ok: false; error: string }
@@ -10,21 +11,17 @@ type Res = { ok: true; agentNom: string } | { ok: false; error: string }
  * Réassigne le lead, clôt le followup en attente, et notifie le nouvel agent
  * (même message d'assignation, avec ses propres boutons Confirmer / Transférer).
  *
- * Sécurité : la référence courte joue le rôle de jeton (comme /t/{ref}) — seul
- * l'agent destinataire du message la connaît.
+ * Sécurité : le jeton porte une SIGNATURE (voir `jetonTache`). Sans elle, la
+ * référence à quatre caractères s'énumérait — on pouvait réassigner le lead
+ * d'un agent à un autre sans être connecté.
  */
 export async function transferTask(refRaw: string, toAgentId: string): Promise<Res> {
-  const refCode = String(refRaw).replace(/[^a-z0-9]/gi, "").toUpperCase().slice(0, 4)
-  if (refCode.length !== 4) return { ok: false, error: "Référence invalide." }
   if (!toAgentId) return { ok: false, error: "Choisissez un agent." }
+  const t = await resoudreTache(refRaw)
+  if (!t.ok) return t
+  const leadId = t.leadId
 
   const admin = createAdminClient()
-
-  const { data: fu } = await admin.from("lead_followups")
-    .select("lead_id").eq("ref", refCode)
-    .order("envoye_le", { ascending: false }).limit(1).maybeSingle()
-  const leadId = (fu as { lead_id: string } | null)?.lead_id ?? null
-  if (!leadId) return { ok: false, error: "Tâche introuvable ou expirée." }
 
   const { data: leadData } = await admin.from("leads")
     .select("agent_id, contact_nom, property_id, statut, properties(titre)").eq("id", leadId).single()

@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/server"
 import { issueOtp } from "@/lib/otp"
 import { normalizePhone, phoneDigits, phoneMatchCandidates } from "@/lib/phone"
 import { checkBlacklist, BLOCKED_MESSAGE } from "@/lib/blacklist"
+import { cleIdentifiant, ipDe, limiteAtteinte, TROP_DE_TENTATIVES } from "@/lib/rate-limit"
 
 // ============================================================================
 // Auth mobile — étape 1 : demande d'un code OTP par téléphone.
@@ -36,6 +37,23 @@ export async function POST(req: NextRequest) {
   // Liste noire : refuse la demande de code si le numéro est bloqué.
   if ((await checkBlacklist({ telephone })).blocked) {
     return NextResponse.json({ error: BLOCKED_MESSAGE }, { status: 403 })
+  }
+
+  // ── LIMITATION DE DÉBIT ────────────────────────────────────────────────────
+  //
+  // Cet endpoint était le seul de la famille `auth` à n'en avoir aucune, alors
+  // qu'il est le plus coûteux : chaque appel envoie un message WhatsApp facturé
+  // ET crée un compte s'il n'en existe pas. Sans limite, une boucle arrose le
+  // téléphone d'un tiers de codes qu'il n'a pas demandés, et fabrique autant de
+  // comptes qu'elle invente de numéros.
+  //
+  // Deux compteurs, parce qu'ils couvrent deux abus différents : par NUMÉRO
+  // contre le harcèlement d'une personne précise, par ADRESSE contre la
+  // création de comptes en série.
+  const fenetre = 60 * 60_000
+  if (limiteAtteinte(`otp:tel:${cleIdentifiant(telephone)}`, 4, fenetre) ||
+      limiteAtteinte(`otp:ip:${ipDe(req)}`, 15, fenetre)) {
+    return NextResponse.json({ error: TROP_DE_TENTATIVES }, { status: 429 })
   }
 
   const admin = createAdminClient()

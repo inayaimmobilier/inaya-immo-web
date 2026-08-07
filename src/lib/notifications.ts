@@ -7,7 +7,7 @@
 // ============================================================================
 
 import { createAdminClient } from "@/lib/supabase/server"
-import { jetonStop } from "@/lib/stop-token"
+import { jetonStop, jetonTache } from "@/lib/stop-token"
 import type { NotifCanal } from "@/types/database"
 import { sendSms } from "@/lib/sms"
 import { absoluteUrl } from "@/lib/site"
@@ -604,6 +604,11 @@ export async function notifyAgentAssignment(args: {
   // /tr/{ref} (transférer). Déterministe depuis l'id du lead — la même que celle
   // du lead_followups créé plus bas.
   const ref = makeRef(args.leadId)
+  // Jeton SIGNÉ pour les liens des boutons. La référence nue est dérivée de
+  // l'UUID du lead (4 caractères hexadécimaux) : elle s'énumère et se devine.
+  // La base continue de stocker `ref` — c'est la clé de recherche ; seule
+  // l'URL porte la signature.
+  const refUrl = jetonTache(ref)
   // Contexte COURT = variable {{1}} du template WhatsApp `inaya_tache`. Un template
   // n'accepte pas un pavé de 600+ caractères : les détails complets restent sur la
   // page ouverte par les boutons.
@@ -627,7 +632,7 @@ export async function notifyAgentAssignment(args: {
       user_id: args.agentId, contact_telephone: tel,
       canal: "whatsapp" as NotifCanal, type: "tache_assignee",
       titre: "Inaya Immo — tâche assignée", contenu,
-      payload: { lead_id: args.leadId, ref, tache_contexte: tacheContexte }, lu: false, envoye: false,
+      payload: { lead_id: args.leadId, ref, ref_url: refUrl, tache_contexte: tacheContexte }, lu: false, envoye: false,
     },
     // 3. Telegram groupe staff interne
     {

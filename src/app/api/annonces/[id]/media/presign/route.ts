@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/server"
 import { presignPutUrl, publicUrlForKey, r2Configured } from "@/lib/r2"
+import { ipDe, limiteAtteinte } from "@/lib/rate-limit"
 
 // URLs présignées pour l'upload direct navigateur → R2 côté PUBLIC (propriétaire
 // juste après dépôt, sans compte). Mêmes garde-fous que l'upload public : annonce
@@ -33,6 +34,18 @@ async function assertUploadable(propertyId: string): Promise<string | null> {
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   if (!r2Configured()) return NextResponse.json({ error: "Stockage non configuré" }, { status: 503 })
   const { id: propertyId } = await params
+
+  // LIMITATION DE DÉBIT : l'accès repose sur l'identifiant de l'annonce, qui
+  // est PUBLIC (il figure dans l'URL /biens/{id}). Pendant les deux heures qui
+  // suivent un dépôt, n'importe qui peut donc demander des URL d'envoi et
+  // pousser vingt fichiers de 200 Mo, autant de fois qu'il le souhaite. Le
+  // compteur ne ferme pas la porte — elle doit rester ouverte au propriétaire
+  // sans compte — mais il borne la facture de stockage.
+  if (limiteAtteinte(`presign:${ipDe(req)}`, 30, 60 * 60_000) ||
+      limiteAtteinte(`presign:bien:${propertyId}`, 60, 60 * 60_000)) {
+    return NextResponse.json({ error: "Trop d'envois. Patientez quelques minutes." }, { status: 429 })
+  }
+
   const guard = await assertUploadable(propertyId)
   if (guard) return NextResponse.json({ error: guard }, { status: guard.includes("introuvable") ? 404 : 403 })
 

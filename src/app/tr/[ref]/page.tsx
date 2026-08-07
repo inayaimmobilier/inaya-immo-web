@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { createAdminClient } from "@/lib/supabase/server"
+import { resoudreTache } from "@/lib/garde-tache"
 import { Home, User } from "lucide-react"
 import TransferAgent from "./TransferAgent"
 
@@ -12,13 +13,15 @@ export const dynamic = "force-dynamic"
  */
 export default async function TransferTaskPage({ params }: { params: Promise<{ ref: string }> }) {
   const { ref } = await params
-  const refCode = String(ref).replace(/[^a-z0-9]/gi, "").toUpperCase().slice(0, 4)
+  // `jeton` est le paramètre BRUT, signature comprise : c'est lui qu'on
+  // retransmet au composant client, car l'action vérifie la signature. Ne
+  // passer que les quatre caractères reviendrait à rejeter chaque clic.
+  const jeton = String(ref)
+  const t = await resoudreTache(jeton)
+  const refCode = t.ok ? t.ref : ""
+  const leadId = t.ok ? t.leadId : null
   const admin = createAdminClient()
 
-  const { data: fu } = await admin.from("lead_followups")
-    .select("lead_id").eq("ref", refCode)
-    .order("envoye_le", { ascending: false }).limit(1).maybeSingle()
-  const leadId = (fu as { lead_id: string } | null)?.lead_id ?? null
 
   let lead: { statut: string; agent_id: string | null; contact_nom: string | null; prop: string | null; quartier: string | null } | null = null
   if (leadId) {
@@ -77,7 +80,7 @@ export default async function TransferTaskPage({ params }: { params: Promise<{ r
                   </p>
                 )}
               </div>
-              <TransferAgent refCode={refCode} agents={agents} closed={closed} />
+              <TransferAgent refCode={jeton} agents={agents} closed={closed} />
             </>
           )}
         </div>

@@ -1,8 +1,39 @@
 "use server"
 
-import { createAdminClient } from "@/lib/supabase/server"
+import { createClient, createAdminClient } from "@/lib/supabase/server"
 import { selectRule, computeCommission, type CommissionRule } from "@/lib/commissions"
 import type { PropertyCat } from "@/types/database"
+
+// ============================================================================
+// GARDE DE RÔLE — manquante jusqu'ici.
+//
+// Ces quatre actions lisent et MODIFIENT un lead via le rôle de service, qui
+// contourne les politiques de la base. Aucune ne vérifiait qui appelle. Le
+// filtre `/admin` du middleware protège la NAVIGATION vers la page, pas
+// l'action elle-même : une server action est un POST dont l'identifiant est
+// visible dans le paquet JavaScript envoyé au navigateur, et rien n'oblige à
+// le poster depuis une URL admin.
+//
+// Concrètement, avec l'identifiant d'un lead — qui circule déjà dans les liens
+// /rdv/ envoyés par WhatsApp — on lisait le nom et le téléphone du client, et
+// avec `applyChanges` on faisait avancer le lead : confirmation de prise en
+// charge, visite, montant de transaction.
+//
+// Les autres fichiers d'actions de l'administration vérifient tous le rôle ;
+// celui-ci avait été oublié, probablement parce qu'il sert un simulateur.
+// ============================================================================
+
+const ROLES_AUTORISES = ["super_admin", "admin", "moderateur"]
+
+/** Vrai si l'appelant est un membre du staff habilité au simulateur. */
+async function autorise(): Promise<boolean> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return false
+  const { data } = await supabase.from("profiles").select("role").eq("id", user.id).single()
+  const role = (data as { role: string } | null)?.role
+  return !!role && ROLES_AUTORISES.includes(role)
+}
 
 type OpType = "location" | "vente"
 const toOpType = (s: string | undefined | null): OpType => s === "location" ? "location" : "vente"
@@ -176,6 +207,7 @@ async function computeCommissionForLead(
 
 /** Charge le contexte du lead pour le test (admin seulement). */
 export async function getLeadTestContext(leadId: string): Promise<LeadTestContext | null> {
+  if (!await autorise()) return null
   const db = createAdminClient()
   type RawRow = { data: Record<string, unknown> | null; error: { code: string } | null }
   const r1 = await db
@@ -283,6 +315,12 @@ export async function processTestDigitReply(
   digit: string,
   applyChanges: boolean,
 ): Promise<TestStepResult> {
+  // Garde explicite, et pas seulement celle de `getLeadTestContext` : une
+  // action qui écrit doit porter sa propre vérification, faute de quoi un
+  // remaniement du code de lecture la désarme sans qu'on s'en aperçoive.
+  if (!await autorise()) {
+    return { confirmText: "Action réservée au staff.", statusBefore: "", statusAfter: "", done: true, error: "Non autorisé" }
+  }
   const db = createAdminClient()
   const ctx = await getLeadTestContext(leadId)
   if (!ctx) return { confirmText: "Lead introuvable.", statusBefore: "", statusAfter: "", done: true, error: "Lead introuvable" }
@@ -408,6 +446,9 @@ export async function processTestInputReply(
   inputType: "montant" | "rdv_date",
   applyChanges: boolean,
 ): Promise<TestStepResult> {
+  if (!await autorise()) {
+    return { confirmText: "Action réservée au staff.", statusBefore: "", statusAfter: "", done: true, error: "Non autorisé" }
+  }
   const db = createAdminClient()
   const ctx = await getLeadTestContext(leadId)
   if (!ctx) return { confirmText: "Lead introuvable.", statusBefore: "", statusAfter: "", done: true, error: "Lead introuvable" }
