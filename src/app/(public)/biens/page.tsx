@@ -174,10 +174,13 @@ async function PropertiesList({ searchParams }: PageProps) {
     const qs = quartierNoms.map(norm)
     rows = rows.filter(r => { const h = hay(r); return qs.some(q => h.includes(q)) })
   } else if (villeNom) {
-    // Commune seule : match sur la commune ; on garde aussi les annonces sans commune
-    // renseignée pour éviter les faux négatifs (dataset quasi mono-ville).
-    const t = norm(villeNom)
-    rows = rows.filter(r => hay(r).includes(t) || !norm(r.ville))
+    // PLUSIEURS communes possibles (« Bouaké,Yamoussoukro ») : on garde une
+    // annonce si elle correspond à AU MOINS UNE. Chercher la chaîne entière
+    // ne trouverait évidemment rien.
+    const villes = csv(villeNom).map(norm).filter(Boolean)
+    // On conserve aussi les annonces sans commune renseignée, pour éviter les
+    // faux négatifs sur un parc où la colonne n'est pas toujours remplie.
+    rows = rows.filter(r => { const h = hay(r); return villes.some(v => h.includes(v)) || !norm(r.ville) })
   }
   if (params.q) {
     const t = norm(params.q)
