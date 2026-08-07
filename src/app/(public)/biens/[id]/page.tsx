@@ -7,6 +7,7 @@ import QuickContactButtons from "./QuickContactButtons"
 import PixelViewContent from "@/components/shared/PixelViewContent"
 import FavoriteButton from "./FavoriteButton"
 import ReportButton from "./ReportButton"
+import DeverrouillerContact, { type EtatDeverrouillage } from "./DeverrouillerContact"
 import ShareButton from "./ShareButton"
 import Gallery from "./Gallery"
 import AdSpace from "@/components/ads/AdComponents"
@@ -102,6 +103,21 @@ export default async function BienDetailPage({ params }: PageProps) {
 
   // Contact IMMÉDIAT (WhatsApp/appel) : numéro Inaya (mise en relation médiée —
   // coordonnées du propriétaire confidentielles) + message pré-rempli avec la réf.
+  // État de la mise en relation payante. `null` pour tout le monde sauf les
+  // professionnels : `apercuDeverrouillage` ne renvoie un compte actif que
+  // lorsqu'un administrateur a ouvert le portefeuille.
+  let etatCredit: EtatDeverrouillage | null = null
+  if (user) {
+    const { etatCompte, apercuDeverrouillage } = await import("@/lib/credits")
+    const compte = await etatCompte(user.id)
+    if (compte.actif) {
+      const ap = await apercuDeverrouillage(user.id, property.id)
+      etatCredit = ap.possible
+        ? { possible: true, cout: ap.cout, solde: ap.solde, deja: ap.deja, source: ap.source }
+        : { possible: false, raison: ap.raison, cout: 0, solde: ap.solde, deja: false, source: null }
+    }
+  }
+
   const { data: contactSetting } = await createAdminClient()
     .from("app_settings").select("value").eq("key", "contact_support").maybeSingle()
   const supportPhone = ((contactSetting as { value?: unknown } | null)?.value as string | undefined)?.trim() || null
@@ -317,6 +333,16 @@ export default async function BienDetailPage({ params }: PageProps) {
                     <FavoriteButton propertyId={property.id} initialActive={isFav} loggedIn={!!user} />
                   </div>
                 </div>
+
+                {/* Mise en relation payante — VISIBLE UNIQUEMENT pour un compte
+                    professionnel activé. Pour un particulier qui cherche un
+                    logement, elle ne ferait que brouiller la route vers le
+                    formulaire de visite, qui est gratuit. */}
+                {etatCredit && (
+                  <div className="mt-4">
+                    <DeverrouillerContact propertyId={property.id} etat={etatCredit} />
+                  </div>
+                )}
               </div>
 
               {/* Caractéristiques */}

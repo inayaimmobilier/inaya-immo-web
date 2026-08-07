@@ -25,6 +25,8 @@ const NAV = [
   // valider engage l'agence sur des envois, ils créent les demandes sans
   // décider des alertes.
   { href: "/admin/validation",    icon: ShieldCheck,     label: "Demandes à valider", roles: ["super_admin","admin","moderateur"] },
+  // Réservé à la direction : cette page ouvre la caisse.
+  { href: "/admin/credits",       icon: Wallet,          label: "Crédits pros",       roles: ["super_admin","admin"] },
   { href: "/admin/agents",        icon: TrendingUp,      label: "Agents",           roles: ["super_admin","admin"] },
   { href: "/admin/gestion",       icon: Building2,       label: "Gestion locative", roles: ["super_admin","admin","moderateur","comptable"] },
   { href: "/admin/apports",       icon: HandCoins,       label: "Apports",          roles: ["super_admin","admin","comptable"] },
