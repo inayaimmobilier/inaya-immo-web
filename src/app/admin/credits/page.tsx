@@ -3,7 +3,7 @@ import { Wallet } from "lucide-react"
 import { createClient, createAdminClient } from "@/lib/supabase/server"
 import type { UserRole } from "@/types/database"
 import CreditsManager, {
-  type LigneCompte, type LigneTarif, type LigneReclamation, type LigneRetrait,
+  type LigneCompte, type LigneTarif, type LigneReclamation, type LigneRetrait, type LigneDemande,
 } from "./CreditsManager"
 
 // ============================================================================
@@ -115,6 +115,15 @@ export default async function CreditsPage() {
     }
   }).sort((a, b) => (a.statut === "ouverte" ? -1 : 1) - (b.statut === "ouverte" ? -1 : 1))
 
+  // ── Demandes d'ouverture ─────────────────────────────────────────────────
+  // Les plus anciennes EN ATTENTE d'abord : ce sont les candidats qui patientent
+  // depuis le plus longtemps, donc les plus près de renoncer.
+  const { data: dRaw } = await admin.from("demandes_pro")
+    .select("id, nom_contact, telephone, agence, registre, ville, activite, message, statut, decision_note, created_at")
+    .order("created_at", { ascending: false }).limit(100)
+  const demandes = ((dRaw ?? []) as unknown as LigneDemande[])
+    .sort((a, b) => (a.statut === "en_attente" ? 0 : 1) - (b.statut === "en_attente" ? 0 : 1))
+
   // ── Numéros retirés de la diffusion ──────────────────────────────────────
   const { data: oRaw } = await admin.from("contact_opt_out")
     .select("telephone, motif, created_at").order("created_at", { ascending: false }).limit(200)
@@ -144,6 +153,7 @@ export default async function CreditsPage() {
 
       <CreditsManager
         comptes={comptes}
+        demandes={demandes}
         tarifs={tarifs}
         reclamations={reclamations}
         retraits={retraits}

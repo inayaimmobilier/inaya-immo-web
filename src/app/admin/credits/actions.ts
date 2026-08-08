@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { createClient, createAdminClient } from "@/lib/supabase/server"
 import { mouvementAdmin } from "@/lib/credits"
+import { notifyUser } from "@/lib/notifications"
 import type { UserRole } from "@/types/database"
 
 // ============================================================================
@@ -235,4 +236,74 @@ export async function trancherReclamation(form: FormData): Promise<Res> {
 
   revalidatePath("/admin/credits")
   return { ok: true, message: decision === "rembourser" ? "Crédit rendu." : "Réclamation refusée." }
+}
+
+// ── DEMANDES D'OUVERTURE ───────────────────────────────────────────────────
+
+/**
+ * Accepte ou refuse une demande de compte professionnel.
+ *
+ * Accepter OUVRE le portefeuille dans la foulée : séparer les deux gestes
+ * ferait qu'un candidat accepté attendrait encore, sans que personne ne
+ * remarque l'oubli — la demande étant déjà sortie de la file.
+ */
+export async function trancherDemandePro(form: FormData): Promise<Res> {
+  const auteur = await caissier()
+  if (!auteur) return { ok: false, error: "Action réservée à la direction." }
+
+  const id = String(form.get("id") || "")
+  const decision = String(form.get("decision") || "")
+  const note = String(form.get("note") || "").trim()
+  if (!id) return { ok: false, error: "Demande introuvable." }
+  if (decision !== "accepter" && decision !== "refuser") {
+    return { ok: false, error: "Décision invalide." }
+  }
+  // Un refus muet laisse le candidat sans rien comprendre, et il reviendra.
+  if (decision === "refuser" && !note) {
+    return { ok: false, error: "Un refus doit être motivé — le demandeur doit pouvoir le comprendre." }
+  }
+
+  const admin = createAdminClient()
+  const { data } = await admin.from("demandes_pro")
+    .select("id, statut, user_id").eq("id", id).maybeSingle()
+  const d = data as unknown as { statut: string; user_id: string } | null
+  if (!d) return { ok: false, error: "Demande introuvable." }
+  if (d.statut !== "en_attente") return { ok: false, error: "Cette demande est déjà tranchée." }
+
+  if (decision === "accepter") {
+    const r = await ouvrirCompte(d.user_id)
+    if (!r.ok) return r
+  }
+
+  const { error } = await admin.from("demandes_pro").update({
+    statut: decision === "accepter" ? "acceptee" : "refusee",
+    decision_par: auteur,
+    decision_le: new Date().toISOString(),
+    decision_note: note || null,
+  } as never).eq("id", id)
+
+  if (error) {
+    console.error("INAYA-PRO-010", error)
+    return { ok: false, error: decision === "accepter"
+      ? "Le compte a été ouvert mais la demande n'a pas pu être close. Vérifiez avant de recommencer."
+      : "Enregistrement refusé." }
+  }
+
+  // Le demandeur est prévenu : rester sans nouvelle après avoir postulé est la
+  // meilleure façon de perdre quelqu'un qu'on vient d'accepter.
+  try {
+    await notifyUser(d.user_id, {
+      type: "demande_pro",
+      titre: decision === "accepter" ? "Compte professionnel activé" : "Demande non retenue",
+      contenu: decision === "accepter"
+        ? "Votre compte professionnel Inaya est ouvert. Vous pouvez désormais obtenir le contact rattaché aux annonces. Contactez-nous pour le recharger."
+        : `Votre demande de compte professionnel n'a pas été retenue.${note ? ` Motif : ${note}` : ""}`,
+      payload: { demande_id: id },
+    })
+  } catch (e) {
+    console.error("INAYA-PRO-011", e)
+  }
+
+  revalidatePath("/admin/credits")
+  return { ok: true, message: decision === "accepter" ? "Compte ouvert." : "Demande refusée." }
 }

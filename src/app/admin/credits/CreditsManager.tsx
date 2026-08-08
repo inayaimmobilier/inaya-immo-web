@@ -4,7 +4,7 @@ import { useState, useTransition } from "react"
 import { Wallet, Ban, Check, X, RotateCcw, PhoneOff, Loader2, Plus } from "lucide-react"
 import {
   crediter, suspendreCompte, ouvrirCompte, reglerTarif,
-  retirerDeLaDiffusion, trancherReclamation,
+  retirerDeLaDiffusion, trancherReclamation, trancherDemandePro,
 } from "./actions"
 
 // ============================================================================
@@ -29,17 +29,26 @@ export interface LigneReclamation {
   cout: number; telephone: string; source: string; propertyId: string | null; date: string
 }
 export interface LigneRetrait { telephone: string; motif: string | null; created_at: string }
+export interface LigneDemande {
+  id: string; nom_contact: string; telephone: string
+  agence: string | null; registre: string | null; ville: string | null
+  activite: string; message: string | null
+  statut: string; decision_note: string | null; created_at: string
+}
 
-type Onglet = "comptes" | "tarifs" | "reclamations" | "retraits"
+type Onglet = "demandes" | "comptes" | "tarifs" | "reclamations" | "retraits"
 
 const champ = "w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
 const bouton = "inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
 
-export default function CreditsManager({ comptes, tarifs, reclamations, retraits }: {
-  comptes: LigneCompte[]; tarifs: LigneTarif[]
+export default function CreditsManager({ comptes, demandes, tarifs, reclamations, retraits }: {
+  comptes: LigneCompte[]; demandes: LigneDemande[]; tarifs: LigneTarif[]
   reclamations: LigneReclamation[]; retraits: LigneRetrait[]
 }) {
-  const [onglet, setOnglet] = useState<Onglet>("comptes")
+  // On ouvre sur les DEMANDES : ce sont les seules qui font attendre quelqu'un
+  // dehors. Le reste peut se consulter quand on en a le temps.
+  const [onglet, setOnglet] = useState<Onglet>(
+    demandes.some(d => d.statut === "en_attente") ? "demandes" : "comptes")
   const [message, setMessage] = useState<{ ok: boolean; texte: string } | null>(null)
   const [pending, start] = useTransition()
 
@@ -58,6 +67,7 @@ export default function CreditsManager({ comptes, tarifs, reclamations, retraits
     <div className="space-y-4">
       <div className="flex gap-2 flex-wrap">
         {([
+          ["demandes", `Demandes${demandes.filter(d => d.statut === "en_attente").length ? ` (${demandes.filter(d => d.statut === "en_attente").length})` : ""}`],
           ["comptes", `Comptes (${comptes.length})`],
           ["tarifs", "Grille tarifaire"],
           ["reclamations", `Réclamations${ouvertes ? ` (${ouvertes})` : ""}`],
@@ -77,6 +87,7 @@ export default function CreditsManager({ comptes, tarifs, reclamations, retraits
         </div>
       )}
 
+      {onglet === "demandes" && <Demandes lignes={demandes} agir={agir} pending={pending} />}
       {onglet === "comptes" && <Comptes comptes={comptes} agir={agir} pending={pending} />}
       {onglet === "tarifs" && <Tarifs tarifs={tarifs} agir={agir} pending={pending} />}
       {onglet === "reclamations" && <Reclamations lignes={reclamations} agir={agir} pending={pending} />}
@@ -86,6 +97,66 @@ export default function CreditsManager({ comptes, tarifs, reclamations, retraits
 }
 
 type Agir = (fn: () => Promise<{ ok: true; message?: string } | { ok: false; error: string }>) => void
+
+// ── DEMANDES D'OUVERTURE ───────────────────────────────────────────────────
+
+function Demandes({ lignes, agir, pending }: { lignes: LigneDemande[]; agir: Agir; pending: boolean }) {
+  if (lignes.length === 0) {
+    return <p className="text-sm text-gray-500 py-8 text-center">Aucune demande.</p>
+  }
+  return (
+    <div className="space-y-3">
+      {lignes.map(d => {
+        const attente = d.statut === "en_attente"
+        return (
+          <div key={d.id} className={`rounded-2xl border p-5 ${attente ? "bg-white border-blue-200" : "bg-gray-50 border-gray-100"}`}>
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div className="min-w-0">
+                <p className="font-semibold text-gray-900">
+                  {d.nom_contact}{d.agence ? ` — ${d.agence}` : ""}
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {d.telephone}
+                  {d.ville ? ` · ${d.ville}` : ""}
+                  {d.registre ? ` · RC ${d.registre}` : ""}
+                </p>
+                <p className="text-sm text-gray-700 mt-2">{d.activite}</p>
+                {d.message && <p className="text-xs text-gray-500 mt-1">{d.message}</p>}
+                {d.decision_note && <p className="text-xs text-gray-500 mt-2 italic">Décision : {d.decision_note}</p>}
+              </div>
+              <span className={`text-[11px] px-2 py-0.5 rounded-full ${
+                attente ? "bg-blue-100 text-blue-800"
+                : d.statut === "acceptee" ? "bg-green-100 text-green-700"
+                : "bg-gray-200 text-gray-600"}`}>
+                {attente ? "à examiner" : d.statut === "acceptee" ? "acceptée" : "refusée"}
+              </span>
+            </div>
+
+            {attente && (
+              <form className="mt-4 pt-4 border-t border-gray-100 space-y-3"
+                action={fd => agir(async () => { fd.set("id", d.id); return trancherDemandePro(fd) })}>
+                <input name="note" placeholder="Note (obligatoire pour un refus)" className={champ} />
+                <div className="flex gap-2 flex-wrap">
+                  <button name="decision" value="accepter" disabled={pending}
+                    className={`${bouton} bg-green-600 text-white hover:bg-green-700`}>
+                    <Check className="w-4 h-4" /> Accepter et ouvrir le compte
+                  </button>
+                  <button name="decision" value="refuser" disabled={pending}
+                    className={`${bouton} bg-white border border-gray-200 text-red-600 hover:border-red-300`}>
+                    <X className="w-4 h-4" /> Refuser
+                  </button>
+                </div>
+                <p className="text-[11px] text-gray-500">
+                  Accepter ouvre le portefeuille dans la foulée et prévient le demandeur.
+                </p>
+              </form>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
 
 // ── COMPTES ────────────────────────────────────────────────────────────────
 
