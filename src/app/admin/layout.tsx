@@ -8,11 +8,11 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
   if (!user) redirect("/connexion?redirect=/admin/dashboard")
 
-  type ProfileRow = { role: string; nom: string | null; prenom: string | null; telegram_chat_id: string | null }
+  type ProfileRow = { role: string; nom: string | null; prenom: string | null; telegram_chat_id: string | null; agent_type?: string | null }
 
   // 42703 = colonne telegram_chat_id absente (migration 030 non encore appliquée)
   const profileResult = await supabase
-    .from("profiles").select("role, nom, prenom, telegram_chat_id").eq("id", user.id).single()
+    .from("profiles").select("role, nom, prenom, telegram_chat_id, agent_type").eq("id", user.id).single()
   let profile: ProfileRow | null
   if (profileResult.error?.code === "42703") {
     const r2 = await supabase.from("profiles").select("role, nom, prenom").eq("id", user.id).single() as unknown as { data: Omit<ProfileRow, "telegram_chat_id"> | null }
@@ -22,6 +22,20 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   }
   const allowed = ["super_admin", "admin", "moderateur", "agent"]
   if (!profile || !allowed.includes(profile.role)) redirect("/")
+
+  // ── AGENT EXTERNE : PAS DE BACK-OFFICE ────────────────────────────────────
+  //
+  // Un agent d'une AUTRE agence voyait ici la fréquentation du site, le nombre
+  // total d'annonces, les leads et les alertes de toute la plateforme —
+  // autrement dit l'activité commerciale d'Inaya et de ses concurrents réunis.
+  // Le rôle `agent` couvre deux réalités opposées : les agents d'Inaya, qui
+  // travaillent dans le back-office, et les professionnels extérieurs, qui sont
+  // des CLIENTS du service. Seul `agent_type` les sépare.
+  //
+  // On renvoie vers l'espace professionnel plutôt que vers l'accueil : il a
+  // quelque chose à y faire, et un renvoi muet vers la page d'accueil se lirait
+  // comme une panne.
+  if (profile.role === "agent" && profile.agent_type === "externe") redirect("/agent")
 
   // Réservations de résidences en attente → pastille rouge sur « Résidences ».
   let residenceAlerts = 0

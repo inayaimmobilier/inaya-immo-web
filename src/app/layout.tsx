@@ -8,7 +8,7 @@ import CookieConsent from "@/components/shared/CookieConsent"
 import AppDownloadBanner from "@/components/shared/AppDownloadBanner"
 import { getApkUrl } from "@/lib/app-apk"
 import { unstable_cache } from "next/cache"
-import { createAdminClient } from "@/lib/supabase/server"
+import { createAdminClient, createClient } from "@/lib/supabase/server"
 import { SITE_URL, SITE_NAME, SITE_DESCRIPTION, absoluteUrl } from "@/lib/site"
 
 /**
@@ -91,6 +91,22 @@ export default async function RootLayout({
   // L'application n'est pas sur le Play Store : le site est le seul canal de
   // distribution, la bannière est donc sur TOUTES les pages publiques.
   const apkUrl = await getApkUrl()
+
+  // Le bandeau s'adresse différemment à un professionnel : il télécharge la
+  // MÊME application, mais ce qu'il y trouve n'est pas la même chose. La
+  // lecture est volontairement tolérante aux pannes — un bandeau est un
+  // accessoire, il ne doit jamais empêcher une page de s'afficher.
+  let estPro = false
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      const { data } = await supabase.from("profiles")
+        .select("role, agent_type").eq("id", user.id).maybeSingle()
+      const p = data as { role: string; agent_type: string | null } | null
+      estPro = p?.role === "agent" || p?.role === "apporteur"
+    }
+  } catch { /* sans effet sur la page */ }
   return (
     <html lang="fr" className={`${geist.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
@@ -101,7 +117,7 @@ export default async function RootLayout({
         <VisitTracker />
         <MetaPixel pixelId={metaPixelId} />
         <CookieConsent />
-        <AppDownloadBanner apkUrl={apkUrl ?? ""} />
+        <AppDownloadBanner apkUrl={apkUrl ?? ""} pro={estPro} />
       </body>
     </html>
   )

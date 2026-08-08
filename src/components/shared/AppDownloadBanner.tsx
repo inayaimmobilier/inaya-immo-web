@@ -29,7 +29,7 @@ const CHEMINS_EXCLUS = [
   "/connexion", "/inscription", "/telecharger", "/a/stop", "/supprimer-mon-compte",
 ]
 
-export default function AppDownloadBanner({ apkUrl }: { apkUrl: string }) {
+export default function AppDownloadBanner({ apkUrl, pro = false }: { apkUrl: string; pro?: boolean }) {
   const pathname = usePathname()
   const [visible, setVisible] = useState(false)
   const [iOS, setIOS] = useState(false)
@@ -78,12 +78,19 @@ export default function AppDownloadBanner({ apkUrl }: { apkUrl: string }) {
 
         <div className="min-w-0 flex-1 pr-10 sm:pr-0">
           <p className="text-sm font-semibold leading-tight sm:text-base">
-            Installez Inaya Immo sur votre téléphone
+            {/* Un professionnel télécharge la MÊME application : elle porte son
+                espace pro dès qu'il s'y connecte. Lui promettre une seconde
+                application, qui n'existe pas, ne ferait que le dérouter. */}
+            {pro
+              ? "Votre espace professionnel sur votre téléphone"
+              : "Installez Inaya Immo sur votre téléphone"}
           </p>
           <p className="mt-0.5 text-[11px] leading-snug text-blue-100 sm:text-xs">
             {iOS
               ? "Bientôt sur iPhone — voir comment être prévenu"
-              : "Alertes immédiates dès qu'un bien correspond à votre recherche"}
+              : pro
+                ? "Solde, contacts débloqués et catalogue complet, partout"
+                : "Alertes immédiates dès qu'un bien correspond à votre recherche"}
           </p>
         </div>
 

@@ -2,10 +2,15 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { LayoutDashboard, Home, User } from "lucide-react"
+import { LayoutDashboard, Home, User, Phone, Search } from "lucide-react"
 
 const ITEMS = [
   { href: "/agent", label: "Tableau de bord", icon: LayoutDashboard, exact: true },
+  // « Chercher un bien » en DEUXIÈME position : c'est le geste quotidien d'un
+  // professionnel — trouver un bien à proposer à son client — bien avant la
+  // gestion de ses propres annonces.
+  { href: "/biens", label: "Chercher un bien", icon: Search },
+  { href: "/agent/contacts", label: "Mes contacts", icon: Phone },
   { href: "/agent/annonces", label: "Mes annonces", icon: Home },
   { href: "/agent/profil", label: "Mon profil", icon: User },
 ]
