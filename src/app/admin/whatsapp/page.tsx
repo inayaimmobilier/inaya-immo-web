@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation"
 import Link from "next/link"
 import { createClient, createAdminClient } from "@/lib/supabase/server"
-import { Smartphone, Plus, AlertTriangle, Wifi, WifiOff, Ban, RefreshCw, ClipboardList, Cloud } from "lucide-react"
+import { Smartphone, Plus, AlertTriangle, Wifi, WifiOff, Ban, RefreshCw, ClipboardList, Cloud, MessagesSquare } from "lucide-react"
 import { formatRelativeDate } from "@/lib/utils"
 import type { UserRole, WaEngine, WaStatus } from "@/types/database"
 import WaAccountControls from "./WaAccountControls"
@@ -103,10 +103,16 @@ export default async function WhatsAppPage() {
             Multi-comptes, multi-moteurs · le moteur de chaque compte est modifiable sans redéploiement
           </p>
         </div>
-        <Link href="/admin/whatsapp/messages"
-          className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-3 py-2 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors">
-          <ClipboardList className="w-4 h-4 text-blue-600" /> Journal des messages
-        </Link>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Link href="/admin/whatsapp/conversations"
+            className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-3 py-2 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors">
+            <MessagesSquare className="w-4 h-4 text-blue-600" /> Conversations de l&apos;assistante
+          </Link>
+          <Link href="/admin/whatsapp/messages"
+            className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-3 py-2 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors">
+            <ClipboardList className="w-4 h-4 text-blue-600" /> Journal des messages
+          </Link>
+        </div>
       </div>
 
       {/* Diagnostic service + test envoi direct */}

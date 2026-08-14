@@ -87,6 +87,15 @@ export default function AgentsManager({ agents }: { agents: AiAgent[] }) {
                   <span key={c} className="text-[11px] bg-blue-50 text-blue-700 rounded-full px-2 py-0.5">{CANAUX.find(x => x.value === c)?.label ?? c}</span>
                 )) : <span className="text-[11px] text-gray-400">Aucun canal</span>}
               </div>
+              {/* L'interrupteur ne choisissait que le prompt : coupé, l'assistante
+                  WhatsApp continuait de répondre avec le prompt par défaut. Il
+                  coupe désormais la parole ; on le dit, pour qu'on n'éteigne pas
+                  un agent en croyant seulement changer de consignes. */}
+              {a.canaux.includes("whatsapp") && !a.actif && (
+                <p className="text-[11px] text-amber-700 bg-amber-50 rounded-lg px-2 py-1">
+                  Désactivé : l&apos;assistante ne répond plus sur WhatsApp.
+                </p>
+              )}
               {a.system_prompt && <p className="text-xs text-gray-500 line-clamp-2">{a.system_prompt}</p>}
               <div className="flex items-center gap-2 pt-1">
                 <button onClick={() => openEdit(a)} className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-blue-700">
