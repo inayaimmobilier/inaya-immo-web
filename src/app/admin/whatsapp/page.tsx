@@ -92,6 +92,19 @@ export default async function WhatsAppPage() {
   const { data: villesRows } = await adminDb.from("villes").select("nom").eq("actif", true).order("nom")
   const communes = ((villesRows ?? []) as { nom: string }[]).map(v => v.nom)
 
+  // Combien de groupes ont déjà une commune prioritaire, par compte. Affiché
+  // sur la ligne du compte : sans cela, il fallait ouvrir la fenêtre pour
+  // savoir si le réglage avait été fait — donc l'ouvrir pour rien la plupart
+  // du temps.
+  const prioritesParCompte = new Map<string, number>()
+  try {
+    const { data: gp } = await adminDb.from("whatsapp_groups")
+      .select("account_id,commune_prioritaire").not("commune_prioritaire", "is", null)
+    for (const g of (gp ?? []) as { account_id: string }[]) {
+      prioritesParCompte.set(g.account_id, (prioritesParCompte.get(g.account_id) ?? 0) + 1)
+    }
+  } catch { /* migration 058 non appliquée : aucun compteur, l'écran reste utilisable */ }
+
   // Réglage de l'assistant IA WhatsApp (pause/actif) — défaut actif si absent.
   const { data: assistantSetting } = await adminDb.from("app_settings").select("value").eq("key", "wa_assistant").maybeSingle()
   const assistantActif = (assistantSetting as { value: { actif?: boolean } } | null)?.value?.actif !== false
@@ -213,6 +226,7 @@ export default async function WhatsAppPage() {
                           accountId={a.id}
                           watched={(a.groupes_surveilles ?? []) as { id: string; nom?: string }[]}
                           communes={communes}
+                          prioritesReglees={prioritesParCompte.get(a.id) ?? 0}
                         />
                       </td>
                       <td className="px-4 py-3">

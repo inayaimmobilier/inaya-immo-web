@@ -15,9 +15,11 @@ interface Props {
   watched: { id: string; nom?: string }[]   // groupes_surveilles courants
   /** Communes connues, pour le réglage de priorité. */
   communes?: string[]
+  /** Nombre de groupes de ce compte ayant déjà une commune prioritaire. */
+  prioritesReglees?: number
 }
 
-export default function GroupsManager({ accountId, watched, communes = [] }: Props) {
+export default function GroupsManager({ accountId, watched, communes = [], prioritesReglees = 0 }: Props) {
   const [open, setOpen] = useState(false)
   const [groups, setGroups] = useState<Group[]>([])
   const [selected, setSelected] = useState<Set<string>>(new Set(watched.map(g => g.id)))
@@ -102,12 +104,19 @@ export default function GroupsManager({ accountId, watched, communes = [] }: Pro
 
   return (
     <>
-      <button
-        onClick={openModal}
-        className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline"
-      >
-        <Users className="w-3.5 h-3.5" />
-        {watchedCount === 0 ? "Tous les groupes" : `${watchedCount} groupe${watchedCount > 1 ? "s" : ""}`}
+      {/* Le libellé disait seulement « 26 groupes » : rien n'indiquait qu'on
+          pouvait cliquer, ni que la commune prioritaire se réglait là-dedans.
+          Le réglage existait sans que personne puisse le trouver. */}
+      <button onClick={openModal} className="text-left group/btn">
+        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 group-hover/btn:text-blue-800 group-hover/btn:underline">
+          <Users className="w-3.5 h-3.5" />
+          Groupes surveillés{watchedCount > 0 ? ` · ${watchedCount}` : " · tous"}
+        </span>
+        <span className="block text-[11px] text-gray-400 mt-0.5">
+          {prioritesReglees > 0
+            ? `Priorité commune : ${prioritesReglees} réglée${prioritesReglees > 1 ? "s" : ""}`
+            : "Régler la priorité commune →"}
+        </span>
       </button>
 
       {open && (
