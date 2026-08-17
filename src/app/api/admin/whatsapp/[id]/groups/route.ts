@@ -23,12 +23,64 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const admin = createAdminClient()
   const { data, error } = await admin
     .from("whatsapp_groups")
-    .select("id,nom,nb_participants,last_seen_at")
+    .select("id,nom,nb_participants,last_seen_at,commune_prioritaire")
     .eq("account_id", id)
     .order("nom")
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) {
+    // Colonne absente = migration 058 pas encore appliquée. On sert la liste
+    // sans la priorité plutôt que de casser l'écran des groupes surveillés,
+    // qui, lui, marchait déjà.
+    const repli = await admin
+      .from("whatsapp_groups")
+      .select("id,nom,nb_participants,last_seen_at")
+      .eq("account_id", id)
+      .order("nom")
+    if (repli.error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json(repli.data ?? [])
+  }
   return NextResponse.json(data ?? [])
+}
+
+/**
+ * PATCH → commune prioritaire d'UN groupe.
+ *
+ * Sert d'arbitre quand un nom de quartier existe dans plusieurs communes :
+ * « plateau » écrit dans un groupe de Bouaké désigne Commerce, pas le Centre
+ * de Yamoussoukro. Ne force jamais une commune écrite dans l'annonce.
+ */
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const authErr = await checkAdmin()
+  if (authErr) return authErr
+  const { id: accountId } = await params
+
+  const body = (await req.json()) as { groupId?: string; commune?: string | null }
+  if (!body.groupId) return NextResponse.json({ error: "groupId requis" }, { status: 400 })
+
+  const commune = (body.commune ?? "").trim() || null
+  const admin = createAdminClient()
+
+  // Vérifie que la commune existe vraiment : une faute de frappe ici
+  // fausserait silencieusement toutes les annonces du groupe.
+  if (commune) {
+    const { data: ville } = await admin.from("villes").select("nom").eq("nom", commune).maybeSingle()
+    if (!ville) return NextResponse.json({ error: `Commune inconnue : ${commune}` }, { status: 400 })
+  }
+
+  const { error } = await admin
+    .from("whatsapp_groups")
+    .update({ commune_prioritaire: commune } as never)
+    .eq("id", body.groupId)
+    .eq("account_id", accountId)
+
+  if (error) {
+    const manque = /commune_prioritaire/.test(error.message)
+    return NextResponse.json(
+      { error: manque ? "Appliquez d'abord la migration 058 dans Supabase." : error.message },
+      { status: manque ? 409 : 500 },
+    )
+  }
+  return NextResponse.json({ ok: true })
 }
 
 // POST → met à jour groupes_surveilles pour ce compte

@@ -88,6 +88,10 @@ export default async function WhatsAppPage() {
   const { data: lineSetting } = await adminDb.from("app_settings").select("value").eq("key", "gupshup_line").maybeSingle()
   const activeLine = (lineSetting as { value: { active?: string } } | null)?.value?.active === "secours" ? "secours" : "principal"
 
+  // Communes connues — servent à régler la priorité géographique d'un groupe.
+  const { data: villesRows } = await adminDb.from("villes").select("nom").eq("actif", true).order("nom")
+  const communes = ((villesRows ?? []) as { nom: string }[]).map(v => v.nom)
+
   // Réglage de l'assistant IA WhatsApp (pause/actif) — défaut actif si absent.
   const { data: assistantSetting } = await adminDb.from("app_settings").select("value").eq("key", "wa_assistant").maybeSingle()
   const assistantActif = (assistantSetting as { value: { actif?: boolean } } | null)?.value?.actif !== false
@@ -208,6 +212,7 @@ export default async function WhatsAppPage() {
                         <GroupsManager
                           accountId={a.id}
                           watched={(a.groupes_surveilles ?? []) as { id: string; nom?: string }[]}
+                          communes={communes}
                         />
                       </td>
                       <td className="px-4 py-3">

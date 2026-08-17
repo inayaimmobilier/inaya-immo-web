@@ -7,14 +7,17 @@ interface Group {
   id: string
   nom: string
   nb_participants: number | null
+  commune_prioritaire?: string | null
 }
 
 interface Props {
   accountId: string
   watched: { id: string; nom?: string }[]   // groupes_surveilles courants
+  /** Communes connues, pour le réglage de priorité. */
+  communes?: string[]
 }
 
-export default function GroupsManager({ accountId, watched }: Props) {
+export default function GroupsManager({ accountId, watched, communes = [] }: Props) {
   const [open, setOpen] = useState(false)
   const [groups, setGroups] = useState<Group[]>([])
   const [selected, setSelected] = useState<Set<string>>(new Set(watched.map(g => g.id)))
@@ -43,6 +46,25 @@ export default function GroupsManager({ accountId, watched }: Props) {
       setError((e as Error).message)
     } finally {
       setLoading(false)
+    }
+  }
+
+  // La priorité est enregistrée AU CHOIX, sans passer par « Enregistrer » :
+  // ce bouton-là ne concerne que les groupes surveillés, et faire porter deux
+  // réglages différents au même bouton ferait croire qu'annuler annule tout.
+  async function changerCommune(groupId: string, commune: string) {
+    setGroups(prev => prev.map(g => (g.id === groupId ? { ...g, commune_prioritaire: commune || null } : g)))
+    setError(null)
+    try {
+      const res = await fetch(`/api/admin/whatsapp/${accountId}/groups`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ groupId, commune: commune || null }),
+      })
+      if (!res.ok) throw new Error(((await res.json()) as { error?: string }).error ?? "Échec")
+    } catch (e) {
+      setError((e as Error).message)
+      await fetchGroups()   // l'affichage doit refléter la base, pas un espoir
     }
   }
 
@@ -130,11 +152,18 @@ export default function GroupsManager({ accountId, watched }: Props) {
 
               {groups.length > 0 && (
                 <>
-                  <p className="text-xs text-gray-400 mb-3">
+                  <p className="text-xs text-gray-400 mb-1">
                     {selected.size === 0
                       ? "Aucun groupe sélectionné — tous les groupes seront surveillés."
                       : `${selected.size} groupe${selected.size > 1 ? "s" : ""} sélectionné${selected.size > 1 ? "s" : ""}.`}
                   </p>
+                  {communes.length > 0 && (
+                    <p className="text-xs text-gray-400 mb-3">
+                      La commune choisie à droite départage les noms de quartier présents dans
+                      plusieurs villes (« plateau », « centre-ville »). Elle est enregistrée
+                      aussitôt, et ne contredit jamais une commune écrite dans l&apos;annonce.
+                    </p>
+                  )}
                   <div className="space-y-1">
                     {groups.map(g => (
                       <label key={g.id}
@@ -153,6 +182,20 @@ export default function GroupsManager({ accountId, watched }: Props) {
                           <span className="text-xs text-gray-400 flex-shrink-0">
                             {g.nb_participants} membre{g.nb_participants > 1 ? "s" : ""}
                           </span>
+                        )}
+                        {/* Le select est hors du <label> parent : cliqué dedans,
+                            il cocherait aussi le groupe. */}
+                        {communes.length > 0 && (
+                          <select
+                            value={g.commune_prioritaire ?? ""}
+                            onClick={e => e.preventDefault()}
+                            onChange={e => { e.preventDefault(); void changerCommune(g.id, e.target.value) }}
+                            title="Commune privilégiée quand un nom de quartier est ambigu"
+                            className="flex-shrink-0 text-xs bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 outline-none focus:border-blue-400"
+                          >
+                            <option value="">Sans priorité</option>
+                            {communes.map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
                         )}
                       </label>
                     ))}
