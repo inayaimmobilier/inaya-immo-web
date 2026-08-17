@@ -42,19 +42,68 @@ async function getContactStats() {
  * du même visiteur ne font pas dix installations.
  */
 async function getTelechargements() {
-  const vide = { j1: { c: 0, v: 0 }, j7: { c: 0, v: 0 }, j30: { c: 0, v: 0 } }
+  const vide = {
+    j1: { c: 0, v: 0, ignorees: 0 },
+    j7: { c: 0, v: 0, ignorees: 0 },
+    j30: { c: 0, v: 0, ignorees: 0 },
+  }
   try {
-    const { data } = await createAdminClient().from("page_views")
-      .select("visitor_id, created_at")
-      .eq("path", "/telechargement-app")
-      .gte("created_at", new Date(Date.now() - 30 * 86400_000).toISOString())
-      .order("created_at", { ascending: false })
-      .range(0, 4999)
-    const lignes = (data ?? []) as { visitor_id: string | null; created_at: string }[]
+    const admin = createAdminClient()
+    const since30 = new Date(Date.now() - 30 * 86400_000).toISOString()
+
+    // `.range(0, 4999)` NE LÈVE PAS le plafond de 1000 lignes de PostgREST : on
+    // recevait 1000 lignes et rien de plus, d'où les « 1 000 » identiques à 7 et
+    // 30 jours affichés pendant des semaines alors que la table en contenait
+    // 5 918. Même piège que dans getVisitStats juste en dessous — on pagine.
+    const PAGE = 1000
+    const MAX_PAGES = 30
+    const lignes: { visitor_id: string | null; created_at: string; referrer: string | null }[] = []
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const { data, error } = await admin.from("page_views")
+        .select("visitor_id, created_at, referrer")
+        .eq("path", "/telechargement-app")
+        .gte("created_at", since30)
+        .order("created_at", { ascending: false })
+        .range(page * PAGE, page * PAGE + PAGE - 1)
+      if (error) { console.error("INAYA-STATS-DL", error.message); break }
+      const lot = (data ?? []) as typeof lignes
+      lignes.push(...lot)
+      if (lot.length < PAGE) break
+    }
+
     const agg = (ms: number) => {
       const seuil = Date.now() - ms
       const dans = lignes.filter(l => new Date(l.created_at).getTime() >= seuil)
-      return { c: dans.length, v: new Set(dans.map(l => l.visitor_id ?? Math.random())).size }
+
+      // ── CE QUI COMPTE COMME UN TÉLÉCHARGEMENT ────────────────────────────
+      //
+      // Un clic sur la bannière est une navigation depuis une page du site :
+      // le navigateur envoie donc l'adresse de cette page en référent. Or sur
+      // 30 jours, 5 912 requêtes sur 5 918 n'en portaient AUCUN, et 4 223 des
+      // 5 299 « téléchargeurs » n'avaient jamais chargé la moindre page — ils
+      // ne peuvent pas avoir cliqué une bannière qu'ils n'ont jamais vue.
+      // Ces requêtes-là sont automatiques (reprises du gestionnaire de
+      // téléchargement, robots d'aperçu de lien, analyseurs d'URL).
+      //
+      // Le compteur affichait donc des milliers d'installations imaginaires.
+      // On ne retient que les requêtes venues d'une page du site, et l'on dit
+      // combien ont été écartées plutôt que de les faire disparaître.
+      const reels = dans.filter(l => !!l.referrer)
+      const parJourEtVisiteur = new Set<string>()
+      const personnes = new Set<string>()
+      let anonymes = 0
+      for (const l of reels) {
+        if (!l.visitor_id) { anonymes++; continue }
+        personnes.add(l.visitor_id)
+        // Un même visiteur qui relance son téléchargement ne réinstalle pas
+        // l'application : une fois par jour et par personne.
+        parJourEtVisiteur.add(`${l.visitor_id}|${l.created_at.slice(0, 10)}`)
+      }
+      return {
+        c: parJourEtVisiteur.size + anonymes,
+        v: personnes.size,
+        ignorees: dans.length - reels.length,
+      }
     }
     return { j1: agg(86400_000), j7: agg(7 * 86400_000), j30: agg(30 * 86400_000) }
   } catch { return vide }
@@ -280,6 +329,14 @@ export default async function DashboardPage() {
                 dont {d.v.toLocaleString("fr-FR")} personne{d.v > 1 ? "s" : ""}
               </p>
               <p className="text-[11px] text-gray-400 mt-0.5">téléchargements de l&apos;app · {label}</p>
+              {/* Les requêtes écartées sont ANNONCÉES et non escamotées : voir
+                  un compteur chuter sans explication fait douter de tout le
+                  tableau de bord. */}
+              {d.ignorees > 0 && (
+                <p className="text-[11px] text-gray-300 mt-0.5">
+                  {d.ignorees.toLocaleString("fr-FR")} requête{d.ignorees > 1 ? "s" : ""} automatique{d.ignorees > 1 ? "s" : ""} écartée{d.ignorees > 1 ? "s" : ""}
+                </p>
+              )}
             </div>
           ))}
         </div>
