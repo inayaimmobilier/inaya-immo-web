@@ -71,6 +71,9 @@ export default function Navbar() {
             <Link href="/biens?type=vente" className="text-sm text-gray-800 hover:text-blue-700 transition-colors font-semibold">
               Vente
             </Link>
+            <Link href="/vehicules" className="text-sm text-blue-700 hover:text-blue-800 transition-colors font-semibold">
+              Voitures
+            </Link>
             <Link href="/residences" className="text-sm text-teal-700 hover:text-teal-800 transition-colors font-semibold">
               Résidences meublées
             </Link>

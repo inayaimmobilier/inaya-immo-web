@@ -144,8 +144,14 @@ function valider(i: VehiculeInput): string | null {
   return null
 }
 
-/** Réécrit les lignes filles d'un véhicule (remplacement complet). */
-async function enregistrerFilles(id: string, i: VehiculeInput): Promise<void> {
+/**
+ * Réécrit les lignes filles d'un véhicule (remplacement complet).
+ *
+ * Renvoie le premier échec rencontré. Sans cela, un code d'équipement
+ * inconnu faisait échouer l'insertion APRÈS la suppression : le véhicule
+ * perdait ses tarifs et ses photos, et l'écran annonçait « enregistré ».
+ */
+async function enregistrerFilles(id: string, i: VehiculeInput): Promise<string | null> {
   const db = createAdminClient()
 
   // Remplacement plutôt que fusion : le formulaire envoie l'état complet
@@ -159,32 +165,40 @@ async function enregistrerFilles(id: string, i: VehiculeInput): Promise<void> {
     db.from("vehicule_documents").delete().eq("vehicule_id", id),
   ])
 
+  const echecs: string[] = []
+  const noter = (quoi: string, e: { message: string } | null) => {
+    if (e) { console.error("INAYA-VEH-020", quoi, e.message); echecs.push(quoi) }
+  }
+
   if (i.equipements.length) {
-    await db.from("vehicule_equipements").insert(
+    const { error } = await db.from("vehicule_equipements").insert(
       i.equipements.map(e => ({ vehicule_id: id, equipement: e })) as never,
     )
+    noter("équipements", error)
   }
   if (i.tarifs.length) {
-    await db.from("vehicule_tarifs").insert(
+    const { error } = await db.from("vehicule_tarifs").insert(
       i.tarifs.map(t => ({
         vehicule_id: id, jour_min: t.jour_min,
         jour_max: t.jour_max, prix_jour: t.prix_jour,
       })) as never,
     )
+    noter("tarifs", error)
   }
   if (i.frais.length) {
-    await db.from("vehicule_frais").insert(
+    const { error } = await db.from("vehicule_frais").insert(
       i.frais.filter(f => f.code && f.libelle).map(f => ({
         vehicule_id: id, code: f.code, libelle: f.libelle,
         montant: f.montant || 0, unite: f.unite || "forfait",
       })) as never,
     )
+    noter("frais", error)
   }
   if (i.photos.length) {
     // Une seule photo principale : l'index unique de la base refuserait la
     // seconde, et l'erreur serait incompréhensible pour l'utilisateur.
     let principaleVue = false
-    await db.from("vehicule_photos").insert(
+    const { error } = await db.from("vehicule_photos").insert(
       i.photos.filter(p => p.url?.trim()).map((p, rang) => {
         const principale = p.principale && !principaleVue
         if (principale) principaleVue = true
@@ -195,9 +209,10 @@ async function enregistrerFilles(id: string, i: VehiculeInput): Promise<void> {
         }
       }) as never,
     )
+    noter("photos", error)
   }
   if (i.documents.length) {
-    await db.from("vehicule_documents").insert(
+    const { error } = await db.from("vehicule_documents").insert(
       i.documents.filter(d => d.type).map(d => ({
         vehicule_id: id, type: d.type,
         numero: d.numero?.trim() || null,
@@ -206,7 +221,12 @@ async function enregistrerFilles(id: string, i: VehiculeInput): Promise<void> {
         fichier_url: d.fichier_url?.trim() || null,
       })) as never,
     )
+    noter("documents", error)
   }
+
+  return echecs.length
+    ? `Le véhicule est enregistré, mais ces éléments n'ont pas pu l'être : ${echecs.join(", ")}.`
+    : null
 }
 
 export async function creerVehicule(i: VehiculeInput): Promise<Res> {
@@ -233,11 +253,11 @@ export async function creerVehicule(i: VehiculeInput): Promise<Res> {
   }
 
   const id = (data as { id: string }).id
-  await enregistrerFilles(id, entree)
+  const partiel = await enregistrerFilles(id, entree)
 
   revalidatePath("/admin/vehicules")
   revalidatePath("/loueur")
-  return { ok: true, id }
+  return partiel ? { ok: false, error: partiel } : { ok: true, id }
 }
 
 export async function majVehicule(id: string, i: VehiculeInput): Promise<Res> {
@@ -264,10 +284,10 @@ export async function majVehicule(id: string, i: VehiculeInput): Promise<Res> {
     return { ok: false, error: "Échec de l'enregistrement." }
   }
 
-  await enregistrerFilles(id, entree)
+  const partiel = await enregistrerFilles(id, entree)
   revalidatePath("/admin/vehicules")
   revalidatePath("/loueur")
-  return { ok: true, id }
+  return partiel ? { ok: false, error: partiel } : { ok: true, id }
 }
 
 /**

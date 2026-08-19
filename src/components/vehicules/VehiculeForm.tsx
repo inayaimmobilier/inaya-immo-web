@@ -1,8 +1,8 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useRef, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { Check, ChevronLeft, ChevronRight, Loader2, Plus, Trash2, Save } from "lucide-react"
+import { Check, ChevronLeft, ChevronRight, Loader2, Plus, Trash2, Save, Upload } from "lucide-react"
 import {
   ETAPES, TYPES_VEHICULE, CARBURANTS, BOITES, TRANSMISSIONS, STATUTS_VEHICULE,
   TYPES_DOCUMENT, EMPLACEMENTS_PHOTO, FRAIS_COURANTS, UNITES_FRAIS,
@@ -55,12 +55,90 @@ export default function VehiculeForm(
 
   const set = (patch: Partial<VehiculeInput>) => setV(x => ({ ...x, ...patch }))
 
+  const fichierRef = useRef<HTMLInputElement>(null)
+  const [envoi, setEnvoi] = useState(false)
+  const [idCourant, setIdCourant] = useState<string | undefined>(vehiculeId)
+
+  /**
+   * Téléversement des photos.
+   *
+   * Le fichier part DIRECTEMENT vers R2 grâce à une URL présignée : une photo
+   * de téléphone dépasse vite la limite de corps des fonctions serverless, et
+   * l'envoi échouerait sans message compréhensible. Si le navigateur ne peut
+   * pas joindre R2 (CORS du bucket), on repasse par le serveur — plus lent,
+   * mais mieux qu'un téléversement impossible.
+   *
+   * Une fiche neuve est enregistrée AVANT l'envoi : les fichiers sont rangés
+   * sous l'identifiant du véhicule, qui n'existe pas encore tant qu'on n'a
+   * rien écrit.
+   */
+  async function televerser(files: FileList | null) {
+    if (!files || files.length === 0) return
+    setErreur(null)
+    setEnvoi(true)
+    try {
+      let id = idCourant
+      if (!id) {
+        const r = await creerVehicule(v)
+        if (!r.ok) { setErreur(r.error); return }
+        id = r.id
+        setIdCourant(id)
+      }
+
+      const ajoutees: { url: string; emplacement: string; principale: boolean }[] = []
+      let viaServeur = false
+      try {
+        for (const f of Array.from(files)) {
+          const pres = await fetch(`/api/vehicules/${id}/media/presign`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ files: [{ name: f.name, contentType: f.type, size: f.size }] }),
+          })
+          const data = await pres.json() as {
+            items?: { uploadUrl: string; publicUrl: string; contentType: string }[]
+            errors?: string[]
+          }
+          if (!pres.ok || !data.items?.[0]) throw new Error(data.errors?.[0] || "Échec de la préparation")
+          const it = data.items[0]
+          const put = await fetch(it.uploadUrl, {
+            method: "PUT", headers: { "Content-Type": it.contentType }, body: f,
+          })
+          if (!put.ok) throw new Error("Envoi direct refusé")
+          ajoutees.push({ url: it.publicUrl, emplacement: "", principale: false })
+        }
+      } catch {
+        viaServeur = true
+      }
+
+      if (viaServeur) {
+        ajoutees.length = 0
+        const fd = new FormData()
+        Array.from(files).forEach(f => fd.append("files", f))
+        const rep = await fetch(`/api/vehicules/${id}/media`, { method: "POST", body: fd })
+        const data = await rep.json() as { urls?: string[]; errors?: string[] }
+        if (!rep.ok) { setErreur(data.errors?.[0] ?? "Échec du téléversement."); return }
+        if (data.errors?.length) setErreur(data.errors.join(" · "))
+        for (const url of data.urls ?? []) ajoutees.push({ url, emplacement: "", principale: false })
+      }
+
+      if (ajoutees.length) {
+        const toutes = [...v.photos, ...ajoutees]
+        // La toute première photo devient la vignette : sans principale, le
+        // catalogue afficherait une voiture sans image.
+        if (!toutes.some(p => p.principale)) toutes[0].principale = true
+        set({ photos: toutes })
+      }
+    } finally {
+      setEnvoi(false)
+      if (fichierRef.current) fichierRef.current.value = ""
+    }
+  }
+
   function enregistrer(publierAussi?: boolean) {
     setErreur(null)
     const payload = publierAussi === undefined ? v : { ...v, publie: publierAussi }
     start(async () => {
-      const r = vehiculeId
-        ? await majVehicule(vehiculeId, payload)
+      const r = idCourant
+        ? await majVehicule(idCourant, payload)
         : await creerVehicule(payload)
       if (!r.ok) {
         setErreur(r.error)
@@ -237,11 +315,19 @@ export default function VehiculeForm(
         {/* ── 4. Photos ──────────────────────────────────────────────── */}
         {etape === 3 && (
           <>
-            <p className="text-xs text-gray-500">
-              Collez l&apos;adresse de chaque photo. Le téléversement direct depuis le
-              téléphone arrive à la prochaine étape du module ; en attendant, une
-              photo déjà en ligne fait l&apos;affaire.
-            </p>
+            <div className="flex items-center gap-3 flex-wrap">
+              <input ref={fichierRef} type="file" accept="image/*" multiple hidden
+                onChange={e => void televerser(e.target.files)} />
+              <button onClick={() => fichierRef.current?.click()} disabled={envoi}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-xl disabled:opacity-60">
+                {envoi ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                {envoi ? "Envoi en cours…" : "Ajouter des photos"}
+              </button>
+              <p className="text-xs text-gray-500">
+                Plusieurs photos à la fois. Une fiche neuve est enregistrée
+                automatiquement avant l&apos;envoi.
+              </p>
+            </div>
             {v.photos.map((p, i) => (
               <div key={i} className="grid grid-cols-12 gap-2 items-end">
                 <label className={lbl + " col-span-6"}>Adresse de la photo
@@ -279,7 +365,7 @@ export default function VehiculeForm(
                 }],
               })}
               className="inline-flex items-center gap-1.5 text-sm text-blue-600 hover:underline">
-              <Plus className="w-4 h-4" /> Ajouter une photo
+              <Plus className="w-4 h-4" /> Ajouter une photo par son adresse
             </button>
             <label className={lbl + " block"}>Vidéo de présentation (lien)
               <input className={champ + " mt-1"} value={v.video_url ?? ""}

@@ -6,7 +6,7 @@ import { useState } from "react"
 import {
   LayoutDashboard, Home, Users, MessageSquare, Wallet,
   Settings, ChevronLeft, ChevronRight, LogOut,
-  Bell, Smartphone, TrendingUp, MapPin, Megaphone, Sofa, Building2, HandCoins, Clock, Star, UserCircle, Bot, BellRing, ImagePlus, ShieldBan, Cross, BarChart3, Gauge, ShieldCheck, Car, CarFront
+  Bell, Smartphone, TrendingUp, MapPin, Megaphone, Sofa, Building2, HandCoins, Clock, Star, UserCircle, Bot, BellRing, ImagePlus, ShieldBan, Cross, BarChart3, Gauge, ShieldCheck, Car, CarFront, CalendarDays
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -19,6 +19,7 @@ const NAV = [
   // enregistré, il n'y a aucun véhicule à saisir.
   { href: "/admin/loueurs",       icon: Car,             label: "Loueurs",          roles: ["super_admin","admin"] },
   { href: "/admin/vehicules",     icon: CarFront,        label: "Véhicules",        roles: ["super_admin","admin"] },
+  { href: "/admin/locations",     icon: CalendarDays,    label: "Locations",        roles: ["super_admin","admin"] },
   { href: "/admin/suivi",         icon: Gauge,           label: "Pilotage",         roles: ["super_admin","admin","moderateur"] },
   { href: "/admin/statistiques",  icon: BarChart3,       label: "Statistiques",     roles: ["super_admin","admin","moderateur"] },
   { href: "/admin/expiration",    icon: Clock,           label: "Durée des annonces", roles: ["super_admin","admin"] },

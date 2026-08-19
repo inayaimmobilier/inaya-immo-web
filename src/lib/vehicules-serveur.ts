@@ -32,7 +32,6 @@ export async function listerVehicules(loueurId?: string | null): Promise<Vehicul
   let q = db.from("vehicules")
     .select("id,reference,loueur_id,marque,modele,type_vehicule,immatriculation," +
             "statut,publie,prix_jour,ville")
-    .neq("statut", "supprime")
     .order("created_at", { ascending: false })
   if (loueurId) q = q.eq("loueur_id", loueurId)
 
@@ -180,4 +179,68 @@ export async function loueurDeProfil(profileId: string) {
   return data as {
     id: string; raison_sociale: string | null; nom_contact: string | null; statut: string
   } | null
+}
+
+export interface LocationLigneServeur {
+  id: string
+  reference: number | null
+  vehicule: string
+  immatriculation: string | null
+  client_nom: string
+  client_telephone: string
+  debut: string
+  fin: string
+  statut: string
+  montant_total: number
+  depot_garantie: number
+  avec_chauffeur: boolean
+  km_depart: number | null
+  km_retour: number | null
+  loueur_nom: string
+}
+
+/** Locations d'une flotte, ou de toutes si `loueurId` est absent. */
+export async function listerLocations(loueurId?: string | null): Promise<LocationLigneServeur[]> {
+  const db = createAdminClient()
+  let q = db.from("locations_vehicule")
+    .select("id,reference,vehicule_id,loueur_id,client_nom,client_telephone,debut,fin," +
+            "statut,montant_total,depot_garantie,avec_chauffeur,km_depart,km_retour")
+    .order("debut", { ascending: false })
+  if (loueurId) q = q.eq("loueur_id", loueurId)
+
+  const { data, error } = await q
+  if (error) return []
+  const lignes = (data ?? []) as (Omit<LocationLigneServeur, "vehicule" | "immatriculation" | "loueur_nom">
+    & { vehicule_id: string; loueur_id: string })[]
+  if (lignes.length === 0) return []
+
+  // Véhicules et loueurs en deux requêtes : une par ligne rendrait la page
+  // inutilisable dès la centième location.
+  const { data: vs } = await db.from("vehicules")
+    .select("id,marque,modele,immatriculation")
+    .in("id", [...new Set(lignes.map(l => l.vehicule_id))])
+  const veh = new Map<string, { nom: string; immat: string | null }>()
+  for (const v of (vs ?? []) as { id: string; marque: string; modele: string; immatriculation: string | null }[]) {
+    veh.set(v.id, { nom: `${v.marque} ${v.modele}`, immat: v.immatriculation })
+  }
+
+  const { data: ls } = await db.from("loueurs")
+    .select("id,raison_sociale,nom_contact")
+    .in("id", [...new Set(lignes.map(l => l.loueur_id))])
+  const nomLoueur = new Map<string, string>()
+  for (const l of (ls ?? []) as { id: string; raison_sociale: string | null; nom_contact: string | null }[]) {
+    nomLoueur.set(l.id, l.raison_sociale || l.nom_contact || "Loueur")
+  }
+
+  return lignes.map(l => ({
+    id: l.id, reference: l.reference,
+    vehicule: veh.get(l.vehicule_id)?.nom ?? "Véhicule",
+    immatriculation: veh.get(l.vehicule_id)?.immat ?? null,
+    client_nom: l.client_nom, client_telephone: l.client_telephone,
+    debut: l.debut, fin: l.fin, statut: l.statut,
+    montant_total: l.montant_total ?? 0, depot_garantie: l.depot_garantie ?? 0,
+    avec_chauffeur: !!l.avec_chauffeur,
+    km_depart: l.km_depart, km_retour: l.km_retour,
+    loueur_nom: nomLoueur.get(l.loueur_id) ?? "—",
+  }))
 }
