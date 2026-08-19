@@ -52,12 +52,13 @@ export async function demanderReservation(d: DemandeReservationInput): Promise<R
 
   const db = createAdminClient()
   const { data: vData } = await db.from("vehicules")
-    .select("id,loueur_id,publie,statut,prix_jour,depot_garantie,marque,modele")
+    .select("id,loueur_id,publie,statut,prix_jour,prix_semaine,prix_mois," +
+            "depot_garantie,marque,modele")
     .eq("id", d.vehicule_id).maybeSingle()
   const v = vData as {
     id: string; loueur_id: string; publie: boolean; statut: string
-    prix_jour: number | null; depot_garantie: number | null
-    marque: string; modele: string
+    prix_jour: number | null; prix_semaine: number | null; prix_mois: number | null
+    depot_garantie: number | null; marque: string; modele: string
   } | null
   if (!v || !v.publie || v.statut === "archive") {
     return { ok: false, error: "Ce véhicule n'est plus proposé à la location." }
@@ -77,7 +78,17 @@ export async function demanderReservation(d: DemandeReservationInput): Promise<R
   const tarifs = (tarifsData ?? []) as TarifPalier[]
 
   const jours = Math.max(1, Math.ceil((fin.getTime() - debut.getTime()) / JOUR_MS))
-  const prixJour = prixPourDuree(jours, tarifs, v.prix_jour)
+
+  // Un véhicule peut n'avoir qu'un tarif hebdomadaire ou mensuel : la
+  // publication accepte n'importe lequel des quatre prix. Sans ce repli, la
+  // réservation aurait été enregistrée à 0 FCFA — un montant faux passe
+  // inaperçu bien plus longtemps qu'un montant absent.
+  const journalierDeBase =
+    v.prix_jour
+    ?? (v.prix_semaine ? Math.round(v.prix_semaine / 7) : null)
+    ?? (v.prix_mois ? Math.round(v.prix_mois / 30) : null)
+
+  const prixJour = prixPourDuree(jours, tarifs, journalierDeBase)
   const montant = prixJour ? prixJour * jours : 0
 
   const { data: loueur } = await db.from("loueurs")
@@ -106,7 +117,13 @@ export async function demanderReservation(d: DemandeReservationInput): Promise<R
     commission_pourcent: commission,
     commission_montant: Math.round(montant * commission / 100),
     avec_chauffeur: !!d.avec_chauffeur,
-    notes: d.message?.trim() || null,
+    notes: [
+      d.message?.trim() || null,
+      // Le doute est écrit sur la location : l'admin doit voir qu'il reste un
+      // prix à confirmer, plutôt que de découvrir un total à 0 au moment de
+      // facturer.
+      prixJour ? null : "⚠ Aucun tarif applicable — prix à confirmer avec le client.",
+    ].filter(Boolean).join("\n") || null,
   } as never).select("id,reference").single()
 
   if (error) {
