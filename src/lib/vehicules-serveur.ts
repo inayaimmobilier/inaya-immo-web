@@ -196,6 +196,11 @@ export interface LocationLigneServeur {
   avec_chauffeur: boolean
   km_depart: number | null
   km_retour: number | null
+  frais_carburant: number | null
+  frais_retard: number | null
+  frais_km_supp: number | null
+  penalites: number | null
+  depot_restitue: number | null
   loueur_nom: string
 }
 
@@ -204,7 +209,8 @@ export async function listerLocations(loueurId?: string | null): Promise<Locatio
   const db = createAdminClient()
   let q = db.from("locations_vehicule")
     .select("id,reference,vehicule_id,loueur_id,client_nom,client_telephone,debut,fin," +
-            "statut,montant_total,depot_garantie,avec_chauffeur,km_depart,km_retour")
+            "statut,montant_total,depot_garantie,avec_chauffeur,km_depart,km_retour," +
+            "frais_carburant,frais_retard,frais_km_supp,penalites,depot_restitue")
     .order("debut", { ascending: false })
   if (loueurId) q = q.eq("loueur_id", loueurId)
 
@@ -241,6 +247,42 @@ export async function listerLocations(loueurId?: string | null): Promise<Locatio
     montant_total: l.montant_total ?? 0, depot_garantie: l.depot_garantie ?? 0,
     avec_chauffeur: !!l.avec_chauffeur,
     km_depart: l.km_depart, km_retour: l.km_retour,
+    frais_carburant: l.frais_carburant, frais_retard: l.frais_retard,
+    frais_km_supp: l.frais_km_supp, penalites: l.penalites,
+    depot_restitue: l.depot_restitue,
     loueur_nom: nomLoueur.get(l.loueur_id) ?? "—",
   }))
+}
+
+export interface AlerteDocument {
+  id: string
+  vehicule_id: string
+  type: string
+  marque: string
+  modele: string
+  immatriculation: string | null
+  jours_restants: number
+  niveau: string
+}
+
+/**
+ * Documents expirés ou proches de l'échéance.
+ *
+ * Le calcul du niveau vit dans la vue `vehicule_documents_alertes`, en base :
+ * l'admin et l'espace loueur le liraient sinon chacun à leur façon, et deux
+ * seuils différents pour la même assurance rendraient l'alerte incroyable.
+ */
+export async function alertesDocuments(loueurId?: string | null): Promise<AlerteDocument[]> {
+  const db = createAdminClient()
+  let q = db.from("vehicule_documents_alertes")
+    .select("id,vehicule_id,type,marque,modele,immatriculation,jours_restants,niveau")
+    .neq("niveau", "ok")
+    .order("jours_restants", { ascending: true })
+  if (loueurId) q = q.eq("loueur_id", loueurId)
+
+  const { data, error } = await q
+  // Vue absente (migration non appliquée) : pas d'alerte plutôt qu'un écran en
+  // erreur — la liste des véhicules, elle, reste utilisable.
+  if (error) return []
+  return (data ?? []) as AlerteDocument[]
 }

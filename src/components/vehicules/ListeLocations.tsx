@@ -22,6 +22,11 @@ export interface LocationLigne {
   avec_chauffeur: boolean
   km_depart: number | null
   km_retour: number | null
+  frais_carburant: number | null
+  frais_retard: number | null
+  frais_km_supp: number | null
+  penalites: number | null
+  depot_restitue: number | null
   loueur_nom: string
 }
 
@@ -60,6 +65,26 @@ export default function ListeLocations(
         .some(x => x.toLowerCase().includes(r))
     })
   }, [locations, q, filtre])
+
+  /**
+   * Ouvre le relevé PRÉREMPLI avec ce qui est déjà enregistré.
+   *
+   * Les frais remplacent le total au lieu de s'y ajouter — c'est ce qui rend
+   * un double enregistrement sans effet. Mais partir de champs vides
+   * remettrait alors tous les frais à zéro au second passage : le préremplissage
+   * n'est pas un confort, il est la condition de la correction précédente.
+   */
+  const ouvrirReleve = (l: LocationLigne) => {
+    setErreur(null)
+    const txt = (n: number | null) => (n == null ? "" : String(n))
+    setForm({
+      km_depart: txt(l.km_depart), km_retour: txt(l.km_retour),
+      frais_carburant: txt(l.frais_carburant), frais_retard: txt(l.frais_retard),
+      frais_km_supp: txt(l.frais_km_supp), penalites: txt(l.penalites),
+      depot_restitue: txt(l.depot_restitue),
+    })
+    setReleve(l)
+  }
 
   const agir = (fn: () => Promise<{ ok: boolean; error?: string }>) => {
     setErreur(null)
@@ -160,7 +185,7 @@ export default function ListeLocations(
                     )}
                     {l.statut === "en_cours" && (
                       <>
-                        <button onClick={() => { setReleve(l); setErreur(null) }}
+                        <button onClick={() => ouvrirReleve(l)}
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-gray-200 hover:bg-gray-50">
                           <Gauge className="w-3.5 h-3.5" /> Relevé
                         </button>

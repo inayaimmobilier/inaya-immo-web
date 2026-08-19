@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/server"
-import { Car, Plus, Clock, ShieldAlert } from "lucide-react"
+import { Car, Plus, Clock, ShieldAlert, CalendarDays } from "lucide-react"
 import { listerVehicules, loueurDeProfil } from "@/lib/vehicules-serveur"
 import ListeVehicules from "@/components/vehicules/ListeVehicules"
 
@@ -67,10 +67,18 @@ export default async function EspaceLoueurPage() {
             {vehicules.filter(v => v.publie).length} en ligne
           </p>
         </div>
-        <Link href="/loueur/vehicules/nouveau"
-          className="inline-flex items-center gap-2 bg-blue-700 hover:bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-medium">
-          <Plus className="w-4 h-4" /> Ajouter un véhicule
-        </Link>
+        <div className="flex items-center gap-2">
+          {/* Les demandes de location arrivent ici : sans ce lien, le loueur
+              devrait deviner l'adresse pour voir ses réservations. */}
+          <Link href="/loueur/locations"
+            className="inline-flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-4 py-2 rounded-xl text-sm font-medium hover:bg-gray-50">
+            <CalendarDays className="w-4 h-4 text-blue-600" /> Mes locations
+          </Link>
+          <Link href="/loueur/vehicules/nouveau"
+            className="inline-flex items-center gap-2 bg-blue-700 hover:bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-medium">
+            <Plus className="w-4 h-4" /> Ajouter un véhicule
+          </Link>
+        </div>
       </div>
       <ListeVehicules vehicules={vehicules} base="/loueur/vehicules" />
     </div>

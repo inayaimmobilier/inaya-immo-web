@@ -82,10 +82,8 @@ export async function enregistrerReleve(
 ): Promise<Res> {
   const db = createAdminClient()
   const { data } = await db.from("locations_vehicule")
-    .select("vehicule_id,montant_location,montant_frais").eq("id", id).maybeSingle()
-  const loc = data as {
-    vehicule_id: string; montant_location: number; montant_frais: number
-  } | null
+    .select("vehicule_id,montant_location").eq("id", id).maybeSingle()
+  const loc = data as { vehicule_id: string; montant_location: number } | null
   if (!loc) return { ok: false, error: "Location introuvable." }
 
   const acces = await accesVehicule(loc.vehicule_id)
@@ -94,14 +92,18 @@ export async function enregistrerReleve(
   // Le total est RECALCULÉ à chaque relevé : le laisser figé après avoir
   // ajouté des frais de retard donnerait une facture fausse, et personne ne
   // penserait à le corriger à la main.
+  //
+  // Les frais REMPLACENT le total précédent, ils ne s'y ajoutent pas. Le
+  // formulaire envoie l'état complet des quatre postes ; les additionner
+  // doublait la facture au second enregistrement — un double clic suffisait.
   const supplements =
     (champs.frais_carburant ?? 0) + (champs.frais_retard ?? 0) +
     (champs.frais_km_supp ?? 0) + (champs.penalites ?? 0)
 
   const { error } = await db.from("locations_vehicule").update({
     ...champs,
-    montant_frais: (loc.montant_frais ?? 0) + supplements,
-    montant_total: (loc.montant_location ?? 0) + (loc.montant_frais ?? 0) + supplements,
+    montant_frais: supplements,
+    montant_total: (loc.montant_location ?? 0) + supplements,
     updated_at: new Date().toISOString(),
   } as never).eq("id", id)
 

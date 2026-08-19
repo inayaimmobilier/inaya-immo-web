@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/server"
-import { Car, Plus } from "lucide-react"
+import { Car, Plus, AlertTriangle } from "lucide-react"
 import type { UserRole } from "@/types/database"
-import { listerVehicules } from "@/lib/vehicules-serveur"
+import { listerVehicules, alertesDocuments } from "@/lib/vehicules-serveur"
 import ListeVehicules from "@/components/vehicules/ListeVehicules"
 
 export const metadata = { title: "Véhicules · Inaya Immo" }
@@ -17,7 +17,7 @@ export default async function VehiculesAdminPage() {
   const role = (me as { role: UserRole } | null)?.role ?? "client"
   if (!["super_admin", "admin"].includes(role)) redirect("/admin/dashboard")
 
-  const vehicules = await listerVehicules()
+  const [vehicules, alertes] = await Promise.all([listerVehicules(), alertesDocuments()])
 
   return (
     <div className="p-6 space-y-6">
@@ -35,6 +35,40 @@ export default async function VehiculesAdminPage() {
           <Plus className="w-4 h-4" /> Nouveau véhicule
         </Link>
       </div>
+      {/* Une assurance expirée immobilise le véhicule et engage la
+          responsabilité de la plateforme : l'alerte est en haut de l'écran,
+          pas dans un onglet qu'on ouvre une fois par mois. */}
+      {alertes.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
+          <p className="text-sm font-semibold text-amber-900 flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4" />
+            {alertes.length} document{alertes.length > 1 ? "s" : ""} à renouveler
+          </p>
+          <ul className="mt-2 space-y-1">
+            {alertes.slice(0, 8).map(a => (
+              <li key={a.id} className="text-xs text-amber-900 flex items-center gap-2 flex-wrap">
+                <span className={`px-1.5 py-0.5 rounded font-medium ${
+                  a.niveau === "expire" ? "bg-red-100 text-red-800"
+                  : a.niveau === "critique" ? "bg-orange-100 text-orange-800"
+                  : "bg-amber-100 text-amber-800"}`}>
+                  {a.niveau === "expire" ? "Expiré"
+                    : a.jours_restants === 0 ? "Expire aujourd'hui"
+                    : `${a.jours_restants} j`}
+                </span>
+                <span className="font-medium">{a.marque} {a.modele}</span>
+                {a.immatriculation && <span className="text-amber-700">{a.immatriculation}</span>}
+                <span className="text-amber-700">— {a.type.replace(/_/g, " ")}</span>
+              </li>
+            ))}
+          </ul>
+          {alertes.length > 8 && (
+            <p className="text-[11px] text-amber-700 mt-1">
+              et {alertes.length - 8} autre{alertes.length - 8 > 1 ? "s" : ""}.
+            </p>
+          )}
+        </div>
+      )}
+
       <ListeVehicules vehicules={vehicules} base="/admin/vehicules" montrerLoueur />
     </div>
   )
