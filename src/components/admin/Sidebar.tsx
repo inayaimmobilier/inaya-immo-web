@@ -6,7 +6,7 @@ import { useState } from "react"
 import {
   LayoutDashboard, Home, Users, MessageSquare, Wallet,
   Settings, ChevronLeft, ChevronRight, LogOut,
-  Bell, Smartphone, TrendingUp, MapPin, Megaphone, Sofa, Building2, HandCoins, Clock, Star, UserCircle, Bot, BellRing, ImagePlus, ShieldBan, Cross, BarChart3, Gauge, ShieldCheck
+  Bell, Smartphone, TrendingUp, MapPin, Megaphone, Sofa, Building2, HandCoins, Clock, Star, UserCircle, Bot, BellRing, ImagePlus, ShieldBan, Cross, BarChart3, Gauge, ShieldCheck, Car
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -15,6 +15,9 @@ const NAV = [
   { href: "/agent",               icon: UserCircle,      label: "Mon espace agent", roles: ["agent"] },
   { href: "/admin/annonces",      icon: Home,            label: "Annonces",         roles: ["super_admin","admin","moderateur","agent"] },
   { href: "/admin/residences",    icon: Sofa,            label: "Résidences",       roles: ["super_admin","admin","moderateur","agent"] },
+  // Location de véhicules : les loueurs d'abord — sans propriétaire
+  // enregistré, il n'y a aucun véhicule à saisir.
+  { href: "/admin/loueurs",       icon: Car,             label: "Loueurs",          roles: ["super_admin","admin"] },
   { href: "/admin/suivi",         icon: Gauge,           label: "Pilotage",         roles: ["super_admin","admin","moderateur"] },
   { href: "/admin/statistiques",  icon: BarChart3,       label: "Statistiques",     roles: ["super_admin","admin","moderateur"] },
   { href: "/admin/expiration",    icon: Clock,           label: "Durée des annonces", roles: ["super_admin","admin"] },
