@@ -231,3 +231,50 @@ export function prixPourDuree(
     .sort((a, b) => b.jour_min - a.jour_min)[0]
   return palier ? palier.prix_jour : prixJour
 }
+
+/**
+ * Points de contrôle d'un état des lieux, dans l'ordre de la fiche papier
+ * remplie sur le terrain. La MÊME grille sert au départ et au retour : une
+ * grille différente d'un côté et de l'autre rendrait la comparaison
+ * impossible, c'est-à-dire le constat inutile.
+ */
+export const POINTS_INSPECTION: { zone: string; element: string }[] = [
+  { zone: "exterieur", element: "Carrosserie" },
+  { zone: "exterieur", element: "Pare-brise" },
+  { zone: "exterieur", element: "Vitres" },
+  { zone: "exterieur", element: "Phares" },
+  { zone: "exterieur", element: "Rétroviseurs" },
+  { zone: "exterieur", element: "Pneus" },
+  { zone: "exterieur", element: "Jantes" },
+  { zone: "interieur", element: "Sièges" },
+  { zone: "interieur", element: "Tableau de bord" },
+  { zone: "interieur", element: "Climatisation" },
+  { zone: "interieur", element: "Autoradio" },
+  { zone: "interieur", element: "Coffre" },
+]
+
+export const ETATS_POINT: Option[] = [
+  { v: "bon", l: "Bon" },
+  { v: "moyen", l: "Moyen" },
+  { v: "mauvais", l: "Mauvais" },
+  { v: "endommage", l: "Endommagé" },
+]
+
+export const NIVEAUX_CARBURANT: Option[] = [
+  { v: "vide", l: "Vide" },
+  { v: "quart", l: "1/4" },
+  { v: "moitie", l: "1/2" },
+  { v: "trois_quarts", l: "3/4" },
+  { v: "plein", l: "Plein" },
+]
+
+/** Ce qu'un état des lieux transporte, formulaire → serveur. */
+export interface InspectionInput {
+  moment: "depart" | "retour"
+  kilometrage?: number | null
+  carburant?: string | null
+  proprete?: string | null
+  observations?: string | null
+  /** Élément → état constaté (bon, moyen, mauvais, endommage). */
+  points: Record<string, string>
+}

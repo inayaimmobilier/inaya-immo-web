@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { createAdminClient } from "@/lib/supabase/server"
 import { accesVehicule } from "@/lib/vehicules-acces"
+import { POINTS_INSPECTION, type InspectionInput } from "@/lib/vehicules"
 
 // ============================================================================
 // LOCATIONS — suivi d'une réservation jusqu'à la restitution.
@@ -115,4 +116,104 @@ export async function enregistrerReleve(
   revalidatePath("/admin/locations")
   revalidatePath("/loueur/locations")
   return { ok: true }
+}
+
+// ============================================================================
+// ÉTAT DES LIEUX — le troisième niveau du modèle.
+//
+// Une constatation DATÉE, rattachée à la location et non au véhicule : c'est
+// ce qui permet de dire dans quel état il était le jour où tel client l'a
+// rendu, et de trancher un litige des mois plus tard. La grille est la même au
+// départ et au retour ; une grille différente d'un côté et de l'autre rendrait
+// la comparaison impossible, c'est-à-dire le constat inutile.
+// ============================================================================
+
+export async function enregistrerInspection(
+  locationId: string, i: InspectionInput,
+): Promise<Res> {
+  const db = createAdminClient()
+  const { data } = await db.from("locations_vehicule")
+    .select("vehicule_id").eq("id", locationId).maybeSingle()
+  const loc = data as { vehicule_id: string } | null
+  if (!loc) return { ok: false, error: "Location introuvable." }
+
+  const acces = await accesVehicule(loc.vehicule_id)
+  if (!acces.autorise) return { ok: false, error: "Accès refusé." }
+
+  // Un seul constat par moment : la contrainte d'unicité de la base refuserait
+  // le second avec une erreur illisible. On remplace, ce qui permet de
+  // corriger un relevé fait trop vite au comptoir.
+  await db.from("vehicule_inspections")
+    .delete().eq("location_id", locationId).eq("moment", i.moment)
+
+  const { data: cree, error } = await db.from("vehicule_inspections").insert({
+    location_id: locationId,
+    vehicule_id: loc.vehicule_id,
+    moment: i.moment,
+    fait_par: acces.userId,
+    kilometrage: i.kilometrage ?? null,
+    carburant: i.carburant || null,
+    proprete: i.proprete || null,
+    observations: i.observations?.trim() || null,
+  } as never).select("id").single()
+
+  if (error) {
+    console.error("INAYA-INSP-010", error)
+    return { ok: false, error: "Échec de l'enregistrement du constat." }
+  }
+
+  const inspectionId = (cree as { id: string }).id
+  const lignes = POINTS_INSPECTION
+    .filter(p => i.points[p.element])
+    .map(p => ({
+      inspection_id: inspectionId, zone: p.zone,
+      element: p.element, etat: i.points[p.element],
+    }))
+
+  if (lignes.length) {
+    const { error: e2 } = await db.from("inspection_points").insert(lignes as never)
+    if (e2) {
+      console.error("INAYA-INSP-011", e2)
+      return { ok: false, error: "Le constat est enregistré, mais pas le détail des points." }
+    }
+  }
+
+  // Le kilométrage relevé alimente la location : le ressaisir ailleurs serait
+  // une seconde occasion de se tromper.
+  if (i.kilometrage != null) {
+    await db.from("locations_vehicule").update({
+      [i.moment === "depart" ? "km_depart" : "km_retour"]: i.kilometrage,
+      [i.moment === "depart" ? "carburant_depart" : "carburant_retour"]: i.carburant || null,
+      updated_at: new Date().toISOString(),
+    } as never).eq("id", locationId)
+  }
+
+  revalidatePath("/admin/locations")
+  revalidatePath("/loueur/locations")
+  return { ok: true }
+}
+
+/** Constats déjà enregistrés pour une location (pour les rouvrir et corriger). */
+export async function lireInspections(locationId: string) {
+  const db = createAdminClient()
+  const { data } = await db.from("vehicule_inspections")
+    .select("id,moment,kilometrage,carburant,proprete,observations,fait_le")
+    .eq("location_id", locationId)
+  const inspections = (data ?? []) as {
+    id: string; moment: string; kilometrage: number | null
+    carburant: string | null; proprete: string | null
+    observations: string | null; fait_le: string
+  }[]
+  if (inspections.length === 0) return []
+
+  const { data: pts } = await db.from("inspection_points")
+    .select("inspection_id,element,etat")
+    .in("inspection_id", inspections.map(x => x.id))
+  const parInspection = new Map<string, Record<string, string>>()
+  for (const p of (pts ?? []) as { inspection_id: string; element: string; etat: string }[]) {
+    const m = parInspection.get(p.inspection_id) ?? {}
+    m[p.element] = p.etat
+    parInspection.set(p.inspection_id, m)
+  }
+  return inspections.map(x => ({ ...x, points: parInspection.get(x.id) ?? {} }))
 }
