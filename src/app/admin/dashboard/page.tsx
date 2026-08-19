@@ -1,5 +1,5 @@
 import { createClient, createAdminClient } from "@/lib/supabase/server"
-import { Home, MessageSquare, Wallet, Clock, AlertCircle, Eye, Users, MessageCircle, Smartphone } from "lucide-react"
+import { Home, MessageSquare, Wallet, Clock, AlertCircle, Eye, Users, MessageCircle, Smartphone, CarFront, CalendarDays } from "lucide-react"
 import { formatPrix } from "@/lib/utils"
 import AutoRefresh from "@/components/shared/AutoRefresh"
 
@@ -163,6 +163,35 @@ async function getVisitStats() {
   }
 }
 
+/**
+ * Indicateurs du module « location de véhicules ».
+ *
+ * Séparés des statistiques immobilières : ce sont deux métiers, et une seule
+ * requête qui échoue ne doit pas vider le tableau de bord de l'autre. Tables
+ * absentes (migration 059 non appliquée) → tout à zéro, sans erreur.
+ */
+async function getStatsVehicules() {
+  const vide = { flotte: 0, enLigne: 0, reservations: 0, locationsEnCours: 0 }
+  try {
+    const db = createAdminClient()
+    const [tot, ligne, resa, cours] = await Promise.all([
+      db.from("vehicules").select("id", { count: "exact", head: true }).neq("statut", "archive"),
+      db.from("vehicules").select("id", { count: "exact", head: true }).eq("publie", true),
+      db.from("locations_vehicule").select("id", { count: "exact", head: true }).eq("statut", "reservee"),
+      db.from("locations_vehicule").select("id", { count: "exact", head: true }).eq("statut", "en_cours"),
+    ])
+    if (tot.error) return vide
+    return {
+      flotte: tot.count ?? 0,
+      enLigne: ligne.count ?? 0,
+      reservations: resa.count ?? 0,
+      locationsEnCours: cours.count ?? 0,
+    }
+  } catch {
+    return vide
+  }
+}
+
 async function getDashboardStats() {
   const supabase = await createClient()
 
@@ -237,11 +266,15 @@ const STATUT_LABEL_DASH: Record<string, string> = {
 }
 
 export default async function DashboardPage() {
-  const [stats, visits, contacts, apk] = await Promise.all([
+  const [stats, visits, contacts, apk, vehicules] = await Promise.all([
     getDashboardStats(), getVisitStats(), getContactStats(), getTelechargements(),
+    getStatsVehicules(),
   ])
 
-  const kpis = [
+  const kpis: {
+    icon: typeof Home; label: string; value: number; color: string
+    href: string; urgent?: boolean; sousTexte?: string
+  }[] = [
     {
       icon: Home,
       label: "Annonces publiées",
@@ -271,6 +304,29 @@ export default async function DashboardPage() {
       color: "green",
       href: "/admin/transactions",
     },
+    // Location de véhicules : le nouveau métier doit se voir ici, sinon
+    // personne ne saura qu'il tourne.
+    {
+      icon: CarFront,
+      label: "Véhicules en ligne",
+      value: vehicules.enLigne,
+      color: "teal",
+      href: "/admin/vehicules",
+      sousTexte: vehicules.flotte > 0
+        ? `sur ${vehicules.flotte} dans la flotte`
+        : "aucun véhicule enregistré",
+    },
+    {
+      icon: CalendarDays,
+      label: "Réservations à confirmer",
+      value: vehicules.reservations,
+      color: "amber",
+      href: "/admin/locations",
+      urgent: vehicules.reservations > 0,
+      sousTexte: vehicules.locationsEnCours > 0
+        ? `${vehicules.locationsEnCours} location(s) en cours`
+        : undefined,
+    },
   ]
 
   const colorMap: Record<string, string> = {
@@ -278,6 +334,7 @@ export default async function DashboardPage() {
     amber:  "bg-amber-50 text-amber-600",
     indigo: "bg-indigo-50 text-indigo-600",
     green:  "bg-green-50 text-green-600",
+    teal:   "bg-teal-50 text-teal-600",
   }
 
   return (
@@ -363,7 +420,7 @@ export default async function DashboardPage() {
 
       {/* KPI cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
-        {kpis.map(({ icon: Icon, label, value, color, href, urgent }) => (
+        {kpis.map(({ icon: Icon, label, value, color, href, urgent, sousTexte }) => (
           <a
             key={label}
             href={href}
@@ -381,6 +438,9 @@ export default async function DashboardPage() {
             </div>
             <div className="text-3xl font-bold text-gray-900 mb-1">{value}</div>
             <div className="text-sm text-gray-500 group-hover:text-gray-700 transition-colors">{label}</div>
+            {/* Un compteur sans reference ne dit rien : « 3 en ligne » prend
+                son sens quand on lit « sur 12 dans la flotte ». */}
+            {sousTexte && <div className="text-xs text-gray-400 mt-0.5">{sousTexte}</div>}
           </a>
         ))}
       </div>
