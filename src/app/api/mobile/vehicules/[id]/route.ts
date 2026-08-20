@@ -21,9 +21,28 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     ? await db.from("equipements_vehicule").select("libelle").in("code", codes)
     : { data: [] }
 
+  const urls = ((photos.data ?? []) as { url: string }[]).map(p => p.url)
+  const videoUrl = (data as { video_url: string | null }).video_url
+
+  // `media` reprend le format de la galerie des annonces : l'application a
+  // déjà un composant qui affiche photos ET vidéos, lance la lecture de la
+  // diapositive visible et propose l'enregistrement. Réinventer un carrousel
+  // pour les voitures aurait donné deux comportements différents dans la même
+  // application.
+  //
+  // La vidéo est placée EN TÊTE : c'est ce qu'un client veut voir en premier
+  // sur une voiture, et elle se lance alors toute seule.
+  const media = [
+    ...(videoUrl ? [{ url: videoUrl, type: "video", thumbnail_url: urls[0] ?? null }] : []),
+    ...urls.map(u => ({ url: u, type: "image", thumbnail_url: null })),
+  ]
+
   return NextResponse.json({
     vehicule: data,
-    photos: ((photos.data ?? []) as { url: string }[]).map(p => p.url),
+    media,
+    // `photos` reste renvoyé : les applications déjà installées l'attendent,
+    // et une mise à jour n'est jamais installée par tout le monde le même jour.
+    photos: urls,
     equipements: ((libelles ?? []) as { libelle: string }[]).map(e => e.libelle),
     tarifs: tarifs.data ?? [],
   })
