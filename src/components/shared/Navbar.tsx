@@ -139,6 +139,10 @@ export default function Navbar() {
           <Link href="/biens?type=location" className="text-sm text-gray-700 py-2 font-medium" onClick={() => setOpen(false)}>Location</Link>
           <Link href="/biens?type=vente" className="text-sm text-gray-700 py-2 font-medium" onClick={() => setOpen(false)}>Vente</Link>
           <Link href="/residences" className="text-sm text-gray-700 py-2 font-medium" onClick={() => setOpen(false)}>Résidences meublées</Link>
+          {/* Le menu déroulant est le SEUL accès sur téléphone : un lien
+              ajouté à la barre du haut n'y apparaît pas, et le module
+              restait invisible pour la majorité des visiteurs. */}
+          <Link href="/vehicules" className="text-sm text-blue-700 py-2 font-semibold" onClick={() => setOpen(false)}>Location de voitures</Link>
           <Link href="/immobilier" className="text-sm text-gray-700 py-2 font-medium" onClick={() => setOpen(false)}>Par quartier</Link>
           <Link href="/biens" className="text-sm text-gray-700 py-2 font-medium" onClick={() => setOpen(false)}>Toutes les annonces</Link>
           <Link href="/telecharger" className="flex items-center gap-1.5 text-sm text-blue-700 py-2 font-semibold" onClick={() => setOpen(false)}>
