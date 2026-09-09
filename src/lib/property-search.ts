@@ -62,6 +62,63 @@ export type ScoredProperty = RawProperty & {
   score: number
 }
 
+/**
+ * Les seules colonnes que ce moteur et ses trois consommateurs (application
+ * mobile, assistant du site, assistant WhatsApp) lisent réellement.
+ *
+ * À garder aligné sur `RawProperty` : toute colonne ajoutée ici sans y être
+ * déclarée voyage sur le réseau pour rien, et c'est exactement ce qui a coûté
+ * la plateforme — voir le commentaire dans `searchProperties`.
+ */
+const COLONNES_RECHERCHE = [
+  "id", "reference", "titre", "description", "type_offre", "categorie",
+  "prix", "prix_m2", "surface", "nb_pieces", "nb_chambres",
+  "quartier", "ville", "meuble", "tarif_periode", "created_at",
+].join(",")
+
+// ── Mémoire courte du catalogue ─────────────────────────────────────────────
+// Le catalogue change lentement (quelques centaines d'annonces par jour) alors
+// que les recherches, elles, arrivent en rafale. Une minute de mémoire suffit à
+// ce qu'une rafale ne coûte qu'une lecture.
+//
+// `enCours` est aussi important que `lignes` : sans lui, dix recherches
+// simultanées sur un cache froid déclenchent dix lectures complètes en
+// parallèle — précisément le pic qui fait sauter un quota.
+const TTL_CATALOGUE_MS = 60_000
+const catalogue = new Map<string, {
+  lignes?: RawProperty[]
+  expire?: number
+  enCours?: Promise<RawProperty[]>
+}>()
+
+async function lireCatalogue(
+  clef: string,
+  charger: () => Promise<RawProperty[]>,
+): Promise<RawProperty[]> {
+  const e = catalogue.get(clef)
+  if (e?.lignes && e.expire && Date.now() < e.expire) return e.lignes
+  if (e?.enCours) return e.enCours
+
+  const enCours = charger()
+    .then(lignes => {
+      catalogue.set(clef, { lignes, expire: Date.now() + TTL_CATALOGUE_MS })
+      return lignes
+    })
+    .catch(err => {
+      // Un échec ne doit jamais rester collé dans le cache : sinon toutes les
+      // recherches suivantes échouent pendant une minute pour une panne d'une
+      // seconde.
+      catalogue.delete(clef)
+      throw err
+    })
+
+  catalogue.set(clef, { ...e, enCours })
+  return enCours
+}
+
+/** Vide la mémoire courte (à appeler après publication/modification d'annonce). */
+export function invaliderCatalogue(): void { catalogue.clear() }
+
 const round2 = (n: number) => Math.round(n * 100) / 100
 const stripAccents = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase()
 const dateMs = (p: RawProperty) => (p.created_at ? new Date(p.created_at).getTime() : 0)
@@ -131,9 +188,17 @@ export async function searchProperties(args: SearchArgs, opts: { limit?: number 
   //
   // On lit donc tout, en demandant le décompte exact pour réclamer les pages
   // suivantes EN PARALLÈLE : deux allers-retours au lieu de six.
+  //
+  // MAIS on ne lit que les COLONNES UTILES. `select("*")` embarquait
+  // `search_vector` — l'index full-text généré par Postgres à partir du titre,
+  // de la description, du quartier et de la ville. Il pèse plusieurs fois le
+  // texte d'origine, ne sert QU'à l'index côté SQL, et aucune ligne de ce
+  // fichier ne le lit. Il partait pourtant sur le réseau pour chaque annonce, à
+  // chaque recherche : c'est ce qui a fait exploser le quota de trafic Supabase
+  // le 09/09/2026 et coupé la plateforme entière.
   const construire = () => {
     let q = admin.from("properties")
-      .select("*", { count: "exact" })
+      .select(COLONNES_RECHERCHE, { count: "exact" })
       .eq("statut", "publie")
     if (wantResidence) q = q.eq("type_offre", "residence_meublee")
     else if (args.type_offre) q = q.eq("type_offre", args.type_offre)
@@ -144,9 +209,16 @@ export async function searchProperties(args: SearchArgs, opts: { limit?: number 
     return q.order("created_at", { ascending: false }).order("id", { ascending: false })
   }
 
-  const { lignes, error } = await lireTout<RawProperty>(construire)
-  if (error) throw new Error((error as { message?: string }).message ?? "lecture des annonces")
-  const rows = lignes
+  // Cette lecture est identique pour toutes les recherches d'un même univers :
+  // le tri fin (commune, catégorie, mots-clés) se fait ensuite en mémoire. La
+  // relire à chaque requête revenait à retélécharger le catalogue entier pour
+  // chaque visiteur. On la garde donc brièvement en mémoire du serveur.
+  const clefUnivers = wantResidence ? "residence" : (args.type_offre ?? "hors-residence")
+  const rows = await lireCatalogue(clefUnivers, async () => {
+    const { lignes, error } = await lireTout<RawProperty>(construire)
+    if (error) throw new Error((error as { message?: string }).message ?? "lecture des annonces")
+    return lignes
+  })
 
   const cats = args.categories?.length ? args.categories : (args.categorie ? [args.categorie] : [])
   const zones = splitZones(args).map(stripAccents).filter(Boolean)

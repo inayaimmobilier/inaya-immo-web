@@ -9,6 +9,7 @@ import AdSpace from "@/components/ads/AdComponents"
 import CityMarquee from "@/components/shared/CityMarquee"
 import AutoRefresh from "@/components/shared/AutoRefresh"
 import { getPublishedTestimonials } from "@/lib/testimonials"
+import { COLONNES_CARTE } from "@/lib/colonnes-annonce"
 import { ArrowRight, Shield, Bell, Users, PlusCircle, Sofa, Star } from "lucide-react"
 
 // Données temps réel (ingestion WhatsApp) : jamais de cache, toujours frais.
@@ -39,7 +40,13 @@ async function getResidences() {
   const supabase = await createClient()
   const { data } = await supabase
     .from("properties")
-    .select("*,property_media(url,type,ordre,thumbnail_url),zones(nom)")
+    // Colonnes explicites, jamais `*` : la table porte `search_vector`, l'index
+    // full-text généré par Postgres. Il pèse plusieurs fois le texte de
+    // l'annonce, ne sert qu'au moteur SQL, et personne ne le lit ici — mais avec
+    // `*` il partait sur le réseau pour chaque résidence, à chaque affichage de
+    // l'accueil, page rafraîchie toutes les 60 s. C'est ce trafic qui a fait
+    // sauter le quota Supabase et coupé la plateforme le 09/09/2026.
+    .select(COLONNES_CARTE)
     .eq("statut", "publie")
     .eq("type_offre", "residence_meublee")
     .order("created_at", { ascending: false })

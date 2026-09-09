@@ -3,6 +3,7 @@ import Navbar from "@/components/shared/Navbar"
 import PropertyCard from "@/components/properties/PropertyCard"
 import { createClient } from "@/lib/supabase/server"
 import AutoRefresh from "@/components/shared/AutoRefresh"
+import { COLONNES_CARTE } from "@/lib/colonnes-annonce"
 import { Sofa, PlusCircle } from "lucide-react"
 
 export const metadata = {
@@ -19,7 +20,11 @@ export default async function ResidencesPage() {
   const supabase = await createClient()
   const { data } = await supabase
     .from("properties")
-    .select("*,property_media(url,type,ordre,thumbnail_url),zones(nom)")
+    // Colonnes explicites : voir `colonnes-annonce.ts`. Cette page est en
+    // `force-dynamic` ET se rafraîchit toutes les 60 s — un onglet laissé
+    // ouvert relisait donc tout le catalogue meublé, `search_vector` compris,
+    // 1 440 fois par jour.
+    .select(COLONNES_CARTE)
     .eq("statut", "publie")
     .eq("type_offre", "residence_meublee")
     .order("validated_at", { ascending: false, nullsFirst: false })
