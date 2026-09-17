@@ -100,7 +100,7 @@ export default function PropertyFilters() {
         <span className="text-sm font-semibold text-gray-900">Filtres</span>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
         {/* Type opération */}
         <select value={params.get("type") || ""} onChange={e => update("type", e.target.value)} className={cls}>
           <option value="">Tous types</option>
@@ -131,8 +131,10 @@ export default function PropertyFilters() {
           onChange={vals => update("quartier", vals.join(","))}
         />
 
-        {/* Pièces min */}
-        <select value={params.get("pieces_min") || ""} onChange={e => update("pieces_min", e.target.value)} className={cls}>
+        {/* Pièces min — sur DEUX colonnes : le libellé « 4 pièces — 3 chambres
+            salon » était coupé à « 4 pièces » dans une case simple, et la partie
+            utile (la formulation ivoirienne) n'apparaissait jamais. */}
+        <select value={params.get("pieces_min") || ""} onChange={e => update("pieces_min", e.target.value)} className={`col-span-2 ${cls}`}>
           {PIECES_MIN.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
         </select>
 
@@ -144,7 +146,7 @@ export default function PropertyFilters() {
           defaultValue={params.get("prix_max") || ""}
           onKeyDown={e => { if (e.key === "Enter") update("prix_max", (e.target as HTMLInputElement).value.trim()) }}
           onBlur={e => { const v = e.target.value.trim(); if (v !== (params.get("prix_max") || "")) update("prix_max", v) }}
-          className={cls}
+          className={`col-span-2 sm:col-span-3 lg:col-span-2 ${cls}`}
         />
 
       </div>

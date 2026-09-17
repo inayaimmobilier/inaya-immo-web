@@ -5,11 +5,12 @@ import SignalementsPanel from "./SignalementsPanel"
 import {
   ArrowLeft, Users, Copy, Star, Phone, User, MessageSquare, Globe, Star as StarIcon, Images, Smartphone,
 } from "lucide-react"
-import { formatPrix, formatDate, CATEGORIE_LABEL, TYPE_OFFRE_LABEL, STATUT_LABEL } from "@/lib/utils"
+import { formatPrix, formatDateTime, CATEGORIE_LABEL, TYPE_OFFRE_LABEL, STATUT_LABEL } from "@/lib/utils"
 import type { UserRole, Canal } from "@/types/database"
 import MergeCandidate from "./MergeCandidate"
 import MediaSection from "./MediaSection"
 import PropertyEditForm from "./PropertyEditForm"
+import CopierExtrait from "./CopierExtrait"
 
 export const metadata = { title: "Détail annonce · Inaya Immo" }
 
@@ -31,6 +32,28 @@ interface Publisher {
   id: string; rang: number; est_original: boolean; canal: Canal
   contact_nom: string | null; contact_phone: string | null; publisher_id: string | null
   group_nom: string | null; publie_le: string
+  whatsapp_message_id: string | null
+}
+/** Message WhatsApp d'origine, tel que reçu dans le groupe. */
+interface MessageOrigine {
+  id: string; contenu: string | null; sender: string | null; sender_name: string | null; recu_le: string
+}
+
+/**
+ * Masque les numéros de téléphone d'un texte.
+ *
+ * Le message d'origine contient presque toujours le numéro de l'annonceur. Les
+ * agents et modérateurs ne voient pas ce numéro dans la fiche (protection de la
+ * commission) : le leur montrer dans le texte brut annulerait cette règle.
+ */
+function masquerNumeros(texte: string): string {
+  return texte.replace(/(?:\+?\d[\d\s.-]{6,}\d)/g, m => (m.replace(/\D/g, "").length >= 8 ? "•••• (réservé admin)" : m))
+}
+
+/** Numéro exploitable pour wa.me : chiffres seuls, indicatif ivoirien ajouté si absent. */
+function numeroWa(tel: string): string {
+  const d = tel.replace(/\D/g, "")
+  return d.length === 10 ? `225${d}` : d
 }
 interface Candidate {
   candidate_id: string; titre: string; prix: number; statut: string; score: number
@@ -82,7 +105,7 @@ export default async function AdminBienDetail({ params }: PageProps) {
 
   const [{ data: pubData }, { data: candData }, { data: mediaData }] = await Promise.all([
     supabase.from("property_publishers")
-      .select("id,rang,est_original,canal,contact_nom,contact_phone,publisher_id,group_nom,publie_le")
+      .select("id,rang,est_original,canal,contact_nom,contact_phone,publisher_id,group_nom,publie_le,whatsapp_message_id")
       .eq("property_id", id).order("rang", { ascending: true }),
     supabase.rpc("find_property_duplicates" as never, { p_property_id: id } as never),
     supabase.from("property_media")
@@ -92,6 +115,29 @@ export default async function AdminBienDetail({ params }: PageProps) {
   const publishers = (pubData ?? []) as Publisher[]
   const candidates = ((candData ?? []) as Candidate[]).filter(c => c.candidate_id)
   const medias = (mediaData ?? []) as MediaRow[]
+
+  // ── Messages d'origine ─────────────────────────────────────────────────────
+  // Le texte exactement tel que publié dans le groupe : c'est lui qu'on cherche
+  // dans WhatsApp pour retrouver l'annonce, et la reformulation de l'IA ne le
+  // permet pas. Lu avec le client admin — la page est déjà réservée au staff.
+  const idPrincipal = (prop as unknown as { whatsapp_message_id?: string | null }).whatsapp_message_id ?? null
+  const idsMessages = [...new Set([idPrincipal, ...publishers.map(p => p.whatsapp_message_id)].filter((x): x is string => !!x))]
+  const messages = new Map<string, MessageOrigine>()
+  if (idsMessages.length) {
+    const { data: msgData } = await createAdminClient()
+      .from("whatsapp_messages")
+      .select("id,contenu,sender,sender_name,recu_le")
+      .in("id", idsMessages)
+    for (const m of (msgData ?? []) as MessageOrigine[]) messages.set(m.id, m)
+  }
+  const texteVisible = (t: string | null | undefined) =>
+    t ? (canSeeOwnerPhone ? t : masquerNumeros(t)) : null
+  // Le texte d'origine affiché sous la description : celui du premier publieur,
+  // sinon celui du message qui a créé l'annonce.
+  const premier = publishers.find(p => p.est_original && p.whatsapp_message_id) ?? publishers.find(p => p.whatsapp_message_id)
+  const texteOriginal = texteVisible(
+    messages.get(premier?.whatsapp_message_id ?? "")?.contenu ?? (idPrincipal ? messages.get(idPrincipal)?.contenu : null),
+  )
 
   // Signalements ouverts (résilient si migration 031 non appliquée → aucun).
   type SigRow = { id: string; categorie: string | null; motif: string | null; contact: string | null; created_at: string }
@@ -166,6 +212,7 @@ export default async function AdminBienDetail({ params }: PageProps) {
           google_maps_url: (prop as unknown as { google_maps_url?: string | null }).google_maps_url ?? null,
           amenities:       (prop as unknown as { amenities?: string[] | null }).amenities ?? null,
         }}
+        texteOriginal={texteOriginal}
       />
 
       {/* Publieurs ordonnés */}
@@ -210,8 +257,18 @@ export default async function AdminBienDetail({ params }: PageProps) {
                       </span>
                       {p.contact_phone && (
                         canSeeOwnerPhone ? (
-                          <span className="inline-flex items-center gap-1 text-xs text-gray-500">
-                            <Phone className="w-3 h-3" /> {p.contact_phone}
+                          <span className="inline-flex items-center gap-1.5 flex-wrap">
+                            <span className="inline-flex items-center gap-1 text-xs text-gray-600 font-medium">
+                              <Phone className="w-3 h-3" /> {p.contact_phone}
+                            </span>
+                            <a href={`https://wa.me/${numeroWa(p.contact_phone)}`} target="_blank" rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-[11px] font-medium bg-green-600 hover:bg-green-700 text-white px-2 py-0.5 rounded-lg">
+                              <MessageSquare className="w-3 h-3" /> WhatsApp
+                            </a>
+                            <a href={`tel:${p.contact_phone}`}
+                              className="inline-flex items-center gap-1 text-[11px] font-medium bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 py-0.5 rounded-lg">
+                              <Phone className="w-3 h-3" /> Appeler
+                            </a>
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 text-xs text-gray-400" title="Réservé aux administrateurs">
@@ -219,8 +276,30 @@ export default async function AdminBienDetail({ params }: PageProps) {
                           </span>
                         )
                       )}
-                      <span className="text-xs text-gray-400">{formatDate(p.publie_le)}</span>
+                      <span className="text-xs text-gray-500">
+                        Publié le {formatDateTime(messages.get(p.whatsapp_message_id ?? "")?.recu_le ?? p.publie_le)}
+                      </span>
                     </div>
+                    {/* Message d'origine, tel que publié dans le groupe */}
+                    {(() => {
+                      const m = messages.get(p.whatsapp_message_id ?? "")
+                      const texte = texteVisible(m?.contenu)
+                      if (!texte) return null
+                      return (
+                        <details className="mt-2 group">
+                          <summary className="text-xs font-medium text-blue-700 cursor-pointer select-none hover:underline">
+                            Voir l&apos;annonce originale
+                          </summary>
+                          <div className="mt-2 rounded-xl border border-gray-100 bg-gray-50 p-3 space-y-2">
+                            <p className="text-[13px] text-gray-700 whitespace-pre-line leading-relaxed">{texte}</p>
+                            {m?.sender_name && m.sender_name !== nom && (
+                              <p className="text-[11px] text-gray-400">Nom affiché dans WhatsApp : {m.sender_name}</p>
+                            )}
+                            <CopierExtrait texte={m?.contenu ?? ""} />
+                          </div>
+                        </details>
+                      )
+                    })()}
                   </div>
                 </li>
               )

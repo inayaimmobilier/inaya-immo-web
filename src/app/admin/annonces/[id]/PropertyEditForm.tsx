@@ -16,6 +16,12 @@ const TYPE_OPTIONS = [
 
 interface Props {
   propertyId: string
+  /**
+   * Texte exactement tel que publié dans le groupe WhatsApp (numéros déjà
+   * masqués pour les rôles qui ne doivent pas les voir). Affiché sous la
+   * description reformulée par l'IA : c'est lui qu'on recherche dans WhatsApp.
+   */
+  texteOriginal?: string | null
   initial: {
     titre: string
     description: string | null
@@ -48,7 +54,7 @@ const STATUS_ACTIONS = [
   { statut: "suspendu",             label: "Suspendre",    Icon: X,           cls: "bg-gray-500 hover:bg-gray-600 text-white" },
 ]
 
-export default function PropertyEditForm({ propertyId, initial }: Props) {
+export default function PropertyEditForm({ propertyId, initial, texteOriginal }: Props) {
   const router = useRouter()
   // Types de biens gérés par l'admin (dynamiques) + « Autre » pour les biens
   // hors catégories standards.
@@ -147,6 +153,15 @@ export default function PropertyEditForm({ propertyId, initial }: Props) {
                 <dd className="text-sm text-gray-800 whitespace-pre-line">{value}</dd>
               </div>
             ))}
+            {texteOriginal && (
+              <div className="px-5 py-3 flex gap-4 bg-amber-50/40">
+                <dt className="text-xs font-medium text-gray-400 w-28 flex-shrink-0 pt-0.5">
+                  Annonce originale
+                  <span className="block text-[10px] font-normal text-gray-400 mt-0.5">telle que publiée</span>
+                </dt>
+                <dd className="text-sm text-gray-700 whitespace-pre-line leading-relaxed">{texteOriginal}</dd>
+              </div>
+            )}
             {selectedType === "location" && (
               <div className="px-5 py-3 flex gap-4">
                 <dt className="text-xs font-medium text-gray-400 w-28 flex-shrink-0 pt-0.5">Conditions</dt>

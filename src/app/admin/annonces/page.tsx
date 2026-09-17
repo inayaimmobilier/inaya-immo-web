@@ -83,9 +83,52 @@ export default async function AnnoncesAdminPage({ searchParams }: PageProps) {
     if (rq && params.statut) rq = rq.eq("statut", params.statut as never)
     if (rq && signaleesActive) rq = rq.in("id", reportedIds.length ? reportedIds : dummyIds)
 
-    const [{ data }, refRes] = await Promise.all([sq, rq ?? Promise.resolve({ data: null })])
+    // ── Recherche par PROVENANCE ───────────────────────────────────────────
+    // Retrouver une annonce à partir de ce qu'on voit dans WhatsApp : le numéro
+    // du publieur, le nom du groupe, le nom affiché, ou un bout du message
+    // d'origine (la description, reformulée par l'IA, ne le permet pas).
+    const provenance = async (): Promise<string[]> => {
+      const brut = params.q!.trim()
+      if (brut.length < 3) return []
+      const ids = new Set<string>()
+      const motif = `%${brut.replace(/[%_,()]/g, " ").trim()}%`
+      // Numéro : on compare les 8 derniers chiffres. Les numéros sont rangés en
+      // chiffres seuls, souvent à l'ancien format (225 + 8 chiffres) ; un
+      // numéro saisi « 07 07 21 47 31 » doit quand même les retrouver.
+      const chiffres = brut.replace(/\D/g, "")
+      const requetes = [
+        adminDb.from("property_publishers").select("property_id").ilike("group_nom", motif).limit(300),
+        adminDb.from("property_publishers").select("property_id").ilike("contact_nom", motif).limit(300),
+        adminDb.from("whatsapp_messages").select("property_id").ilike("contenu", motif)
+          .not("property_id", "is", null).order("recu_le", { ascending: false }).limit(100),
+      ]
+      if (chiffres.length >= 8) {
+        requetes.push(adminDb.from("property_publishers").select("property_id")
+          .ilike("contact_phone", `%${chiffres.slice(-8)}%`).limit(300))
+      }
+      const res = await Promise.all(requetes)
+      for (const r of res) for (const x of (r.data ?? []) as { property_id: string | null }[]) {
+        if (x.property_id) ids.add(x.property_id)
+      }
+      return [...ids]
+    }
+
+    const [{ data }, refRes, idsProvenance] = await Promise.all([
+      sq, rq ?? Promise.resolve({ data: null }), provenance(),
+    ])
     const all = (data ?? []) as PropRow[]
     const refRows = ((refRes as { data: PropRow[] | null }).data ?? [])
+    let provRows: PropRow[] = []
+    if (idsProvenance.length) {
+      for (let i = 0; i < idsProvenance.length && provRows.length < 500; i += 150) {
+        let pq = supabase.from("properties").select(SELECT).in("id", idsProvenance.slice(i, i + 150))
+        if (params.statut) pq = pq.eq("statut", params.statut as never)
+        if (signaleesActive) pq = pq.in("id", reportedIds.length ? reportedIds : dummyIds)
+        const { data: lot } = await pq
+        provRows.push(...((lot ?? []) as PropRow[]))
+      }
+      provRows = provRows.sort((a, b) => b.created_at.localeCompare(a.created_at))
+    }
 
     const filtered = all.filter(p => {
       if (asRef != null && p.reference === asRef) return true
@@ -97,6 +140,8 @@ export default async function AnnoncesAdminPage({ searchParams }: PageProps) {
     // Fusion : correspondances par numéro D'ABORD, sans doublon.
     const seen = new Set(refRows.map(p => p.id))
     const merged = [...refRows, ...filtered.filter(p => !seen.has(p.id))]
+    for (const p of merged) seen.add(p.id)
+    for (const p of provRows) if (!seen.has(p.id)) { merged.push(p); seen.add(p.id) }
     total = merged.length
     totalPages = Math.ceil(total / PER_PAGE)
     properties = merged.slice(from, to + 1)
@@ -209,7 +254,7 @@ export default async function AnnoncesAdminPage({ searchParams }: PageProps) {
           <input
             name="q"
             defaultValue={params.q}
-            placeholder="N° d'annonce (ex : 601), texte, quartier…"
+            placeholder="N° d'annonce, numéro du publieur, groupe, texte du message…"
             className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:border-blue-400"
           />
           <button
