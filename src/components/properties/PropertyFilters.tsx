@@ -6,19 +6,13 @@ import { Search, SlidersHorizontal } from "lucide-react"
 import MultiSelect from "@/components/shared/MultiSelect"
 import { DEFAULT_PROPERTY_TYPES } from "@/lib/property-types"
 import { fbTrack } from "@/lib/analytics"
+import { PIECES_LIBELLES } from "@/lib/pieces"
 
 const csv = (s: string | null) => (s ? s.split(",").map(x => x.trim()).filter(Boolean) : [])
 
 const DEFAULT_CATS = DEFAULT_PROPERTY_TYPES.map(t => ({ value: t.code, label: t.label }))
 
-const PIECES_MIN = [
-  { value: "", label: "Toutes pièces" },
-  { value: "1", label: "1 pièce min" },
-  { value: "2", label: "2 pièces min" },
-  { value: "3", label: "3 pièces min" },
-  { value: "4", label: "4 pièces min" },
-  { value: "5", label: "5 pièces min" },
-]
+const PIECES_MIN = [{ value: "", label: "Toutes pièces" }, ...PIECES_LIBELLES]
 
 interface Zone { id: string; nom: string }
 

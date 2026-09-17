@@ -1,6 +1,7 @@
 import { Suspense } from "react"
 import { lireTout } from "@/lib/lecture-complete"
 import { TRANCHES_SURFACE, extraireSurfaceTerrain, usageTerrain } from "@/lib/terrain"
+import { piecesDeduites } from "@/lib/pieces"
 import { createClient, createAdminClient } from "@/lib/supabase/server"
 import PropertyCard from "@/components/properties/PropertyCard"
 import PropertyFilters from "@/components/properties/PropertyFilters"
@@ -137,7 +138,7 @@ async function PropertiesList({ searchParams }: PageProps) {
   type Row = {
     reference?: number | null
     quartier?: string | null; ville?: string | null; titre?: string | null; description?: string | null
-    categorie?: string | null; prix?: number | null; nb_pieces?: number | null; zones?: { nom?: string | null } | null
+    categorie?: string | null; prix?: number | null; nb_pieces?: number | null; nb_chambres?: number | null; zones?: { nom?: string | null } | null
     /** Surface en m² — indispensable au filtrage des terrains. */
     surface?: number | null
   }
@@ -239,7 +240,24 @@ async function PropertiesList({ searchParams }: PageProps) {
   // loyer ou le nombre de pièces ; on n'exclut donc pas une annonce dont la donnée est
   // inconnue (null) — sinon on génère de faux « aucune annonce ».
   if (params.prix_min)   { const n = Number(params.prix_min);   rows = rows.filter(r => r.prix == null || Number(r.prix) >= n) }
-  if (params.pieces_min) { const n = Number(params.pieces_min); rows = rows.filter(r => r.nb_pieces == null || Number(r.nb_pieces) >= n) }
+  // Pièces : on DÉDUIT le nombre quand la colonne est vide (« 2 chambres salon »
+  // dans le titre = 3 pièces, un studio = 1 pièce). L'ancien filtre gardait
+  // toute annonce à colonne vide : une recherche « maison 4 pièces » affichait
+  // des studios en tête (constaté le 17/09/2026).
+  //
+  // Une annonce dont on ne sait VRAIMENT rien reste proposée — l'exclure
+  // produirait de faux « aucune annonce » — mais APRÈS celles qui
+  // correspondent avec certitude.
+  if (params.pieces_min) {
+    const n = Number(params.pieces_min)
+    const surs: typeof rows = [], inconnus: typeof rows = []
+    for (const r of rows) {
+      const p = piecesDeduites(r)
+      if (p == null) inconnus.push(r)
+      else if (p >= n) surs.push(r)
+    }
+    rows = [...surs, ...inconnus]
+  }
 
   // ── Terrains : surface et usage ─────────────────────────────────────────
   //

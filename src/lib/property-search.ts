@@ -18,6 +18,7 @@
 // catégorie tolèrent un écart (marqué « similaire »).
 // ============================================================================
 
+import { chambresDeduites } from "@/lib/pieces"
 import { createAdminClient } from "@/lib/supabase/server"
 import { lireTout } from "@/lib/lecture-complete"
 
@@ -138,35 +139,12 @@ function splitZones(args: SearchArgs): string[] {
 }
 
 /**
- * Nombre de chambres déduit d'une annonce, même si la colonne est vide :
- *  - colonne nb_chambres si présente ;
- *  - sinon « X chambres » / « X pièces » dans le titre ou la description
- *    (X pièces = X-1 chambres, le salon comptant comme une pièce) ;
- *  - « chambre salon » sans chiffre = 1 chambre ;
- *  - sinon nb_pieces - 1 ; sinon indéterminé (null).
- *
- * EXCEPTION CITÉ : une annonce type « Cité de 3 logements 2 pièces » ou
- * « 3 fois chambre salon » décrit X LOGEMENTS SÉPARÉS de 2 pièces (1 ch + 1 salon)
- * chacun — pas une maison de X chambres. On renvoie donc 1 chambre par logement.
+ * Nombre de chambres déduit d'une annonce, même si la colonne est vide.
+ * La règle vit dans `lib/pieces.ts`, partagée avec le filtre de la page
+ * `/biens` : deux copies avaient fini par diverger.
  */
 export function bedroomsOf(p: RawProperty): number | null {
-  if (typeof p.nb_chambres === "number") return p.nb_chambres
-  const hay = stripAccents(`${p.titre} ${p.description ?? ""}`)
-  // Cités / ensembles de logements : « X fois chambre salon », « cité de X logements »,
-  // « X unités chambre salon » → 1 chambre par logement (pas X chambres).
-  const citeM = hay.match(/(\d+)\s*(?:fois|unites?|exemplaires?|logements?)\s*(?:de\s*)?chambre\s*salon/i)
-    ?? hay.match(/chambre\s*salon\s*(?:disponible\s*)?en\s*(\d+)\s*(?:exemplaires?|unites?|logements?|fois)/i)
-    ?? hay.match(/(\d+)\s*chambre\s*salon\s+en\s+cit/i)
-    ?? hay.match(/cit[ée]\s+de\s+(\d+)\s*logements?/)
-  if (citeM) return 1
-  const m = hay.match(/(\d+)\s*(chambres?|pieces?|pces?)/)
-  if (m) {
-    const n = Number(m[1])
-    return /piece|pce/.test(m[2]) ? Math.max(0, n - 1) : n
-  }
-  if (/chambre\s*salon|chbre\s*salon|\bch\s*salon/.test(hay)) return 1
-  if (typeof p.nb_pieces === "number") return Math.max(0, p.nb_pieces - 1)
-  return null
+  return chambresDeduites(p)
 }
 
 /**

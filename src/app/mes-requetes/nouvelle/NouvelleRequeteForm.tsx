@@ -5,15 +5,9 @@ import { useRouter } from "next/navigation"
 import { BellPlus, Loader2, Check, MessageCircle } from "lucide-react"
 import { saveSearchFull } from "./actions"
 import { usePropertyTypes } from "@/hooks/usePropertyTypes"
+import { PIECES_LIBELLES } from "@/lib/pieces"
 
-const PIECES_MIN = [
-  { value: "", label: "Peu importe" },
-  { value: "1", label: "1 pièce minimum" },
-  { value: "2", label: "2 pièces minimum" },
-  { value: "3", label: "3 pièces minimum" },
-  { value: "4", label: "4 pièces minimum" },
-  { value: "5", label: "5 pièces ou plus" },
-]
+const PIECES_MIN = [{ value: "", label: "Peu importe" }, ...PIECES_LIBELLES]
 
 interface Initial {
   type: string; categorie: string; quartier: string
