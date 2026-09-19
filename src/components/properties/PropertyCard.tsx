@@ -7,6 +7,7 @@ import { MapPin, BedDouble, Bath, Maximize2, CheckCircle2 } from "lucide-react"
 import { formatPrix, formatDateTime, CATEGORIE_LABEL, TYPE_OFFRE_LABEL } from "@/lib/utils"
 import PropertyPlaceholder from "./PropertyPlaceholder"
 import type { Database } from "@/types/database"
+import { lieuAffiche } from "@/lib/lieu"
 
 type Property = Database["public"]["Tables"]["properties"]["Row"] & {
   property_media?: Array<{ url: string; type: string; ordre: number; thumbnail_url?: string | null }>
@@ -96,7 +97,7 @@ export default function PropertyCard({ property }: { property: Property }) {
           <div className="flex items-center gap-1 text-gray-500 text-xs mb-3">
             <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
             <span className="truncate">
-              {property.quartier || property.zones?.nom || "Bouaké"}
+              {lieuAffiche(property)}
             </span>
           </div>
 

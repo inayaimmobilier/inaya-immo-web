@@ -20,6 +20,7 @@ import {
   MapPin, BedDouble, Bath, Maximize2, Home, CheckCircle2, ArrowLeft, Tag, Layers, Sofa, Video, Clock,
 } from "lucide-react"
 import type { Database } from "@/types/database"
+import { lieuAffiche } from "@/lib/lieu"
 
 interface PageProps { params: Promise<{ id: string }> }
 
@@ -289,7 +290,7 @@ export default async function BienDetailPage({ params }: PageProps) {
                     <h1 className="text-xl font-bold text-gray-900 mb-1">{property.titre}</h1>
                     <p className="flex items-center gap-1.5 text-sm text-gray-500">
                       <MapPin className="w-4 h-4" />
-                      {property.quartier || property.zones?.nom || "Bouaké"} · {property.ville}
+                      {lieuAffiche(property)}
                     </p>
                     <p className="flex items-center gap-1.5 text-xs text-gray-400 mt-1.5">
                       <Clock className="w-3.5 h-3.5" />
