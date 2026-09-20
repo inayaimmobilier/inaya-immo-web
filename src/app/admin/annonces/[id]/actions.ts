@@ -148,11 +148,19 @@ export async function deleteProperty(propertyId: string): Promise<{ ok: true } |
   // Dépendances sans ON DELETE CASCADE
   await admin.from("moderation_logs").delete().eq("property_id", propertyId)
   await admin.from("leads").delete().eq("property_id", propertyId)
+  // `properties.doublon_de` désigne une AUTRE annonce, sans cascade : supprimer
+  // la cible d'un doublon viole la contrainte. On délie d'abord ; la fiche qui
+  // la désignait reste intacte, elle perd seulement son renvoi.
+  await admin.from("properties").update({ doublon_de: null } as never).eq("doublon_de", propertyId)
 
   const { error } = await admin.from("properties").delete().eq("id", propertyId)
   if (error) {
     console.error("INAYA-PROP-DEL-001", error)
-    return { ok: false, error: "Échec de la suppression. Des données liées subsistent peut-être." }
+    // Le journal a été écrit avant : sans ce retrait, les statistiques
+    // compteraient une suppression qui n'a pas eu lieu.
+    const { annulerLogSuppressions } = await import("@/lib/deletion-log")
+    await annulerLogSuppressions([propertyId])
+    return { ok: false, error: `Échec de la suppression : ${error.message}` }
   }
 
   revalidatePath("/admin/annonces")

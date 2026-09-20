@@ -72,9 +72,39 @@ export async function countMatching(c: DeleteCriteria): Promise<
   return { ok: true, count: count ?? 0, sample: (data ?? []) as Row[] }
 }
 
+/**
+ * Supprime un lot d'identifiants. Renvoie ceux qui sont réellement partis.
+ *
+ * La suppression se fait par PAQUETS, et un paquet qui échoue est repris ligne
+ * par ligne. Une seule annonce récalcitrante faisait auparavant échouer les 500
+ * autres : PostgREST supprime en une requête, donc tout ou rien. Comme le lot
+ * retenu était toujours le même, « Réessayez » ne pouvait jamais aboutir.
+ */
+async function supprimerParPaquets(
+  admin: ReturnType<typeof createAdminClient>,
+  ids: string[],
+): Promise<{ supprimes: string[]; echecs: { id: string; motif: string }[] }> {
+  const supprimes: string[] = []
+  const echecs: { id: string; motif: string }[] = []
+  const PAQUET = 50
+  for (let i = 0; i < ids.length; i += PAQUET) {
+    const lot = ids.slice(i, i + PAQUET)
+    const { error } = await admin.from("properties").delete().in("id", lot)
+    if (!error) { supprimes.push(...lot); continue }
+    // Le paquet a échoué : on isole la ou les lignes fautives.
+    for (const id of lot) {
+      const { error: e1 } = await admin.from("properties").delete().eq("id", id)
+      if (e1) echecs.push({ id, motif: e1.message })
+      else supprimes.push(id)
+    }
+  }
+  return { supprimes, echecs }
+}
+
 /** Supprime les annonces correspondant aux critères (hors annonces à transactions). */
 export async function bulkDelete(c: DeleteCriteria): Promise<
-  { ok: true; deleted: number; skipped: number; capped: boolean } | { ok: false; error: string }
+  { ok: true; deleted: number; skipped: number; capped: boolean; echecs?: number; detail?: string }
+  | { ok: false; error: string }
 > {
   const role = await callerRole()
   if (!role || !["super_admin", "admin"].includes(role)) return { ok: false, error: "Suppression réservée aux administrateurs." }
@@ -96,16 +126,37 @@ export async function bulkDelete(c: DeleteCriteria): Promise<
   const skipped = ids.length - toDelete.length
   if (toDelete.length === 0) return { ok: true, deleted: 0, skipped, capped }
 
-  // Journalise AVANT suppression (alimente les statistiques admin).
-  const { logPropertyDeletions } = await import("@/lib/deletion-log")
+  // Journalise AVANT suppression : les données à consigner disparaissent avec
+  // l'annonce. Les entrées des annonces finalement non supprimées sont retirées
+  // plus bas, pour que le journal ne mente pas.
+  const { logPropertyDeletions, annulerLogSuppressions } = await import("@/lib/deletion-log")
   await logPropertyDeletions(toDelete, { source: "groupee", deletedBy: await callerId() })
 
-  // Dépendances sans ON DELETE CASCADE, puis les annonces.
+  // Dépendances sans ON DELETE CASCADE.
   await admin.from("moderation_logs").delete().in("property_id", toDelete)
   await admin.from("leads").delete().in("property_id", toDelete)
-  const { error: delErr } = await admin.from("properties").delete().in("id", toDelete)
-  if (delErr) { console.error("INAYA-BULK-DEL", delErr); return { ok: false, error: "Échec partiel de la suppression. Réessayez." } }
+  // `properties.doublon_de` pointe vers une AUTRE annonce, sans suppression en
+  // cascade : supprimer la cible d'un doublon viole la contrainte et fait
+  // échouer tout le lot. On délie donc les doublons d'abord — la fiche qui les
+  // désignait reste intacte, elle perd seulement son renvoi.
+  await admin.from("properties").update({ doublon_de: null } as never).in("doublon_de", toDelete)
+
+  const { supprimes, echecs } = await supprimerParPaquets(admin, toDelete)
+  if (echecs.length) {
+    console.error("INAYA-BULK-DEL", echecs.slice(0, 5))
+    const nonSupprimees = echecs.map(e => e.id)
+    await annulerLogSuppressions(nonSupprimees)
+  }
+  if (supprimes.length === 0) {
+    return { ok: false, error: `Aucune annonce n'a pu être supprimée. Motif : ${echecs[0]?.motif ?? "inconnu"}` }
+  }
 
   revalidatePath("/admin/annonces")
-  return { ok: true, deleted: toDelete.length, skipped, capped }
+  return {
+    ok: true, deleted: supprimes.length, skipped, capped,
+    echecs: echecs.length,
+    // Le motif exact est utile à l'administrateur : « Réessayez » ne disait rien
+    // et invitait à recommencer une opération qui échouait à l'identique.
+    detail: echecs.length ? echecs[0].motif : undefined,
+  }
 }

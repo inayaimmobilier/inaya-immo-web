@@ -69,7 +69,10 @@ export default function SuppressionForm() {
     setMsg(
       `${r.deleted} annonce(s) supprimée(s).` +
       (r.skipped ? ` ${r.skipped} préservée(s) (liées à une transaction).` : "") +
-      (r.capped ? " Limite de 500 atteinte — relancez pour supprimer le reste." : ""),
+      (r.capped ? " Limite de 500 atteinte — relancez pour supprimer le reste." : "") +
+      // On nomme ce qui a résisté plutôt que d'inviter à « réessayer » une
+      // opération qui échouerait à l'identique.
+      (r.echecs ? ` ${r.echecs} annonce(s) n'ont pas pu être supprimées — ${r.detail ?? "motif inconnu"}.` : ""),
     )
   }
 

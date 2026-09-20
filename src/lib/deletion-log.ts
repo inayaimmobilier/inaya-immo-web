@@ -39,3 +39,22 @@ export async function logPropertyDeletions(
     console.error("INAYA-DEL-LOG-002", (e as Error).message)
   }
 }
+
+/**
+ * Retire du journal les annonces qui n'ont finalement PAS été supprimées.
+ *
+ * Le journal est écrit avant la suppression — c'est la seule façon d'y consigner
+ * le titre et le prix, qui disparaissent avec l'annonce. Quand une suppression
+ * échoue, son entrée doit repartir : sinon les statistiques comptent des
+ * suppressions qui n'ont pas eu lieu, et l'annonce reste visible sur le site.
+ */
+export async function annulerLogSuppressions(ids: string[]): Promise<void> {
+  if (ids.length === 0) return
+  try {
+    const admin = createAdminClient()
+    const { error } = await admin.from("property_deletions").delete().in("property_id", ids)
+    if (error && error.code !== "42P01") console.error("INAYA-DEL-LOG-003", error.message)
+  } catch (e) {
+    console.error("INAYA-DEL-LOG-004", (e as Error).message)
+  }
+}
