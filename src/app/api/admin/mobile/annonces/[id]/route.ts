@@ -72,3 +72,75 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     droits: { moderer: peut(staff.role, "moderer"), supprimer: peut(staff.role, "supprimer"), numeros: voitNumeros },
   })
 }
+
+// ============================================================================
+// MODIFICATION D'UNE ANNONCE.
+//
+// Possible AVANT comme APRÈS validation : une annonce publiée avec un prix ou
+// un quartier faux doit pouvoir être rectifiée sans être dépubliée, sinon on
+// perd sa visibilité le temps de la corriger.
+//
+// Seuls les champs envoyés sont touchés — l'application n'envoie que ce que
+// l'administrateur a réellement modifié.
+// ============================================================================
+
+/** Champs modifiables, avec leur conversion. Tout le reste est ignoré. */
+const CHAMPS: Record<string, (v: unknown) => unknown> = {
+  titre: v => String(v).trim().slice(0, 200),
+  description: v => (String(v).trim() || null),
+  type_offre: v => String(v),
+  categorie: v => String(v),
+  prix: v => (v === null || v === "" ? null : Number(v)),
+  prix_m2: v => (v === null || v === "" ? null : Number(v)),
+  surface: v => (v === null || v === "" ? null : Number(v)),
+  nb_pieces: v => (v === null || v === "" ? null : Number(v)),
+  nb_chambres: v => (v === null || v === "" ? null : Number(v)),
+  nb_sdb: v => (v === null || v === "" ? null : Number(v)),
+  quartier: v => (String(v).trim() || null),
+  ville: v => String(v).trim(),
+  meuble: v => Boolean(v),
+  mois_caution: v => (v === null || v === "" ? null : Number(v)),
+  mois_avance: v => (v === null || v === "" ? null : Number(v)),
+  mois_agence: v => (v === null || v === "" ? null : Number(v)),
+}
+
+export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const staff = await staffDepuisEntete(req.headers.get("authorization"))
+  if (!staff) return refus("non_authentifie")
+  if (!peut(staff.role, "moderer")) return refus("acces_refuse")
+
+  const { id } = await ctx.params
+  let corps: Record<string, unknown>
+  try { corps = await req.json() } catch { return NextResponse.json({ error: "requete_invalide" }, { status: 400 }) }
+
+  const patch: Record<string, unknown> = {}
+  for (const [cle, convertir] of Object.entries(CHAMPS)) {
+    if (cle in corps) patch[cle] = convertir(corps[cle])
+  }
+  if (!Object.keys(patch).length) return NextResponse.json({ error: "rien_a_modifier" }, { status: 400 })
+
+  // Un titre vide ou un prix négatif passeraient sans bruit : on refuse.
+  if ("titre" in patch && !String(patch.titre).trim()) {
+    return NextResponse.json({ error: "Le titre ne peut pas être vide." }, { status: 400 })
+  }
+  for (const n of ["prix", "surface", "nb_pieces", "nb_chambres"]) {
+    const v = patch[n]
+    if (typeof v === "number" && (Number.isNaN(v) || v < 0)) {
+      return NextResponse.json({ error: `Valeur invalide pour ${n}.` }, { status: 400 })
+    }
+  }
+
+  const admin = createAdminClient()
+  const { error } = await admin.from("properties").update(patch as never).eq("id", id)
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // La recherche garde le catalogue une minute en mémoire : sans cela, la
+  // correction resterait invisible sur le site pendant ce laps de temps.
+  try {
+    const { invaliderCatalogue } = await import("@/lib/property-search")
+    invaliderCatalogue()
+  } catch { /* sans conséquence */ }
+
+  const { data } = await admin.from("properties").select("*").eq("id", id).maybeSingle()
+  return NextResponse.json({ ok: true, annonce: data, champs: Object.keys(patch) })
+}
