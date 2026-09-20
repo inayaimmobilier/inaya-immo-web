@@ -41,15 +41,24 @@ export const ENTREE_COUCHEE = /entr[a-z]*[\s-]*couch/
  *  - studio ou entrée couchée = 0 chambre ;
  *  - sinon nb_pieces - 1 ; sinon indéterminé (null).
  *
- * EXCEPTION CITÉ : « Cité de 3 logements 2 pièces » ou « 3 fois chambre salon »
- * décrit X LOGEMENTS SÉPARÉS d'une chambre chacun — pas une maison de X
- * chambres. On renvoie donc 1 chambre par logement.
+ * EXCEPTION COUR / CITÉ : « 3 fois chambre salon », « 2x chambres salon »,
+ * « 5x 2 chambres salons » décrivent X LOGEMENTS SÉPARÉS — pas une maison de X
+ * chambres. On renvoie les chambres d'UN logement, le plus grand.
  */
 export function chambresDeduites(p: AnnoncePieces): number | null {
   if (typeof p.nb_chambres === "number") return p.nb_chambres
   const hay = sansAccents(`${p.titre ?? ""} ${p.description ?? ""}`)
-  const citeM = hay.match(/(\d+)\s*(?:fois|unites?|exemplaires?|logements?)\s*(?:de\s*)?chambre\s*salon/i)
-    ?? hay.match(/chambre\s*salon\s*(?:disponible\s*)?en\s*(\d+)\s*(?:exemplaires?|unites?|logements?|fois)/i)
+  // COUR / CITÉ : un multiplicateur devant le logement (« 2 fois chambre
+  // salon », « 2x chambres salon », « 5x 2 chambres salons »). Le chiffre
+  // compte des LOGEMENTS, pas des chambres. On retient le plus grand logement,
+  // c'est lui que cherche un locataire ; le total est dans le titre.
+  const multiples = [...hay.matchAll(
+    /(\d{1,2})\s*(?:x|×|fois|unit[ée]s?|exemplaires?|logements?)\s*(?:de\s*)?(?:(\d{1,2})\s*)?chambres?\s*(?:et\s*(?:un\s*)?)?salons?/gi,
+  )]
+  if (multiples.length) {
+    return Math.max(...multiples.map(m => (m[2] ? Number(m[2]) : 1)))
+  }
+  const citeM = hay.match(/chambre\s*salon\s*(?:disponible\s*)?en\s*(\d+)\s*(?:exemplaires?|unites?|logements?|fois)/i)
     ?? hay.match(/(\d+)\s*chambre\s*salon\s+en\s+cit/i)
     ?? hay.match(/cit[ée]\s+de\s+(\d+)\s*logements?/)
   if (citeM) return 1
