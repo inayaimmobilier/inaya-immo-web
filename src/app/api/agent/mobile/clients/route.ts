@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/server"
 import {
-  agentDepuisEntete, refus, numeroNormalise,
+  agentDepuisEntete, refus, numeroNormalise, jourIso,
   CANAUX, STATUTS_CLIENT,
 } from "@/lib/agent-mobile"
 
@@ -114,6 +114,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "deja_dans_le_carnet", client_id: d.id, nom: d.nom }, { status: 409 })
   }
 
+  const rappel = jourIso(corps.relance_le)
+  if (!rappel.ok) {
+    return NextResponse.json({
+      error: "date_invalide",
+      message: "La date de rappel n'est pas comprise. Format attendu : 2026-09-22.",
+    }, { status: 400 })
+  }
+
   const canal = CANAUX.includes(String(corps.canal) as never) ? String(corps.canal) : "terrain"
   const statut = STATUTS_CLIENT.includes(String(corps.statut) as never) ? String(corps.statut) : "actif"
 
@@ -129,7 +137,7 @@ export async function POST(req: NextRequest) {
     canal,
     source_detail: texte(corps.source_detail),
     statut,
-    relance_le: texte(corps.relance_le),
+    relance_le: rappel.valeur,
     notes: texte(corps.notes),
   }
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/server"
-import { agentDepuisEntete, peutEcrire, refus, ETAPES_PROPOSITION } from "@/lib/agent-mobile"
+import { agentDepuisEntete, peutEcrire, refus, instantIso, ETAPES_PROPOSITION } from "@/lib/agent-mobile"
 
 // ============================================================================
 // FAIRE AVANCER UNE PROPOSITION.
@@ -47,7 +47,16 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     }
     if (c.statut !== prop.statut) { patch.statut = c.statut; nouveauStatut = c.statut }
   }
-  if ("visite_le" in c) patch.visite_le = c.visite_le ? new Date(String(c.visite_le)).toISOString() : null
+  if ("visite_le" in c) {
+    const quand = instantIso(c.visite_le)
+    if (!quand.ok) {
+      return NextResponse.json({
+        error: "date_invalide",
+        message: "La date de visite n'est pas comprise.",
+      }, { status: 400 })
+    }
+    patch.visite_le = quand.valeur
+  }
   if (typeof c.motif_refus === "string") patch.motif_refus = c.motif_refus.trim().slice(0, 1000) || null
   if (typeof c.commentaire === "string") patch.commentaire = c.commentaire.trim().slice(0, 1000) || null
   if ("satisfaction" in c) {

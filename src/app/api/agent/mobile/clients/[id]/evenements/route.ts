@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/server"
-import { agentDepuisEntete, refus, verrou, TYPES_EVENEMENT } from "@/lib/agent-mobile"
+import { agentDepuisEntete, refus, verrou, jourIso, TYPES_EVENEMENT } from "@/lib/agent-mobile"
 
 // ============================================================================
 // NOTER CE QU'ON VIENT DE FAIRE.
@@ -45,7 +45,14 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   // sauté. Seul le propriétaire de la fiche peut déplacer sa date.
   let relance: string | null | undefined
   if ("relance_le" in corps && acces.client.agent_id === agent.userId) {
-    relance = corps.relance_le ? String(corps.relance_le).slice(0, 10) : null
+    const rappel = jourIso(corps.relance_le)
+    if (!rappel.ok) {
+      return NextResponse.json({
+        error: "date_invalide",
+        message: "La date de rappel n'est pas comprise. Format attendu : 2026-09-22.",
+      }, { status: 400 })
+    }
+    relance = rappel.valeur
     await admin.from("agent_clients").update({ relance_le: relance } as never).eq("id", id)
   }
 

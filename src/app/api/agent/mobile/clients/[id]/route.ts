@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/server"
 import {
-  agentDepuisEntete, peutEcrire, refus, verrou,
+  agentDepuisEntete, peutEcrire, refus, verrou, jourIso,
   CANAUX, STATUTS_CLIENT,
 } from "@/lib/agent-mobile"
 
@@ -106,7 +106,16 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   }
   if (typeof corps.canal === "string" && CANAUX.includes(corps.canal as never)) patch.canal = corps.canal
   if (typeof corps.statut === "string" && STATUTS_CLIENT.includes(corps.statut as never)) patch.statut = corps.statut
-  if ("relance_le" in corps) patch.relance_le = corps.relance_le ? String(corps.relance_le).slice(0, 10) : null
+  if ("relance_le" in corps) {
+    const rappel = jourIso(corps.relance_le)
+    if (!rappel.ok) {
+      return NextResponse.json({
+        error: "date_invalide",
+        message: "La date de rappel n'est pas comprise. Format attendu : 2026-09-22.",
+      }, { status: 400 })
+    }
+    patch.relance_le = rappel.valeur
+  }
   if ("satisfaction" in corps) {
     const n = Number(corps.satisfaction)
     patch.satisfaction = Number.isInteger(n) && n >= 1 && n <= 5 ? n : null

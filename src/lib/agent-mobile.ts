@@ -140,3 +140,33 @@ export function refus(raison: "non_authentifie" | "acces_refuse"): Response {
 export function numeroNormalise(brut: string): string {
   return brut.replace(/\D/g, "").slice(-10)
 }
+
+/**
+ * Une date « AAAA-MM-JJ » réellement valide, ou `null`, ou une erreur.
+ *
+ * L'application normalise déjà ce que l'agent tape, mais le serveur ne peut
+ * pas s'y fier : une version ancienne de l'APK, ou un appel direct, enverrait
+ * « 2026 09 22 ». Passée telle quelle à Postgres, cette chaîne fait échouer la
+ * requête entière — et l'agent voit « erreur 500 » au lieu de « corrigez la
+ * date ».
+ */
+export function jourIso(v: unknown): { ok: true; valeur: string | null } | { ok: false } {
+  if (v === null || v === undefined || v === "") return { ok: true, valeur: null }
+  const t = String(v).trim()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(t)) return { ok: false }
+
+  const [a, m, j] = t.split("-").map(Number)
+  const d = new Date(Date.UTC(a, m - 1, j))
+  // Le 31 avril deviendrait le 1er mai : si la date reconstruite diffère,
+  // c'est que le jour saisi n'existe pas.
+  if (d.getUTCFullYear() !== a || d.getUTCMonth() !== m - 1 || d.getUTCDate() !== j) return { ok: false }
+  return { ok: true, valeur: t }
+}
+
+/** Un instant complet, pour un rendez-vous de visite. */
+export function instantIso(v: unknown): { ok: true; valeur: string | null } | { ok: false } {
+  if (v === null || v === undefined || v === "") return { ok: true, valeur: null }
+  const d = new Date(String(v))
+  if (Number.isNaN(d.getTime())) return { ok: false }
+  return { ok: true, valeur: d.toISOString() }
+}
