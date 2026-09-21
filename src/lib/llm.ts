@@ -338,3 +338,78 @@ export async function llmVision(
     return { ok: false, error: (e as Error).message }
   }
 }
+
+// ============================================================================
+// L'ÉTAT DES FOURNISSEURS, POUR L'ÉCRAN DE RÉGLAGE.
+//
+// Ce qui est renvoyé : le nom du fournisseur, s'il a une clé, et s'il sait
+// lire une image. JAMAIS la clé — une clé affichée est une clé qui finit dans
+// une capture d'écran.
+// ============================================================================
+
+export interface EtatFournisseur {
+  id: string
+  label: string
+  envKey: string
+  /** Une clé est enregistrée — on ne dit pas laquelle. */
+  configure: boolean
+  /** Elle vient de la base (saisie dans l'admin) ou de l'environnement. */
+  source: "base" | "environnement" | null
+}
+
+export async function etatFournisseurs(): Promise<EtatFournisseur[]> {
+  const etats: EtatFournisseur[] = []
+  for (const [id, cfg] of Object.entries(PROVIDERS)) {
+    const enBase = await getSecret(cfg.envKey)
+    const enEnv = process.env[cfg.envKey]
+    etats.push({
+      id,
+      label: cfg.label,
+      envKey: cfg.envKey,
+      configure: Boolean(enBase || enEnv),
+      source: enBase ? "base" : enEnv ? "environnement" : null,
+    })
+  }
+  return etats
+}
+
+/**
+ * Interroge le fournisseur : la clé est-elle acceptée ?
+ *
+ * On demande sa LISTE DE MODÈLES, jamais une génération : cette requête ne
+ * consomme pas de crédit. C'est la seule façon de distinguer « clé refusée »
+ * de « modèle disparu » — les deux se ressemblent à l'usage et se corrigent
+ * différemment.
+ */
+export async function verifierCle(
+  providerId: string,
+): Promise<{ ok: true; modeles: string[] } | { ok: false; erreur: string }> {
+  const cfg = PROVIDERS[providerId]
+  if (!cfg) return { ok: false, erreur: "Fournisseur inconnu." }
+
+  const cle = (await getSecret(cfg.envKey)) || process.env[cfg.envKey] || ""
+  if (!cle) return { ok: false, erreur: "Aucune clé enregistrée pour ce fournisseur." }
+
+  try {
+    const url = cfg.shape === "anthropic"
+      ? "https://api.anthropic.com/v1/models?limit=100"
+      : `${cfg.baseUrl}/models`
+    const entetes: Record<string, string> = cfg.shape === "anthropic"
+      ? { "x-api-key": cle, "anthropic-version": "2023-06-01" }
+      : { authorization: `Bearer ${cle}` }
+
+    const res = await fetch(url, { headers: entetes })
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, erreur: "Clé refusée par le fournisseur." }
+    }
+    if (!res.ok) {
+      return { ok: false, erreur: `Le fournisseur a répondu ${res.status}.` }
+    }
+    const data = (await res.json()) as { data?: { id: string }[]; models?: { name: string }[] }
+    const modeles = (data.data ?? []).map(m => m.id)
+      .concat((data.models ?? []).map(m => m.name))
+    return { ok: true, modeles: modeles.slice(0, 80) }
+  } catch (e) {
+    return { ok: false, erreur: (e as Error).message }
+  }
+}
