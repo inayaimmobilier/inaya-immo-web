@@ -1,6 +1,16 @@
 {
   "crons": [
-    { "path": "/api/cron/pharmacies", "schedule": "0 6 * * *" },
-    { "path": "/api/cron/expiry", "schedule": "0 2 * * *" }
+    {
+      "path": "/api/cron/pharmacies",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/expiry",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/agent-automations",
+      "schedule": "0 8 * * *"
+    }
   ]
 }
