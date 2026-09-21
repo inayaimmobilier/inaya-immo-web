@@ -101,3 +101,58 @@ function resume(l: Record<string, unknown>): string {
   if (l.budget_max) bouts.push(`≤ ${Number(l.budget_max).toLocaleString("fr-FR")} FCFA`)
   return bouts.join(" · ") || String(l.description_libre ?? "").slice(0, 120)
 }
+
+/**
+ * METTRE FIN À UNE RECHERCHE.
+ *
+ * Un client qui a trouvé, ou qui abandonne, doit cesser de recevoir des
+ * alertes. Jusqu'ici rien ne permettait de clore une requête depuis
+ * l'application : elle continuait de déclencher des rapprochements et des
+ * messages pour un besoin qui n'existait plus.
+ *
+ *   satisfaite → il a trouvé, par nous ou ailleurs
+ *   expiree    → il ne cherche plus
+ *   active     → on rouvre, s'il s'est ravisé
+ */
+export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const agent = await agentDepuisEntete(req.headers.get("authorization"))
+  if (!agent) return refus("non_authentifie")
+
+  const { id } = await ctx.params
+  const acces = await verrou(agent, id, "ecriture")
+  if ("echec" in acces) return acces.echec
+
+  let c: { requete_id?: string; statut?: string }
+  try { c = await req.json() } catch { return NextResponse.json({ error: "requete_invalide" }, { status: 400 }) }
+
+  const STATUTS = ["active", "satisfaite", "expiree"]
+  if (!c.requete_id || !STATUTS.includes(c.statut ?? "")) {
+    return NextResponse.json({ error: "statut_inconnu" }, { status: 400 })
+  }
+
+  const admin = createAdminClient()
+
+  // La requête doit appartenir à CE client : sans ce contrôle, un
+  // identifiant pris ailleurs permettrait de clore la recherche d'un autre.
+  const { data } = await admin.from("search_requests")
+    .select("id,reference,statut").eq("id", c.requete_id).eq("agent_client_id", id).maybeSingle()
+  const requete = data as { id: string; reference: number | null; statut: string } | null
+  if (!requete) return NextResponse.json({ error: "requete_introuvable" }, { status: 404 })
+
+  const { error } = await admin.from("search_requests")
+    .update({ statut: c.statut } as never).eq("id", c.requete_id)
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  const mots: Record<string, string> = {
+    satisfaite: "close — le client a trouvé",
+    expiree: "arrêtée — le client ne cherche plus",
+    active: "rouverte",
+  }
+  await admin.from("client_events").insert({
+    agent_client_id: id, auteur_id: agent.userId, type: "changement_statut",
+    statut_avant: requete.statut, statut_apres: c.statut,
+    contenu: `Recherche ${requete.reference ? `R${requete.reference}` : ""} ${mots[c.statut!]}.`,
+  } as never)
+
+  return NextResponse.json({ ok: true, statut: c.statut })
+}
