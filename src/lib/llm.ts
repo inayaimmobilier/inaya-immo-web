@@ -211,3 +211,130 @@ async function runOpenAICompatible(model: string, apiKey: string, baseUrl: strin
   }
   return "Je n'ai pas pu finaliser la recherche. Reformulez votre demande."
 }
+
+// ============================================================================
+// LECTURE D'IMAGES.
+//
+// ── TOUS LES MODÈLES NE VOIENT PAS ─────────────────────────────────────────
+//
+// DeepSeek, Llama 3.3, Qwen, Gemma sont AVEUGLES : leur envoyer une photo
+// renvoie une erreur incompréhensible, ou pire, une réponse inventée à partir
+// du seul texte de la consigne. Le modèle choisi par l'admin pour l'assistant
+// ne convient donc pas forcément ici, et on ne peut pas le deviner à l'usage.
+//
+// D'où cette liste explicite, et un repli qui cherche le premier fournisseur
+// VOYANT dont la clé est configurée. Si aucun ne l'est, on le dit clairement
+// plutôt que de laisser l'agent devant un échec muet.
+// ============================================================================
+
+/** Les modèles du catalogue qui acceptent réellement une image. */
+export const MODELES_VOYANTS = [
+  "claude-haiku", "claude-sonnet", "gpt-4o-mini", "gpt-4o", "gemini-flash",
+] as const
+
+export interface ImagePourLlm {
+  /** image/jpeg ou image/png */
+  mediaType: string
+  base64: string
+}
+
+export type VisionResult =
+  | { ok: true; text: string; modele: string }
+  | { ok: false; error: string }
+
+async function cleDe(entry: ModelEntry): Promise<string> {
+  const provider = PROVIDERS[entry.provider]
+  return (await getSecret(provider.envKey)) || process.env[provider.envKey] || ""
+}
+
+/**
+ * Choisit un modèle capable de voir ET dont la clé existe.
+ *
+ * On préfère celui que l'admin a déjà choisi, s'il voit : c'est celui dont il
+ * paie le crédit et dont il connaît le comportement.
+ */
+async function modeleVoyant(): Promise<ModelEntry | null> {
+  const actif = await getActiveModelId()
+  const candidats = [
+    ...MODEL_CATALOG.filter(m => m.id === actif),
+    ...MODEL_CATALOG.filter(m => m.id !== actif),
+  ].filter(m => (MODELES_VOYANTS as readonly string[]).includes(m.id))
+
+  for (const c of candidats) if (await cleDe(c)) return c
+  return null
+}
+
+/** Envoie une ou plusieurs images et renvoie la réponse brute du modèle. */
+export async function llmVision(
+  system: string,
+  consigne: string,
+  images: ImagePourLlm[],
+  maxTokens = 3000,
+): Promise<VisionResult> {
+  if (!images.length) return { ok: false, error: "Aucune image à lire." }
+
+  const entry = await modeleVoyant()
+  if (!entry) {
+    return {
+      ok: false,
+      error:
+        "Aucun modèle capable de lire une image n'est configuré. " +
+        "Ajoutez une clé Anthropic, OpenAI ou Google dans Admin → Paramètres → Assistant IA " +
+        "(DeepSeek, Llama, Qwen et Gemma ne savent pas lire les images).",
+    }
+  }
+
+  const provider = PROVIDERS[entry.provider]
+  const apiKey = await cleDe(entry)
+
+  try {
+    if (provider.shape === "anthropic") {
+      const contenu = [
+        ...images.map(i => ({
+          type: "image",
+          source: { type: "base64", media_type: i.mediaType, data: i.base64 },
+        })),
+        { type: "text", text: consigne },
+      ]
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+        body: JSON.stringify({
+          model: entry.model, max_tokens: maxTokens, system,
+          messages: [{ role: "user", content: contenu }],
+        }),
+      })
+      if (!res.ok) throw new Error(`${entry.model} a répondu ${res.status} : ${(await res.text()).slice(0, 200)}`)
+      const data = (await res.json()) as { content: { type: string; text?: string }[] }
+      return {
+        ok: true, modele: entry.label,
+        text: data.content.filter(b => b.type === "text").map(b => b.text).join("\n").trim(),
+      }
+    }
+
+    const contenu = [
+      { type: "text", text: consigne },
+      ...images.map(i => ({
+        type: "image_url",
+        image_url: { url: `data:${i.mediaType};base64,${i.base64}` },
+      })),
+    ]
+    const res = await fetch(`${provider.baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        model: entry.model, max_tokens: maxTokens,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: contenu },
+        ],
+      }),
+    })
+    if (!res.ok) throw new Error(`${entry.model} a répondu ${res.status} : ${(await res.text()).slice(0, 200)}`)
+    const data = (await res.json()) as { choices: { message: { content: string } }[] }
+    return { ok: true, modele: entry.label, text: (data.choices[0]?.message?.content ?? "").trim() }
+  } catch (e) {
+    console.error("INAYA-LLM-VISION", entry.id, e)
+    return { ok: false, error: (e as Error).message }
+  }
+}

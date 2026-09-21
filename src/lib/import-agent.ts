@@ -59,7 +59,14 @@ export function verifierNumero(brut: string): { ok: string } | { erreur: string 
     }
   }
 
-  const local = chiffres.length > 10 ? chiffres.slice(-10) : chiffres
+  // ⚠️ On ne rogne PAS un nombre trop long à ses dix derniers chiffres.
+  // Un 07010203045 (onze chiffres, donc une faute de frappe) deviendrait
+  // 7010203045 : un numéro d'apparence correcte, mais qui n'est celui de
+  // personne. Seul l'indicatif 225 autorise des chiffres devant.
+  let local = chiffres
+  if (local.startsWith("00225")) local = local.slice(5)
+  else if (local.length > 10 && local.startsWith("225")) local = local.slice(3)
+
   if (local.length === 10) {
     const prefixe = local.slice(0, 2)
     if (!["01", "05", "07", "21", "25", "27"].includes(prefixe)) {
@@ -69,6 +76,17 @@ export function verifierNumero(brut: string): { ok: string } | { erreur: string 
     }
     return { ok: local }
   }
+
+  if (local.length === 11 || local.length === 12) {
+    return {
+      erreur:
+        `${local.length} chiffres — un chiffre de trop pour un numéro ivoirien. ` +
+        "Corrigez le fichier : rogner le numéro donnerait celui de quelqu'un d'autre.",
+    }
+  }
+
+  // Au-delà, c'est un numéro étranger en format international : on le garde
+  // tel qu'il est écrit.
   return { ok: brut.trim() }
 }
 
