@@ -1,11 +1,12 @@
 import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
-import { Settings, TrendingUp, Smartphone, Users, Save, Bot, KeyRound, CheckCircle2, RefreshCw } from "lucide-react"
+import { Settings, TrendingUp, Smartphone, Users, Save, Bot, KeyRound, CheckCircle2, RefreshCw, BellRing } from "lucide-react"
 import type { UserRole } from "@/types/database"
 import { saveSettings } from "./actions"
 import { MODEL_CATALOG, PROVIDER_LIST } from "@/lib/llm"
 import { configuredSecretNames } from "@/lib/secrets"
 import { getPropertyTypes } from "@/lib/property-types-server"
+import { fusionner } from "@/lib/alertes-reglages"
 import PropertyTypesManager from "./PropertyTypesManager"
 
 export const metadata = { title: "Paramètres · Inaya Immo" }
@@ -47,6 +48,11 @@ export default async function ParametresPage({ searchParams }: PageProps) {
   const canaux = (settings.get("notif_canaux") as string[] | undefined) ?? []
   const followupFreq = get("followup_frequency_hours", "24")
   const followupStatuts = (settings.get("followup_statuts") as string[] | undefined) ?? ["en_traitement", "contacte", "visite_planifiee"]
+  // Règles d'alerte, fusionnées avec les défauts : une base qui n'a pas encore
+  // la clé doit afficher des cases cohérentes, pas tout décoché — sinon le
+  // premier enregistrement couperait des alertes que personne n'a voulu couper.
+  const alertes = fusionner(settings.get("alertes_regles"))
+  if (settings.get("alertes_groupe") === false) alertes.groupe.actives = false
 
   const field = "w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:border-blue-400"
   const label = "block text-xs font-medium text-gray-600 mb-1.5"
@@ -241,6 +247,138 @@ export default async function ParametresPage({ searchParams }: PageProps) {
               developer.apple.com → Membership. Requis seulement le jour où
               l&apos;application sera publiée sur l&apos;App Store.
             </p>
+          </div>
+        </section>
+
+        {/*
+          ── QUI EST ALERTÉ, ET PAR QUEL CANAL ──────────────────────────────
+
+          Les alertes de correspondance se paient au message. Deux régimes, qui
+          n'ont ni le même coût ni la même légitimité :
+
+          — les demandes RELEVÉES DANS LES GROUPES WhatsApp font l'essentiel du
+            volume — 2 400 SMS en cinq jours ont vidé le forfait de l'agence et
+            l'ont laissé sec six semaines — et personne ne les a sollicitées ;
+          — les demandes venues du SITE ou de l'APPLICATION sont attendues par
+            ceux qui les ont écrites. C'est le service promis.
+
+          D'où deux blocs séparés : couper le premier ne touche pas au second.
+        */}
+        <section className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
+          <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+            <BellRing className="w-4 h-4 text-blue-600" /> Alertes de correspondance
+          </h2>
+
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input type="checkbox" name="alertes_actives" value="true"
+              defaultChecked={alertes.actives} className="w-4 h-4 rounded" />
+            <span>
+              <strong>Envoyer les alertes</strong> — décoché, plus aucune alerte
+              ne part, quelle que soit son origine.
+            </span>
+          </label>
+
+          <div className="pt-3 border-t border-gray-100 space-y-2.5">
+            <p className="text-xs font-semibold text-gray-800">
+              Requêtes relevées dans les groupes WhatsApp
+            </p>
+            <p className="text-[11px] text-gray-500 leading-relaxed">
+              Ces personnes n&apos;ont rien demandé à Inaya : leur message a été
+              relevé dans un groupe. C&apos;est de loin le plus gros volume, donc
+              le plus gros de la facture SMS.
+            </p>
+
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input type="checkbox" name="alertes_groupe_actives" value="true"
+                defaultChecked={alertes.groupe.actives} className="w-4 h-4 rounded" />
+              Les alerter
+            </label>
+
+            <div className="flex flex-wrap gap-x-5 gap-y-2 pl-6">
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" name="alertes_groupe_sms" value="true"
+                  defaultChecked={alertes.groupe.sms} className="w-4 h-4 rounded" />
+                par SMS <span className="text-[11px] text-amber-700">(payant)</span>
+              </label>
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" name="alertes_groupe_whatsapp" value="true"
+                  defaultChecked={alertes.groupe.whatsapp} className="w-4 h-4 rounded" />
+                par WhatsApp <span className="text-[11px] text-gray-500">(gratuit)</span>
+              </label>
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" name="alertes_groupe_exactes" value="true"
+                  defaultChecked={alertes.groupe.seulement_exactes} className="w-4 h-4 rounded" />
+                correspondances exactes seulement
+              </label>
+            </div>
+
+            <div className="grid sm:grid-cols-2 gap-3 pl-6 pt-1">
+              <div>
+                <label className={label}>Critères minimum exigés</label>
+                <select name="alertes_groupe_criteres"
+                  defaultValue={String(alertes.groupe.criteres_minimum)} className={field}>
+                  <option value="0">Aucun — alerter même les demandes vagues</option>
+                  <option value="1">1 critère (quartier, budget ou pièces)</option>
+                  <option value="2">2 critères</option>
+                  <option value="3">3 critères</option>
+                </select>
+              </div>
+              <div>
+                <label className={label}>Budget plancher en FCFA (vide = aucun)</label>
+                <input type="text" inputMode="numeric" name="alertes_groupe_budget"
+                  defaultValue={alertes.groupe.budget_minimum ?? ""}
+                  placeholder="ex. 50000" className={field} />
+              </div>
+              <div>
+                <label className={label}>Ne plus alerter au-delà de (jours)</label>
+                <input type="number" min={1} name="alertes_groupe_anciennete"
+                  defaultValue={alertes.groupe.anciennete_max_jours ?? ""}
+                  placeholder="vide = pas de limite" className={field} />
+              </div>
+              <div>
+                <label className={label}>SMS maximum par personne / 24 h</label>
+                <input type="number" min={0} max={50} name="alertes_groupe_max_jour"
+                  defaultValue={alertes.groupe.max_par_jour} className={field} />
+              </div>
+              <div className="sm:col-span-2">
+                <label className={label}>Personnes alertées au maximum par annonce</label>
+                <input type="number" min={0} max={500} name="alertes_groupe_max_annonce"
+                  defaultValue={alertes.groupe.max_par_annonce} className={field} />
+                <p className="text-[11px] text-gray-500 mt-1.5 leading-relaxed">
+                  Une annonce très générale correspond à des centaines de demandes.
+                  Ce plafond borne ce qu&apos;une seule annonce peut coûter. Les
+                  correspondances restent toutes enregistrées : seul l&apos;envoi
+                  est limité.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-3 border-t border-gray-100 space-y-2.5">
+            <p className="text-xs font-semibold text-gray-800">
+              Clients venus du site web ou de l&apos;application
+            </p>
+            <p className="text-[11px] text-gray-500 leading-relaxed">
+              Ceux-là ont enregistré leur recherche eux-mêmes et attendent
+              d&apos;être prévenus. Aucun des filtres ci-dessus ne leur est appliqué.
+            </p>
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input type="checkbox" name="alertes_plateforme_actives" value="true"
+                defaultChecked={alertes.plateforme.actives} className="w-4 h-4 rounded" />
+              Les alerter
+            </label>
+            <div className="flex flex-wrap gap-x-5 gap-y-2 pl-6">
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" name="alertes_plateforme_sms" value="true"
+                  defaultChecked={alertes.plateforme.sms} className="w-4 h-4 rounded" />
+                par SMS
+              </label>
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" name="alertes_plateforme_whatsapp" value="true"
+                  defaultChecked={alertes.plateforme.whatsapp} className="w-4 h-4 rounded" />
+                par WhatsApp
+              </label>
+            </div>
           </div>
         </section>
 

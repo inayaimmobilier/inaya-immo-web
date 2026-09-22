@@ -12,6 +12,10 @@ import type { NotifCanal } from "@/types/database"
 import { sendSms } from "@/lib/sms"
 import { absoluteUrl } from "@/lib/site"
 import { sendExpoPushToUser } from "@/lib/push"
+import {
+  alertesSmsDuJour, canauxAutorises, lireReglesAlertes,
+  type OrigineDemande, type ReglesAlertes,
+} from "@/lib/alertes-reglages"
 
 const VALID_CANAUX: NotifCanal[] = ["push", "email", "whatsapp", "telegram"]
 const DEFAULT_CANAUX: NotifCanal[] = ["push", "whatsapp", "telegram"]
@@ -184,6 +188,14 @@ export async function notifySearcher(args: {
   /** Le prix est l'information la plus attendue : sans lui le message oblige à ouvrir le lien. */
   prix?: number | null
   typeOffre?: string | null
+  /**
+   * D'où vient la demande, et ce que l'administration autorise pour cette
+   * origine. Passés par l'appelant, qui les a déjà lus pour décider s'il fallait
+   * alerter : les relire ici doublerait les requêtes et ouvrirait la porte à
+   * deux verdicts différents dans le même envoi.
+   */
+  origine?: OrigineDemande
+  regles?: ReglesAlertes
 }): Promise<void> {
   const db = createAdminClient()
   const titreCourt = clampTitre(args.propertyTitre)
@@ -293,8 +305,30 @@ export async function notifySearcher(args: {
    * est parti par ce canal, auquel cas on n'ajoute PAS de ligne WhatsApp : le
    * client recevrait deux fois la même alerte.
    */
+  // ── CE QUE L'ADMINISTRATION AUTORISE POUR CETTE ORIGINE ──────────────────
+  //
+  // Les demandes recopiées des groupes WhatsApp font l'essentiel du volume de
+  // SMS, donc l'essentiel de la facture ; celles du site et de l'application
+  // sont attendues par ceux qui les ont formulées. Les deux ne se règlent donc
+  // pas ensemble. À défaut de règles fournies, on retombe sur les réglages
+  // enregistrés — jamais sur « tout est permis ».
+  const origine = args.origine ?? "plateforme"
+  const regles = args.regles ?? await lireReglesAlertes(db)
+  const canaux = canauxAutorises(regles, origine)
+
   const tenterSms = async (tel: string | null | undefined): Promise<boolean> => {
     if (!tel) return false
+    if (!canaux.sms) return false
+    // Plafond par destinataire et par 24 h, sur les demandes de groupe
+    // seulement : une personne dont le besoin est large recevait une alerte par
+    // annonce publiée, soit une dizaine de SMS dans la journée pour un même
+    // besoin. Le plafond ne s'applique pas à un client de la plateforme, qui a
+    // choisi de recevoir ces alertes.
+    if (origine === "groupe" && regles.groupe.max_par_jour > 0) {
+      const deja = await alertesSmsDuJour(db, tel.trim())
+      if (deja >= regles.groupe.max_par_jour) return false
+    }
+    if (origine === "groupe" && regles.groupe.max_par_jour === 0) return false
     try {
       const { enfilerSms } = await import("@/lib/sms-gateway")
       return await enfilerSms({ telephone: tel, message: texteSms, type: "match" })
@@ -311,14 +345,14 @@ export async function notifySearcher(args: {
     // ici : il protège le compte WhatsApp, pas notre propre carte SIM.
     if (!(await tenterSms(tel))) {
       // Sinon WhatsApp, sous plafond anti-ban (≤ 1 alerte / COOLDOWN, jamais 2× le même bien).
-      if (tel && await waMatchAlertAllowed(db, { waNumber: tel, userId: args.userId, propertyId: args.propertyId })) {
+      if (canaux.whatsapp && tel && await waMatchAlertAllowed(db, { waNumber: tel, userId: args.userId, propertyId: args.propertyId })) {
         rows.push({ ...base, user_id: args.userId, contact_telephone: tel, canal: "whatsapp" as NotifCanal })
       }
     }
   } else if (args.contactTel) {
     if (!(await tenterSms(args.contactTel))) {
       // Anonyme : WhatsApp sur le numéro fourni, sous plafond anti-ban.
-      if (await waMatchAlertAllowed(db, { waNumber: args.contactTel, propertyId: args.propertyId })) {
+      if (canaux.whatsapp && await waMatchAlertAllowed(db, { waNumber: args.contactTel, propertyId: args.propertyId })) {
         rows.push({ ...base, contact_telephone: args.contactTel, canal: "whatsapp" as NotifCanal })
       }
     }

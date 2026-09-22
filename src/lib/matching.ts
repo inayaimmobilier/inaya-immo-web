@@ -10,6 +10,10 @@
 
 import { createAdminClient } from "@/lib/supabase/server"
 import { notifySearcher } from "@/lib/notifications"
+import {
+  alertesSmsDuJour, canauxAutorises, lireReglesAlertes, nombreDeCriteres,
+  origineDemande, type ReglesAlertes,
+} from "@/lib/alertes-reglages"
 import { isSearchExpired } from "@/lib/alert-expiry"
 import { deduireCriteres } from "@/lib/demande-criteres"
 import { analyserDemande, type Vocabulaire } from "@/lib/demande-completude"
@@ -57,6 +61,10 @@ export interface MatchableRequest {
   statut_validation?: string | null
   /** NULL = alerte permanente (client final) ; renseigné = fin de vie (pro). */
   expire_at?: string | null
+  /** Communes (pluriel, migration 055) : comptent comme critère de lieu. */
+  communes?: string[] | null
+  /** Sert à écarter les demandes trop anciennes (règles d'alerte). */
+  created_at?: string | null
 }
 
 /**
@@ -71,6 +79,45 @@ function mayNotify(req: MatchableRequest, allowGroupAlerts: boolean): boolean {
   if (req.canal && req.canal !== "whatsapp") return true   // plateforme (web/app) → consenti
   if (req.user_id) return true                             // compte connecté → consenti
   return allowGroupAlerts                                  // demande de groupe → seulement si activé
+}
+
+/**
+ * LES RESTRICTIONS DE L'ADMINISTRATION, APPLIQUÉES ICI.
+ *
+ * Le consentement (`mayNotify`) dit à qui on a le DROIT d'écrire. Ceci dit à
+ * qui on a DÉCIDÉ d'écrire — ce n'est pas la même question, et les mélanger
+ * ferait qu'un réglage d'économie se confondrait avec une règle de respect.
+ *
+ * Les demandes recopiées des groupes WhatsApp représentent l'essentiel du
+ * volume de SMS, donc l'essentiel de la facture, et ce sont les moins
+ * qualifiées. L'administration peut désormais les filtrer : correspondances
+ * exactes seulement, nombre minimal de critères, budget plancher, ancienneté.
+ * Les demandes venues du site ou de l'application ne passent par aucun de ces
+ * filtres — c'est le service qu'on leur a promis.
+ *
+ * Renvoie `null` si l'alerte est autorisée, sinon le motif du refus (utile
+ * pour comprendre en lecture des journaux pourquoi la file est vide).
+ */
+function refusParReglages(req: MatchableRequest, m: MatchScore, regles: ReglesAlertes): string | null {
+  if (!regles.actives) return "alertes coupées"
+
+  const origine = origineDemande(req)
+  const canaux = canauxAutorises(regles, origine)
+  if (canaux.aucun) return `aucun canal autorisé (${origine})`
+  if (origine === "plateforme") return null
+
+  const g = regles.groupe
+  if (g.seulement_exactes && m.type !== "exacte") return "similaire, écarté pour les groupes"
+  if (nombreDeCriteres(req) < g.criteres_minimum) return "demande trop imprécise"
+  if (g.budget_minimum != null) {
+    const budget = req.budget_max ?? req.budget_min
+    if (budget == null || budget < g.budget_minimum) return "sous le budget plancher"
+  }
+  if (g.anciennete_max_jours != null && req.created_at) {
+    const jours = (Date.now() - new Date(req.created_at).getTime()) / 86_400_000
+    if (jours > g.anciennete_max_jours) return "demande trop ancienne"
+  }
+  return null
 }
 
 /**
@@ -244,6 +291,12 @@ export async function runMatchingForProperty(propertyId: string): Promise<number
   const requests = ((reqData ?? []) as MatchableRequest[]).filter(r => !isSearchExpired(r))
   const already = new Set((existing ?? []).map(m => (m as { search_request_id: string }).search_request_id))
   const allowGroup = await groupAlertsEnabled(db)
+  const regles = await lireReglesAlertes(db)
+  // Plafond de destinataires POUR CETTE ANNONCE. Une annonce très générique
+  // — « maison à louer à Bouaké » — correspondait à des centaines de demandes
+  // de groupe, et partait en autant de SMS. Le plafond ne change rien aux
+  // `matches` créés : il borne seulement ce qu'on paie pour une seule annonce.
+  let alertesGroupe = 0
 
   // UNE personne, UNE alerte par annonce.
   //
@@ -284,14 +337,24 @@ export async function runMatchingForProperty(propertyId: string): Promise<number
     // Alerte UNIQUEMENT les chercheurs consentis (plateforme). Les demandes de
     // groupe restent enregistrées (match créé) mais ne sont pas démarchées.
     const cle = destinataire(req)
+    const origine = origineDemande(req)
+    // Le plafond par annonce ne s'applique qu'aux demandes de groupe : un
+    // client de la plateforme a demandé à être prévenu, il n'a pas à passer
+    // derrière une file d'attente de numéros recopiés.
+    const plafondAtteint = origine === "groupe"
+      && alertesGroupe >= regles.groupe.max_par_annonce
+
     if (mayNotify(req, allowGroup) && demandeExploitable(req)
-        && peutAlerter(req, vocab) && !dejaAlertes.has(cle)) {
+        && peutAlerter(req, vocab) && !dejaAlertes.has(cle)
+        && !plafondAtteint && refusParReglages(req, m, regles) === null) {
       dejaAlertes.add(cle)
+      if (origine === "groupe") alertesGroupe++
       await notifySearcher({
         userId: req.user_id, contactTel: req.contact_telephone,
         propertyTitre: property.titre, quartier: property.quartier,
         propertyId, requestId: req.id, type: m.type,
         prix: property.prix, typeOffre: property.type_offre,
+        origine, regles,
       })
       await db.from("matches").update({ statut: "notifie", notifie_le: new Date().toISOString() } as never)
         .eq("property_id", propertyId).eq("search_request_id", req.id)
@@ -332,14 +395,21 @@ export async function runMatchingForRequest(requestId: string, opts: { notify?: 
     } as never)
     if (error) { if (error.code !== "23505") console.error("INAYA-MATCH-002", error.message); continue }
 
+    // Les mêmes règles qu'à la publication d'une annonce. Les écrire deux fois
+    // serait la garantie qu'elles divergent : c'est par là qu'un réglage
+    // d'économie cesse discrètement de s'appliquer d'un côté.
+    const regles = await lireReglesAlertes(db)
+    const origine = origineDemande(request)
     if (opts.notify && mayNotify(request, await groupAlertsEnabled(db))
         && demandeExploitable(request)
-        && peutAlerter(request, await chargerVocabulaireLieux())) {
+        && peutAlerter(request, await chargerVocabulaireLieux())
+        && refusParReglages(request, m, regles) === null) {
       await notifySearcher({
         userId: request.user_id, contactTel: request.contact_telephone,
         propertyTitre: property.titre, quartier: property.quartier,
         propertyId: property.id, requestId, type: m.type,
         prix: property.prix, typeOffre: property.type_offre,
+        origine, regles,
       })
       await db.from("matches").update({ statut: "notifie", notifie_le: new Date().toISOString() } as never)
         .eq("property_id", property.id).eq("search_request_id", requestId)

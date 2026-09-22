@@ -100,6 +100,43 @@ export async function saveSettings(form: FormData): Promise<ActionResult> {
     { key: "app_version_nom", value: str("app_version_nom") },
     { key: "app_version_notes", value: str("app_version_notes") },
     { key: "app_version_forcee", value: str("app_version_forcee") === "true" ? "true" : "false" },
+    // ── ALERTES DE CORRESPONDANCE ────────────────────────────────────────
+    //
+    // Deux régimes, réglés séparément parce qu'ils n'ont ni le même coût ni la
+    // même légitimité. Les demandes recopiées des groupes WhatsApp font
+    // l'essentiel du volume de SMS — elles ont vidé le forfait de l'agence et
+    // l'ont laissé sec six semaines — et personne ne les a sollicitées. Les
+    // demandes venues du site ou de l'application sont attendues par ceux qui
+    // les ont écrites.
+    //
+    // Les cases non cochées d'un formulaire HTML ne sont PAS transmises :
+    // chaque booléen se lit donc par présence, jamais par absence de valeur.
+    { key: "alertes_regles", value: {
+      actives: str("alertes_actives") === "true",
+      groupe: {
+        actives: str("alertes_groupe_actives") === "true",
+        sms: str("alertes_groupe_sms") === "true",
+        whatsapp: str("alertes_groupe_whatsapp") === "true",
+        seulement_exactes: str("alertes_groupe_exactes") === "true",
+        criteres_minimum: Number(str("alertes_groupe_criteres")) || 0,
+        budget_minimum: str("alertes_groupe_budget").trim()
+          ? Number(str("alertes_groupe_budget").replace(/\D/g, "")) || null : null,
+        anciennete_max_jours: str("alertes_groupe_anciennete").trim()
+          ? Number(str("alertes_groupe_anciennete")) || null : null,
+        max_par_jour: Number(str("alertes_groupe_max_jour")) || 0,
+        max_par_annonce: Number(str("alertes_groupe_max_annonce")) || 0,
+      },
+      plateforme: {
+        actives: str("alertes_plateforme_actives") === "true",
+        sms: str("alertes_plateforme_sms") === "true",
+        whatsapp: str("alertes_plateforme_whatsapp") === "true",
+      },
+    } },
+    // L'ancien interrupteur d'arrêt reste synchronisé : du code plus ancien le
+    // lit encore, et deux vérités sur la même question finissent toujours par
+    // diverger au pire moment.
+    { key: "alertes_groupe", value: str("alertes_groupe_actives") === "true" },
+
     // Passerelle SMS : envoi actif, et téléphone titulaire.
     { key: "sms_gateway_active", value: str("sms_gateway_active") === "true" },
     // Décoché par défaut : l'emoji double le nombre de segments facturés.
