@@ -4,6 +4,15 @@ import { createAdminClient } from "@/lib/supabase/server"
 export interface ModerationResult {
   decision: "approve" | "reject"
   reason: string
+  /**
+   * Vrai seulement quand l'IA a RÉELLEMENT rendu un avis.
+   *
+   * Sans clé, en panne ou à court de crédit, l'ancien code renvoyait
+   * « approve » et l'annonce partait en ligne sans le moindre contrôle. Une
+   * approbation par défaut n'est pas une approbation : elle laisse l'annonce
+   * en file d'attente, où un agent la verra.
+   */
+  jugee: boolean
 }
 
 const DEFAULT_PROMPT = `Tu es un modérateur immobilier pour la plateforme Inaya Immo à Bouaké, Côte d'Ivoire.
@@ -49,7 +58,9 @@ export async function moderateProperty(propertyId: string, propertyData: {
     `Description : ${propertyData.description?.slice(0, 600) ?? "—"}`,
   ].join("\n")
 
-  let result: ModerationResult = { decision: "approve", reason: "Approuvée par défaut (IA non configurée)" }
+  let result: ModerationResult = {
+    decision: "approve", reason: "IA indisponible — en attente de validation par un agent", jugee: false,
+  }
 
   if (apiKey) {
     const prompt = await getModerationPrompt()
@@ -73,17 +84,23 @@ export async function moderateProperty(propertyId: string, propertyData: {
         const text = json.content?.[0]?.text ?? ""
         const match = text.match(/\{[\s\S]*\}/)
         if (match) {
-          const parsed = JSON.parse(match[0]) as ModerationResult
+          const parsed = JSON.parse(match[0]) as Omit<ModerationResult, "jugee">
           if (parsed.decision === "approve" || parsed.decision === "reject") {
-            result = parsed
+            result = { ...parsed, jugee: true }
           }
         }
       }
     } catch { /* fallback: approuve */ }
   }
 
-  // Met à jour le statut de l'annonce
-  const newStatut = result.decision === "approve" ? "publie" : "rejete"
+  // Met à jour le statut de l'annonce.
+  //
+  // Un rejet est toujours un rejet : même par défaut, mieux vaut retenir une
+  // annonce douteuse. Une approbation, en revanche, ne publie que si l'IA a
+  // vraiment répondu ; sinon l'annonce reste en file, visible dans Modération.
+  const newStatut = result.decision === "reject" ? "rejete"
+    : result.jugee ? "publie"
+    : "en_attente_validation"
   await admin.from("properties").update({
     statut: newStatut,
     ia_moderation_decision: result.decision,
