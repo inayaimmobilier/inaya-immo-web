@@ -9,7 +9,8 @@ import { uploadToR2, publicUrlForKey, r2Configured } from "@/lib/r2"
 //
 // ⚠️ Limité par le plafond de corps Vercel (~4,5 Mo) : convient aux PHOTOS, pas
 // aux vidéos lourdes (qui exigent le CORS R2 + l'upload direct). Mêmes garde-fous
-// que la présignature : annonce de source 'proprietaire', créée il y a < 2 h.
+// que la présignature : annonce déposée par un particulier (site ou application),
+// créée il y a moins de 2 h.
 // ============================================================================
 
 export const runtime = "nodejs"
@@ -20,6 +21,7 @@ const VIDEO_EXTS = new Set(["mp4", "mov", "avi", "webm", "mkv", "m4v", "3gp"])
 const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "webp", "gif", "heic", "heif", "avif", "bmp"])
 const MAX_PROXY_BYTES = 4 * 1024 * 1024 // marge sous la limite Vercel (~4,5 Mo)
 const WINDOW_MS = 2 * 60 * 60 * 1000
+const SOURCES_DEPOT = new Set(["proprietaire", "plateforme"])
 
 async function assertUploadable(propertyId: string): Promise<string | null> {
   const admin = createAdminClient()
@@ -27,7 +29,7 @@ async function assertUploadable(propertyId: string): Promise<string | null> {
     .select("id, source, created_at").eq("id", propertyId).single()
   const p = prop as { source: string; created_at: string } | null
   if (!p) return "Annonce introuvable"
-  if (p.source !== "proprietaire") return "Upload non autorisé"
+  if (!SOURCES_DEPOT.has(p.source)) return "Upload non autorisé"
   if (Date.now() - new Date(p.created_at).getTime() > WINDOW_MS) return "Délai d'upload expiré (2h). Contactez-nous."
   return null
 }

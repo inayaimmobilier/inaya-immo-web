@@ -15,6 +15,10 @@ const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "webp", "gif", "heic", "heif",
 const MAX_FILE_BYTES = 200 * 1024 * 1024
 const MAX_MB = 200
 const WINDOW_MS = 2 * 60 * 60 * 1000 // 2 heures
+// Dépôts faits par un particulier sans compte : le site (`proprietaire`) et
+// l'application (`plateforme`). Les annonces WhatsApp et agent passent par
+// l'administration, qui a ses propres routes.
+const SOURCES_DEPOT = new Set(["proprietaire", "plateforme"])
 
 export async function POST(
   req: NextRequest,
@@ -40,7 +44,7 @@ export async function POST(
   // On n'exige PLUS statut=en_attente_validation : la modération IA auto-approuve
   // souvent l'annonce quasi immédiatement après création, ce qui bloquait l'upload
   // des photos par le propriétaire. La source 'proprietaire' + fenêtre 2h suffisent.
-  if (p.source !== "proprietaire") {
+  if (!SOURCES_DEPOT.has(p.source)) {
     return NextResponse.json({ error: "Upload non autorisé" }, { status: 403 })
   }
   if (Date.now() - new Date(p.created_at).getTime() > WINDOW_MS) {
@@ -134,7 +138,7 @@ export async function PUT(
     .select("id, statut, source, created_at").eq("id", propertyId).single()
   const p = prop as { statut: string; source: string; created_at: string } | null
   if (!p) return NextResponse.json({ error: "Annonce introuvable" }, { status: 404 })
-  if (p.source !== "proprietaire")
+  if (!SOURCES_DEPOT.has(p.source))
     return NextResponse.json({ error: "Upload non autorisé" }, { status: 403 })
   if (Date.now() - new Date(p.created_at).getTime() > WINDOW_MS)
     return NextResponse.json({ error: "Délai d'upload expiré (2h)." }, { status: 403 })

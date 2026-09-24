@@ -2,6 +2,7 @@
 
 import { createAdminClient, createClient } from "@/lib/supabase/server"
 import { moderateProperty } from "@/lib/moderation"
+import { getPropertyTypes } from "@/lib/property-types-server"
 import { revalidatePath } from "next/cache"
 
 export interface PublierResult {
@@ -38,6 +39,10 @@ export async function publierAnnonce(fd: FormData): Promise<PublierResult> {
   const titre_raw = (fd.get("titre") as string | null)?.trim()
   let description = (fd.get("description") as string | null)?.trim() || null
   const quartier = (fd.get("quartier") as string | null)?.trim() || null
+  // La commune choisie dans le formulaire était IGNORÉE : tout partait sur
+  // « Bouaké ». Une annonce déposée pour Yamoussoukro ou Daloa se retrouvait
+  // donc à la mauvaise adresse, invisible dans sa propre commune.
+  const ville = (fd.get("ville") as string | null)?.trim() || "Bouaké"
   const surface = fd.get("surface") ? Number(fd.get("surface")) : null
   const nb_pieces = fd.get("nb_pieces") ? Number(fd.get("nb_pieces")) : null
   const nb_chambres = fd.get("nb_chambres") ? Number(fd.get("nb_chambres")) : null
@@ -69,18 +74,17 @@ export async function publierAnnonce(fd: FormData): Promise<PublierResult> {
     description = [description, `Type : ${residAutre}.`].filter(Boolean).join("\n\n")
   }
 
-  // Auto-titre si non fourni
-  const CAT_LABEL: Record<string, string> = {
-    maison: "Maison", appartement: "Appartement", studio: "Studio",
-    terrain: "Terrain", local_commercial: "Local commercial",
-    bureau: "Bureau", magasin: "Magasin", autre: "Bien",
-  }
+  // Auto-titre si non fourni. Le libellé vient de la liste gérée par
+  // l'administration : une villa titrée « Bien à louer » venait de cette copie
+  // figée, qui ignorait tous les types ajoutés depuis.
+  const types = await getPropertyTypes()
+  const CAT_LABEL: Record<string, string> = Object.fromEntries(types.map(t => [t.code, t.label]))
   const TYPE_LABEL: Record<string, string> = { location: "à louer", vente: "à vendre", cession: "à céder", residence_meublee: "meublé à louer" }
   // Titre : pour une résidence, basé sur le type choisi ("autre" → précision saisie).
   const residNom = residAutre || residTypeLabel || "Résidence meublée"
   const titre = titre_raw || (isResidence
-    ? `${residNom}${quartier ? ` – ${quartier}` : " à Bouaké"}`.trim()
-    : `${CAT_LABEL[categorie] ?? "Bien"} ${TYPE_LABEL[type_offre] ?? ""} ${quartier ? `– ${quartier}` : "à Bouaké"}`.trim())
+    ? `${residNom}${quartier ? ` – ${quartier}` : ` à ${ville}`}`.trim()
+    : `${CAT_LABEL[categorie] ?? "Bien"} ${TYPE_LABEL[type_offre] ?? ""} ${quartier ? `– ${quartier}` : `à ${ville}`}`.trim())
 
   // ── Création de l'annonce ──────────────────────────────────────────────────
   const insertPayload: Record<string, unknown> = {
@@ -91,7 +95,7 @@ export async function publierAnnonce(fd: FormData): Promise<PublierResult> {
     prix,
     charges: 0,
     quartier,
-    ville: "Bouaké",
+    ville,
     meuble,
     surface: surface || null,
     nb_pieces: nb_pieces || null,
@@ -166,7 +170,7 @@ export async function publierAnnonce(fd: FormData): Promise<PublierResult> {
     categorie,
     prix,
     quartier,
-    ville: "Bouaké",
+    ville,
   })
 
   revalidatePath("/admin/annonces")

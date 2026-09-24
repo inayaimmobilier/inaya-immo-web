@@ -14,6 +14,11 @@ const VIDEO_EXTS = new Set(["mp4", "mov", "avi", "webm", "mkv", "m4v", "3gp"])
 const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "webp", "gif", "heic", "heif", "avif", "bmp"])
 const MAX_FILE_BYTES = 200 * 1024 * 1024
 const WINDOW_MS = 2 * 60 * 60 * 1000
+// Dépôts faits par un particulier sans compte : le site (`proprietaire`) et
+// l'application (`plateforme`). Ce sont les deux seuls cas où l'on accepte un
+// envoi sans authentification — les annonces WhatsApp et agent passent par
+// l'administration, qui a ses propres routes.
+const SOURCES_DEPOT = new Set(["proprietaire", "plateforme"])
 
 async function assertUploadable(propertyId: string): Promise<string | null> {
   const admin = createAdminClient()
@@ -25,8 +30,8 @@ async function assertUploadable(propertyId: string): Promise<string | null> {
   // souvent l'annonce quasi immédiatement après création (notamment sans clé API
   // IA), ce qui faisait passer le statut à 'publie' AVANT que le propriétaire
   // n'ait eu le temps d'uploader ses photos → upload bloqué à tort.
-  // La source 'proprietaire' + la fenêtre de 2h suffisent à sécuriser l'accès.
-  if (p.source !== "proprietaire") return "Upload non autorisé"
+  // La source + la fenêtre de 2h suffisent à sécuriser l'accès.
+  if (!SOURCES_DEPOT.has(p.source)) return "Upload non autorisé"
   if (Date.now() - new Date(p.created_at).getTime() > WINDOW_MS) return "Délai d'upload expiré (2h). Contactez-nous."
   return null
 }

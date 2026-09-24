@@ -41,8 +41,11 @@ export async function GET(req: NextRequest) {
   // Photo de couverture : une requête pour toute la flotte.
   const couverture = new Map<string, string>()
   if (flotte.length) {
+    // `principale` d'abord : c'est la photo que le loueur a choisie pour la
+    // vitrine, et elle ne porte pas forcément l'ordre 0.
     const { data: photos } = await admin.from("vehicule_photos")
-      .select("vehicule_id,url,ordre").in("vehicule_id", flotte.map(v => v.id)).order("ordre")
+      .select("vehicule_id,url,ordre,principale").in("vehicule_id", flotte.map(v => v.id))
+      .order("principale", { ascending: false }).order("ordre")
     for (const p of (photos ?? []) as { vehicule_id: string; url: string }[]) {
       if (!couverture.has(p.vehicule_id)) couverture.set(p.vehicule_id, p.url)
     }

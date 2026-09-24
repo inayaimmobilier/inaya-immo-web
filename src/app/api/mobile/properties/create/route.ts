@@ -2,19 +2,26 @@ import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/server"
 import { uploadToR2, r2Configured, publicUrlForKey } from "@/lib/r2"
 import { userIdFromAuthHeader } from "@/lib/mobile-session"
+import { moderateProperty } from "@/lib/moderation"
+import { getPropertyTypes } from "@/lib/property-types-server"
 
 // ============================================================================
 // Publication d'un bien DEPUIS L'APP mobile. Crée une annonce « en attente de
-// validation » (comme le web) + envoie les PHOTOS (images) vers R2. Les vidéos
-// ne sont pas acceptées ici (limite de corps serverless) : l'agent les ajoute.
+// validation », exactement comme le dépôt du site.
+//
+// LES MÉDIAS NE PASSENT PLUS PAR ICI. Le corps d'une requête serverless est
+// plafonné à ~4,5 Mo : six photos de téléphone dépassent ce seuil et TOUTE la
+// requête était rejetée — l'annonce elle-même n'était jamais créée. L'app
+// envoie donc désormais chaque fichier directement sur R2 (URL présignée),
+// après création. Le champ `photos` reste accepté pour les versions de l'app
+// déjà installées, qui l'utilisent encore.
+//
 // Bearer facultatif : si présent, on rattache l'auteur (created_by).
 // ============================================================================
 export const runtime = "nodejs"
 export const maxDuration = 60
 
 const OFFRES = new Set(["location", "vente", "cession", "residence_meublee"])
-const CATS = new Set(["maison", "appartement", "studio", "terrain", "local_commercial", "bureau", "magasin", "autre"])
-const CAT_LABEL: Record<string, string> = { maison: "Maison", appartement: "Appartement", studio: "Studio", terrain: "Terrain", local_commercial: "Local commercial", bureau: "Bureau", magasin: "Magasin", autre: "Bien" }
 const MAX_IMG_BYTES = 6 * 1024 * 1024
 const MAX_IMAGES = 6
 
@@ -46,14 +53,21 @@ export async function POST(req: NextRequest) {
   const proprietaire_nom = s("nom")
 
   if (!OFFRES.has(type_offre)) return NextResponse.json({ error: "Type d'offre invalide." }, { status: 400 })
-  if (!CATS.has(categorie)) return NextResponse.json({ error: "Catégorie invalide." }, { status: 400 })
+
+  // La liste des types est celle que l'ADMINISTRATION gère, pas une copie figée
+  // ici : l'application propose « Villa », « Entrepôt », « Boutique »… et cette
+  // route les refusait toutes, rendant la publication impossible pour tout
+  // autre type que les huit d'origine.
+  const types = await getPropertyTypes()
+  const cat = types.find(t => t.code === categorie)
+  if (!cat) return NextResponse.json({ error: "Catégorie invalide." }, { status: 400 })
   if (!proprietaire_telephone || proprietaire_telephone.replace(/\D/g, "").length < 8) {
     return NextResponse.json({ error: "Un numéro de contact valide est requis." }, { status: 400 })
   }
   if (!description || description.length < 10) return NextResponse.json({ error: "Décrivez le bien (au moins 10 caractères)." }, { status: 400 })
 
   const isResid = type_offre === "residence_meublee"
-  const titre = s("titre") || `${CAT_LABEL[categorie] ?? "Bien"} ${quartier ? `– ${quartier}` : `à ${ville}`}`.trim()
+  const titre = s("titre") || `${cat.label} ${quartier ? `– ${quartier}` : `à ${ville}`}`.trim()
   const createdBy = userIdFromAuthHeader(req.headers.get("authorization"))
 
   const admin = createAdminClient()
@@ -80,7 +94,38 @@ export async function POST(req: NextRequest) {
   const propId = (prop as { id: string }).id
   const reference = (prop as { reference: number | null }).reference
 
+  // ── Qui a déposé ────────────────────────────────────────────────────────
+  // Même table que le dépôt du site : sans cette ligne, l'annonce arrivait en
+  // modération sans nom ni numéro de publieur, et l'agent ne savait pas qui
+  // rappeler.
+  const pubRow: Record<string, unknown> = {
+    property_id: propId,
+    publisher_id: createdBy ?? null,
+    contact_nom: proprietaire_nom,
+    contact_phone: proprietaire_telephone,
+    canal: "app",
+    source: "plateforme",
+    publie_le: new Date().toISOString(),
+  }
+  let { error: pubErr } = await admin.from("property_publishers").insert(pubRow as never)
+  if (pubErr) {
+    // Colonne absente (42703) ou profil supprimé (violation de clé étrangère) :
+    // on réessaie sans l'auteur plutôt que de perdre le contact du publieur.
+    const { publisher_id: _p, ...base } = pubRow
+    pubErr = (await admin.from("property_publishers").insert(base as never)).error
+  }
+  if (pubErr) console.error("INAYA-MPUB-002", pubErr.message)
+
+  // Modération IA, comme sur le site. Best-effort : elle ne doit jamais faire
+  // échouer une publication déjà enregistrée.
+  void moderateProperty(propId, {
+    titre, description, type_offre, categorie,
+    prix: (payload.prix as number | null) ?? 0, quartier, ville,
+  })
+
   // Photos → R2 (best-effort : l'annonce est créée même si l'upload échoue).
+  // Chemin de COMPATIBILITÉ pour les versions de l'app déjà installées ; les
+  // versions récentes envoient les médias en direct via URL présignée.
   const files = (form.getAll("photos") as File[]).filter(f => f && typeof f === "object").slice(0, MAX_IMAGES)
   let uploaded = 0
   if (files.length && r2Configured()) {
