@@ -36,9 +36,25 @@ export async function GET(req: NextRequest) {
   if (etat === "en_attente") q = q.eq("traite", false).eq("en_traitement", false).lt("tentatives", 3)
   else if (etat === "en_cours") q = q.eq("traite", false).eq("en_traitement", true)
   else if (etat === "en_echec") q = q.eq("traite", false).gte("tentatives", 3)
-  // « tous » : aucun filtre supplémentaire.
+  // « tous » = tous les NON TRAITÉS. Cet écran sert à débloquer l'ingestion,
+  // pas à relire l'historique : compter les 65 000 messages déjà traités
+  // dépassait le délai maximal et renvoyait une erreur.
+  else q = q.eq("traite", false)
 
-  const { data, count, error } = await q
+  // Le tableau de bord compte TOUS les non traités ; la liste, elle, en filtre
+  // une famille. Sans ces compteurs, « 83 messages en attente » s'ouvrait sur
+  // une liste vide — le chiffre et l'écran ne parlaient pas du même ensemble.
+  const compte = (f: (r: ReturnType<typeof base>) => ReturnType<typeof base>) =>
+    f(base()).then(r => r.count ?? 0)
+  const base = () => admin.from("whatsapp_messages").select("id", { count: "exact", head: true })
+
+  const [{ data, count, error }, enAttente, enCours, enEchec, total] = await Promise.all([
+    q,
+    compte(b => b.eq("traite", false).eq("en_traitement", false).lt("tentatives", 3)),
+    compte(b => b.eq("traite", false).eq("en_traitement", true)),
+    compte(b => b.eq("traite", false).gte("tentatives", 3)),
+    compte(b => b.eq("traite", false)),
+  ])
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   const lignes = (data ?? []) as {
@@ -70,6 +86,7 @@ export async function GET(req: NextRequest) {
       etat: l.traite ? "traite" : l.en_traitement ? "en_cours" : l.tentatives >= 3 ? "en_echec" : "en_attente",
       property_id: l.property_id,
     })),
+    resume: { enAttente, enCours, enEchec, total },
     total: count ?? 0,
     page,
     pages: Math.max(1, Math.ceil((count ?? 0) / PAR_PAGE)),
