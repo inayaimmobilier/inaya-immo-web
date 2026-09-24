@@ -57,14 +57,45 @@ export default function MediaSection({ propertyId, initialMedia, routePrefix = "
           if (!item) continue
 
           // 2) PUT direct vers R2 (pas de limite serverless)
-          const put = await fetch(item.uploadUrl, {
-            method: "PUT", headers: { "Content-Type": item.contentType }, body: file,
-          })
-          if (!put.ok) {
-            errs.push(`${file.name} : envoi vers le stockage refusé (${put.status}). Vérifiez la config CORS du bucket R2.`)
+          //
+          // Le navigateur refuse cet envoi si le bucket n'autorise pas notre
+          // domaine (CORS) : il lève alors « Failed to fetch », SANS statut.
+          // C'est ce qui bloquait toute modification de médias depuis le site
+          // le 21/09/2026, alors que l'application mobile, qui passe par notre
+          // serveur, fonctionnait. On bascule donc sur cette même voie.
+          let direct = false
+          try {
+            const put = await fetch(item.uploadUrl, {
+              method: "PUT", headers: { "Content-Type": item.contentType }, body: file,
+            })
+            direct = put.ok
+            if (!put.ok && put.status !== 0) {
+              console.warn("R2 direct refusé", put.status)
+            }
+          } catch {
+            direct = false
+          }
+
+          if (direct) { toRecord.push({ key: item.key, type: item.type }); continue }
+
+          // 2 bis) Repli : envoi PAR NOTRE SERVEUR, qui pousse ensuite vers R2.
+          // Aucune contrainte CORS, mais la plateforme limite le corps d'une
+          // requête (~4,5 Mo) : au-delà, seul l'envoi direct peut passer.
+          const relais = new FormData()
+          relais.append("files", file)
+          const rep = await fetch(base, { method: "POST", body: relais })
+          if (rep.ok) {
+            const j = await rep.json().catch(() => null) as { created?: MediaRow[] } | null
+            if (j?.created?.length) {
+              setMedia(prev => [...prev, ...j.created!].sort((a, b) => a.ordre - b.ordre))
+            }
             continue
           }
-          toRecord.push({ key: item.key, type: item.type })
+          errs.push(
+            file.size > 4 * 1024 * 1024
+              ? `${file.name} : trop volumineux pour l'envoi de secours. Autorisez le domaine www.inaya.ci dans la politique CORS du bucket R2 pour envoyer les gros fichiers.`
+              : `${file.name} : envoi impossible (${rep.status}).`,
+          )
         } catch (e) {
           errs.push(`${file.name} : ${(e as Error).message}`)
         }

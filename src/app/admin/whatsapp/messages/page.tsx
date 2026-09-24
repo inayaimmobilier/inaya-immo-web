@@ -5,6 +5,7 @@ import { ArrowLeft, CheckCircle2, Clock, XCircle, MessageSquare, AlertTriangle, 
 import type { UserRole } from "@/types/database"
 import { formatDate } from "@/lib/utils"
 import TestPipeline from "./TestPipeline"
+import FileIngestion, { type MessageBloque } from "./FileIngestion"
 
 export const metadata = { title: "Messages WhatsApp · Inaya Admin" }
 
@@ -62,6 +63,30 @@ export default async function WhatsAppMessagesPage() {
       .order("recu_le", { ascending: false })
       .limit(50)
     messages = (data ?? []) as MsgRow[]
+  } catch { /* table absente */ }
+
+  // File d ingestion : TOUS les messages non traites, pas seulement ceux de la
+  // page. Un message bloque est une annonce qui n existera jamais, et il peut
+  // dormir bien au-dela des 50 derniers.
+  let bloques: MessageBloque[] = []
+  try {
+    const { data } = await admin
+      .from("whatsapp_messages")
+      .select("id,contenu,sender_name,group_id,recu_le,tentatives,erreur_traitement,en_traitement")
+      .eq("traite", false)
+      .order("recu_le", { ascending: false })
+      .limit(200)
+    const lignes = (data ?? []) as (MessageBloque & { group_id: string | null })[]
+    const idsGroupes = [...new Set(lignes.map(l => l.group_id).filter((x): x is string => !!x))]
+    const nomGroupe = new Map<string, string>()
+    if (idsGroupes.length) {
+      const { data: g } = await admin.from("whatsapp_groups").select("id,nom").in("id", idsGroupes)
+      for (const x of (g ?? []) as { id: string; nom: string | null }[]) if (x.nom) nomGroupe.set(x.id, x.nom)
+    }
+    bloques = lignes.map(l => ({
+      ...l,
+      groupe: l.group_id ? (nomGroupe.get(l.group_id) ?? "Groupe inconnu") : "Message prive",
+    }))
   } catch { /* table absente */ }
 
   const nonTraites = messages.filter(m => !m.traite).length
@@ -124,6 +149,9 @@ export default async function WhatsAppMessagesPage() {
           </div>
         </div>
       )}
+
+      {/* File d ingestion : selection multiple, relance, correction, suppression */}
+      <FileIngestion messages={bloques} peutSupprimer={["super_admin", "admin"].includes(role)} />
 
       {/* Table messages */}
       {messages.length === 0 ? (
