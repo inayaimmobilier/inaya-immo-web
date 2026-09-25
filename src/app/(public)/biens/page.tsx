@@ -2,6 +2,7 @@ import { Suspense } from "react"
 import { lireTout } from "@/lib/lecture-complete"
 import { TRANCHES_SURFACE, extraireSurfaceTerrain, usageTerrain } from "@/lib/terrain"
 import { piecesDeduites } from "@/lib/pieces"
+import { estSousTypeTexte, correspondSousType } from "@/lib/sous-types"
 import { createClient, createAdminClient } from "@/lib/supabase/server"
 import PropertyCard from "@/components/properties/PropertyCard"
 import PropertyFilters from "@/components/properties/PropertyFilters"
@@ -184,6 +185,9 @@ async function PropertiesList({ searchParams }: PageProps) {
     }
     const cat = norm(r.categorie)
     if (cat === c) return true
+    // Sous-type reconnu au texte (« conteneur » : rangé en autre / magasin /
+    // local commercial, jamais en catégorie propre).
+    if (estSousTypeTexte(c)) return correspondSousType(c, r)
     // Catégorie absente → repli sur le texte de l'annonce.
     if (!cat) return hay(r).includes(c)
     // SOUS-TYPE non stocké en base : l'admin propose des types (« villa »,

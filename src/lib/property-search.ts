@@ -21,6 +21,7 @@
 import { chambresDeduites } from "@/lib/pieces"
 import { createAdminClient } from "@/lib/supabase/server"
 import { lireTout } from "@/lib/lecture-complete"
+import { estSousTypeTexte, correspondSousType } from "@/lib/sous-types"
 
 export type SearchArgs = {
   type_offre?: string
@@ -237,7 +238,14 @@ export async function searchProperties(args: SearchArgs, opts: { limit?: number 
     // Univers différent (une maison n'est pas un magasin ni un terrain) → hors
     // sujet : exclu en mode strict, sinon forte pénalité. Même univers, catégorie
     // voisine (maison ↔ appartement ↔ studio) → toléré (similaire).
-    if (cats.length && !cats.includes(p.categorie)) {
+    // Sous-types reconnus au TITRE (« conteneur ») : l'annonce correspond si le
+    // texte le dit, quelle que soit sa colonne (autre / magasin / local).
+    const sousTypes = cats.filter(estSousTypeTexte)
+    const parTexte = sousTypes.some(c => correspondSousType(c, p))
+    if (cats.length && !cats.includes(p.categorie) && !parTexte) {
+      // Seuls des sous-types demandés et aucun ne correspond : l'univers « autre »
+      // (fourre-tout) ne doit pas faire passer n'importe quel bien pour un conteneur.
+      if (args.strict && sousTypes.length === cats.length) continue
       const wantedUniverses = new Set(cats.map(categoryUniverse))
       const sameUniverse = wantedUniverses.has(categoryUniverse(p.categorie))
       if (!sameUniverse) {
