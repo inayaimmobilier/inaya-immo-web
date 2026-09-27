@@ -22,12 +22,21 @@ export function lireSession(brut: string): SessionLue {
   const cookies = new Map<string, string>()
 
   if (texte.startsWith("[") || texte.startsWith("{")) {
-    try {
-      const j = JSON.parse(texte) as unknown
-      const liste = (Array.isArray(j) ? j : (j as { cookies?: unknown[] }).cookies ?? []) as
-        { name?: string; value?: string; domain?: string }[]
-      for (const c of liste) if (c?.name && typeof c.value === "string" && estFacebook(c.domain)) cookies.set(c.name, c.value)
-    } catch { return { ok: false, erreur: "Le JSON collé est invalide." } }
+    // Les extensions n'exportent pas toutes pareil (constaté le 27/09/2026 avec
+    // « Éditeur de cookies ») : liste [ … ], objets à la suite SANS crochets,
+    // un seul objet, ou { cookies: [ … ] }. On accepte tout cela.
+    const essais = [texte, `[${texte.replace(/}\s*,?\s*{/g, "},{")}]`]
+    let j: unknown = undefined
+    for (const e of essais) { try { j = JSON.parse(e); break } catch { /* essai suivant */ } }
+    if (j === undefined) return { ok: false, erreur: "Le texte collé n'est pas un export JSON lisible. Recopiez l'export complet des cookies de facebook.com." }
+    const brut = Array.isArray(j) ? j
+      : Array.isArray((j as { cookies?: unknown }).cookies) ? (j as { cookies: unknown[] }).cookies
+      : (j as { name?: unknown }).name ? [j]
+      // Objet « nom → valeur » ({ "c_user": "…", "xs": "…" }).
+      : Object.entries(j as Record<string, unknown>).map(([name, value]) => ({ name, value }))
+    for (const c of brut.flat() as { name?: string; value?: unknown; domain?: string }[]) {
+      if (c?.name && typeof c.value === "string" && estFacebook(c.domain)) cookies.set(c.name, c.value)
+    }
   } else if (texte.includes("\t")) {
     for (const ligne of texte.split(/\r?\n/)) {
       if (!ligne.trim() || (ligne.startsWith("#") && !ligne.startsWith("#HttpOnly_"))) continue
@@ -43,7 +52,16 @@ export function lireSession(brut: string): SessionLue {
 
   const cUser = cookies.get("c_user")
   if (!cUser || !cookies.get("xs")) {
-    return { ok: false, erreur: "Session incomplète : les cookies « c_user » et « xs » sont introuvables. Exportez les cookies APRÈS vous être connecté au compte, depuis facebook.com." }
+    const manquent = ["c_user", "xs"].filter(n => !cookies.get(n)).map(n => `« ${n} »`).join(" et ")
+    const trouves = cookies.size ? `${cookies.size} cookie${cookies.size > 1 ? "s" : ""} lu${cookies.size > 1 ? "s" : ""} (${[...cookies.keys()].slice(0, 6).join(", ")})` : "aucun cookie lu"
+    return {
+      ok: false,
+      erreur: `Session incomplète : il manque ${manquent} — ${trouves}. ` +
+        "Il faut coller l'export de TOUS les cookies de facebook.com (bouton Exporter de l'extension, format JSON), pas un seul cookie. " +
+        (cookies.get("c_user") && !cookies.get("xs")
+          ? "« xs » est un cookie protégé : si votre extension ne l'exporte pas, utilisez « Cookie-Editor » (cookie-editor.com), qui l'inclut."
+          : ""),
+    }
   }
   const entete = [...cookies.entries()].map(([k, v]) => `${k}=${v}`).join("; ")
   return { ok: true, entete, cUser, nombre: cookies.size }
