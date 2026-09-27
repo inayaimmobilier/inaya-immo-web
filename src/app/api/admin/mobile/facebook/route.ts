@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
   if (!staff) return refus("non_authentifie")
   if (!peut(staff.role, "moderer")) return refus("acces_refuse")
 
-  const { url } = (await req.json().catch(() => ({}))) as { url?: string }
+  const { url, texte } = (await req.json().catch(() => ({}))) as { url?: string; texte?: string }
   if (!url?.trim()) return NextResponse.json({ error: "Collez le lien de la publication." }, { status: 400 })
 
   let res: Response
@@ -29,7 +29,8 @@ export async function POST(req: NextRequest) {
     res = await fetch(`${WA_SERVICE_URL}/facebook/import`, {
       method: "POST",
       headers: { "content-type": "application/json", "x-inaya-secret": process.env.WA_HTTP_SECRET ?? "" },
-      body: JSON.stringify({ url: url.trim() }),
+      // Texte collé par l'agent (facultatif) : fait foi sur celui, souvent tronqué, de Facebook.
+      body: JSON.stringify({ url: url.trim(), texte: typeof texte === "string" ? texte.slice(0, 8000) : undefined }),
       signal: AbortSignal.timeout(110_000),
     })
   } catch {
