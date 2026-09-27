@@ -264,7 +264,16 @@ export async function searchProperties(args: SearchArgs, opts: { limit?: number 
       else if (p.prix <= args.prix_max * 1.5) { score -= 0.45; soft++ }
       else continue // au-delà de +50 % : hors budget
     }
-    if (typeof args.prix_min === "number" && p.prix != null && p.prix > 0 && p.prix < args.prix_min) { score -= 0.1; soft++ }
+    if (typeof args.prix_min === "number" && p.prix != null && p.prix > 0 && p.prix < args.prix_min) {
+      // Plancher EXPLICITE (filtre de l'app, ex. Opportunités ≥ 5 M) : dur.
+      // Simple pénalité, il laissait les biens bon marché passer, et l'app
+      // devait trier par prix puis filtrer elle-même — ne montrant ainsi que
+      // les 40 biens les plus chers de la base, jamais les nouveaux.
+      if (args.strict) continue
+      score -= 0.1; soft++
+    }
+    // Opportunités : un bien sans prix n'a rien à faire au-dessus d'un plancher.
+    if (args.strict && typeof args.prix_min === "number" && !(p.prix != null && p.prix > 0)) continue
 
     // ── Quartier(s) ── cherchés sur quartier + titre + description ─────────────
     if (zones.length) {
