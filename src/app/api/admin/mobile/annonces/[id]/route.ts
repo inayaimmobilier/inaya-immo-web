@@ -42,13 +42,32 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   // Messages d'origine : le texte publié dans le groupe, celui qu'on recherche
   // dans WhatsApp pour retrouver l'annonce.
   const idsMsg = [...new Set(publieurs.map(p => p.whatsapp_message_id).filter((x): x is string => !!x))]
-  const messages = new Map<string, { contenu: string | null; recu_le: string; sender_name: string | null }>()
+  type Msg = {
+    id: string; contenu: string | null; recu_le: string; sender_name: string | null
+    group_id: string | null; medias: { ref?: string }[] | null; lien_source?: string | null
+  }
+  const messages = new Map<string, Msg>()
   if (idsMsg.length) {
-    const { data } = await admin.from("whatsapp_messages")
-      .select("id,contenu,recu_le,sender_name").in("id", idsMsg)
-    for (const m of (data ?? []) as { id: string; contenu: string | null; recu_le: string; sender_name: string | null }[]) {
-      messages.set(m.id, m)
-    }
+    // `lien_source` (migration 066) peut manquer : on relit alors sans lui.
+    let r = await admin.from("whatsapp_messages")
+      .select("id,contenu,recu_le,sender_name,group_id,medias,lien_source").in("id", idsMsg)
+    if (r.error) r = await admin.from("whatsapp_messages")
+      .select("id,contenu,recu_le,sender_name,group_id,medias").in("id", idsMsg) as typeof r
+    for (const m of (r.data ?? []) as Msg[]) messages.set(m.id, m)
+  }
+
+  /**
+   * Lien de la publication Facebook d'origine : la colonne dédiée (imports
+   * récents), sinon la référence de la photo de secours (« fb:<lien> »),
+   * sinon l'identifiant de la publication (group_id « facebook:<id> »).
+   */
+  const lienSource = (m: Msg | undefined): string | null => {
+    if (!m) return null
+    if (m.lien_source) return m.lien_source
+    const ref = (m.medias ?? []).map(x => x?.ref).find(x => x?.startsWith("fb:"))
+    if (ref) return ref.slice(3)
+    const id = m.group_id?.match(/^facebook:(\d{6,})$/)?.[1]
+    return id ? `https://www.facebook.com/${id}` : null
   }
 
   const voitNumeros = peut(staff.role, "numeros")
@@ -67,6 +86,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
         publie_le: m?.recu_le ?? p.publie_le,
         nom_whatsapp: m?.sender_name ?? null,
         texte_origine: filtre(m?.contenu),
+        lien_source: lienSource(m),
       }
     }),
     droits: { moderer: peut(staff.role, "moderer"), supprimer: peut(staff.role, "supprimer"), numeros: voitNumeros },
