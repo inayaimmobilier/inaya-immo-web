@@ -1,24 +1,18 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { roleStaffDeRequete } from "@/lib/staff-requete"
 import { presignPutUrl, publicUrlForKey, r2Configured } from "@/lib/r2"
-import type { UserRole } from "@/types/database"
 
 // Génère des URLs présignées pour un upload DIRECT navigateur → R2, afin
 // d'envoyer des vidéos lourdes sans heurter la limite de corps serverless de
-// Vercel (~4,5 Mo). Réservé au staff.
+// Vercel (~4,5 Mo). Réservé au staff — back-office web (cookie) ou app admin (jeton).
 export const runtime = "nodejs"
 
-const STAFF_ROLES: UserRole[] = ["super_admin", "admin", "moderateur", "agent"]
 const VIDEO_EXTS = new Set(["mp4", "mov", "avi", "webm", "mkv"])
 const MAX_FILE_BYTES = 200 * 1024 * 1024 // 200 Mo
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: "Non authentifié" }, { status: 401 })
-  const { data: prof } = await supabase.from("profiles").select("role").eq("id", user.id).single()
-  const role = (prof as { role: UserRole } | null)?.role
-  if (!role || !STAFF_ROLES.includes(role)) return NextResponse.json({ error: "Accès refusé" }, { status: 403 })
+  const role = await roleStaffDeRequete(req)
+  if (!role) return NextResponse.json({ error: "Non authentifié" }, { status: 401 })
   if (!r2Configured()) return NextResponse.json({ error: "Stockage R2 non configuré" }, { status: 503 })
 
   const { id: propertyId } = await params

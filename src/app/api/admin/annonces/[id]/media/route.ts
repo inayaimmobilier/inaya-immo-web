@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient, createAdminClient } from "@/lib/supabase/server"
+import { roleStaffDeRequete } from "@/lib/staff-requete"
 import { uploadToR2, r2Configured, publicUrlForKey } from "@/lib/r2"
 import type { UserRole } from "@/types/database"
 
@@ -115,17 +116,17 @@ export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: "Non authentifié" }, { status: 401 })
-  const { data: prof } = await supabase.from("profiles").select("role").eq("id", user.id).single()
-  const role = (prof as { role: UserRole } | null)?.role
-  if (!role || !STAFF_ROLES.includes(role)) return NextResponse.json({ error: "Accès refusé" }, { status: 403 })
+  // Back-office web (cookie) ou app admin (jeton) : même route pour les deux.
+  const role = await roleStaffDeRequete(req)
+  if (!role) return NextResponse.json({ error: "Non authentifié" }, { status: 401 })
 
   const { id: propertyId } = await params
   let body: { items?: { key?: string; type?: string }[] }
   try { body = await req.json() } catch { return NextResponse.json({ error: "Corps invalide" }, { status: 400 }) }
-  const items = (body.items ?? []).filter(it => it.key)
+  // Seuls des fichiers déposés dans le dossier de CETTE annonce (clés émises
+  // par /presign) : sans ce filtre, n'importe quel objet du stockage pouvait
+  // être rattaché à n'importe quelle annonce.
+  const items = (body.items ?? []).filter(it => it.key?.startsWith(`properties/${propertyId}/`))
   if (items.length === 0) return NextResponse.json({ error: "Aucun média à enregistrer" }, { status: 400 })
 
   const admin = createAdminClient()
