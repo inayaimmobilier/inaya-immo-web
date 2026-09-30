@@ -50,7 +50,7 @@ export default function ContactForm({ propertyId, initial, isResidence = false, 
       else {
         // Conversion Pixel Meta : demande de visite / réservation = un Lead.
         fbTrack("Lead", { content_category: isResidence ? "reservation" : "visite", content_ids: [propertyId] })
-        adsConversion("formulaire")
+        adsConversion("formulaire", { telephone: String(form.get("contact_telephone") ?? ""), email: String(form.get("contact_email") ?? "") })
         setDone(true)
       }
     })

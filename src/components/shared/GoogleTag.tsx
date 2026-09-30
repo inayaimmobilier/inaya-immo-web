@@ -26,7 +26,7 @@ gtag("consent", "default", etat(c === "granted"));
 window.addEventListener("inaya-consent", function (e) { gtag("consent", "update", etat(e.detail === "granted")); });
 window.__inayaAds = ${JSON.stringify({ conversions }).replace(/</g, "\\u003c")};
 gtag("js", new Date());
-gtag("config", ${JSON.stringify(tagId)});
+gtag("config", ${JSON.stringify(tagId)}, { allow_enhanced_conversions: true });
 `
   return (
     <>

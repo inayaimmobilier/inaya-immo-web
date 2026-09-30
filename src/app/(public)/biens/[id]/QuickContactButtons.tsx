@@ -73,7 +73,7 @@ export default function QuickContactButtons({
   /** Visiteur déjà identifié : on ouvre directement et on enregistre. */
   function ouvrirDirect(c: Canal) {
     fbTrack("Contact", { content_category: c, content_ids: [propertyId] })
-    adsConversion(c)
+    adsConversion(c, connu ? { telephone: connu.telephone } : undefined)
     recordContactClick(propertyId, c, true)
     if (connu) {
       createContactLead({ propertyId, nom: connu.nom, telephone: connu.telephone, message })
