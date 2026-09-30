@@ -4,6 +4,7 @@ import "./globals.css"
 import ChatWidget from "@/components/assistant/ChatWidget"
 import VisitTracker from "@/components/shared/VisitTracker"
 import MetaPixel from "@/components/shared/MetaPixel"
+import GoogleTag from "@/components/shared/GoogleTag"
 import CookieConsent from "@/components/shared/CookieConsent"
 import AppDownloadBanner from "@/components/shared/AppDownloadBanner"
 import { getApkUrl } from "@/lib/app-apk"
@@ -29,6 +30,34 @@ const getMetaPixelId = unstable_cache(
     }
   },
   ["meta-pixel-id"],
+  { revalidate: 300 },
+)
+
+/**
+ * Balise Google Ads (ID « AW-… ») + libellés de conversion, réglés dans Admin →
+ * Paramètres. Même cache de 5 min que le Pixel, pour la même raison.
+ */
+const getGoogleAds = unstable_cache(
+  async (): Promise<{ tagId: string | null; conversions: Record<string, string> }> => {
+    const repli = process.env.NEXT_PUBLIC_GOOGLE_TAG_ID || null
+    try {
+      const { data } = await createAdminClient().from("app_settings").select("key, value")
+        .in("key", ["google_tag_id", "google_ads_conversions"])
+      const lignes = (data ?? []) as { key: string; value: unknown }[]
+      const id = lignes.find(l => l.key === "google_tag_id")?.value
+      const conv = lignes.find(l => l.key === "google_ads_conversions")?.value
+      const conversions: Record<string, string> = {}
+      if (conv && typeof conv === "object") {
+        for (const [k, v] of Object.entries(conv as Record<string, unknown>)) {
+          if (typeof v === "string" && /^AW-\d+\/[\w-]+$/.test(v.trim())) conversions[k] = v.trim()
+        }
+      }
+      return { tagId: (typeof id === "string" && id.trim()) || repli, conversions }
+    } catch {
+      return { tagId: repli, conversions: {} }
+    }
+  },
+  ["google-ads"],
   { revalidate: 300 },
 )
 
@@ -88,6 +117,7 @@ export default async function RootLayout({
   children: React.ReactNode
 }) {
   const metaPixelId = await getMetaPixelId()
+  const googleAds = await getGoogleAds()
   // L'application n'est pas sur le Play Store : le site est le seul canal de
   // distribution, la bannière est donc sur TOUTES les pages publiques.
   const apkUrl = await getApkUrl()
@@ -116,6 +146,7 @@ export default async function RootLayout({
         <ChatWidget />
         <VisitTracker />
         <MetaPixel pixelId={metaPixelId} />
+        <GoogleTag tagId={googleAds.tagId} conversions={googleAds.conversions} />
         <CookieConsent />
         <AppDownloadBanner apkUrl={apkUrl ?? ""} pro={estPro} />
       </body>

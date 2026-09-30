@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { MessageCircle, Phone, ShieldCheck, X } from "lucide-react"
 import { createContactLead } from "./contacter/actions"
-import { fbTrack } from "@/lib/analytics"
+import { adsConversion, fbTrack } from "@/lib/analytics"
 import { getVisitorContact, recordContactClick, setVisitorContact } from "@/lib/contact-memory"
 
 // Normalise un numéro ivoirien pour wa.me / tel: (international sans « + »).
@@ -73,6 +73,7 @@ export default function QuickContactButtons({
   /** Visiteur déjà identifié : on ouvre directement et on enregistre. */
   function ouvrirDirect(c: Canal) {
     fbTrack("Contact", { content_category: c, content_ids: [propertyId] })
+    adsConversion(c)
     recordContactClick(propertyId, c, true)
     if (connu) {
       createContactLead({ propertyId, nom: connu.nom, telephone: connu.telephone, message })
@@ -83,6 +84,7 @@ export default function QuickContactButtons({
   /** Visiteur inconnu : l'intention est enregistrée AVANT même de demander quoi que ce soit. */
   function demander(c: Canal) {
     fbTrack("Contact", { content_category: c, content_ids: [propertyId] })
+    adsConversion(c)
     recordContactClick(propertyId, c, false)
     setCanal(c); setErr(null); setPret(false)
   }

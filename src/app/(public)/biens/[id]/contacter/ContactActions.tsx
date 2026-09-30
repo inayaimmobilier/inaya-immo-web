@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { MessageCircle, Phone, Loader2 } from "lucide-react"
 import { createContactLead } from "./actions"
-import { fbTrack } from "@/lib/analytics"
+import { adsConversion, fbTrack } from "@/lib/analytics"
 import { getVisitorContact, recordContactClick, setVisitorContact } from "@/lib/contact-memory"
 
 // Normalise un numéro ivoirien pour wa.me / tel: (format international sans « + »).
@@ -53,6 +53,7 @@ export default function ContactActions({
     if (!target) { setError("Numéro de contact non configuré."); return }
     // Conversion Pixel Meta : prise de contact.
     fbTrack("Contact", { content_category: kind === "wa" ? "whatsapp" : "call", content_ids: [propertyId] })
+    adsConversion(kind === "wa" ? "whatsapp" : "appel")
 
     const identifie = !!nom.trim() && tel.replace(/\D/g, "").length >= 8
     // Le clic est enregistré dans TOUS les cas — c'est lui qui mesure l'intérêt réel.

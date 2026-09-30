@@ -41,3 +41,18 @@ export function fbTrack(event: string, params?: Record<string, unknown>): void {
   const fbq = (window as unknown as { fbq?: (...a: unknown[]) => void }).fbq
   try { if (typeof fbq === "function") fbq("track", event, params) } catch { /* ignore */ }
 }
+
+/** Types de conversion Google Ads suivis (libellés réglés dans Admin → Paramètres). */
+export type AdsConversion = "whatsapp" | "appel" | "formulaire"
+
+/**
+ * Conversion Google Ads (clic WhatsApp, appel, demande envoyée). No-op si la
+ * balise n'est pas installée ou si aucun libellé n'est réglé pour ce type. Le
+ * consentement est géré par la balise elle-même (mode consentement). Ne lève jamais.
+ */
+export function adsConversion(kind: AdsConversion): void {
+  if (typeof window === "undefined") return
+  const w = window as unknown as { gtag?: (...a: unknown[]) => void; __inayaAds?: { conversions?: Record<string, string> } }
+  const sendTo = w.__inayaAds?.conversions?.[kind]
+  try { if (sendTo && typeof w.gtag === "function") w.gtag("event", "conversion", { send_to: sendTo }) } catch { /* ignore */ }
+}

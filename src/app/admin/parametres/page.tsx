@@ -46,6 +46,7 @@ export default async function ParametresPage({ searchParams }: PageProps) {
     return v == null ? fallback : String(v)
   }
   const canaux = (settings.get("notif_canaux") as string[] | undefined) ?? []
+  const convGoogle = (settings.get("google_ads_conversions") as Record<string, string> | undefined) ?? {}
   const followupFreq = get("followup_frequency_hours", "24")
   const followupStatuts = (settings.get("followup_statuts") as string[] | undefined) ?? ["en_traitement", "contacte", "visite_planifiee"]
   // Règles d'alerte, fusionnées avec les défauts : une base qui n'a pas encore
@@ -113,6 +114,26 @@ export default async function ParametresPage({ searchParams }: PageProps) {
                 Depuis Meta Events Manager → votre Pixel → ID (16 chiffres). Laissez vide pour désactiver le suivi Meta.
               </p>
             </div>
+            <div className="sm:col-span-2">
+              <label className={label}>Balise Google (Google Ads) — ID</label>
+              <input name="google_tag_id" defaultValue={get("google_tag_id")} placeholder="ex. AW-18483714391" className={field} />
+              <p className="text-xs text-gray-400 mt-1">
+                Google Ads → Outils → Balise Google. Laissez vide pour désactiver. Aucun cookie publicitaire avant l&apos;accord du visiteur (bandeau cookies).
+              </p>
+            </div>
+            {([
+              ["google_conv_whatsapp", "Conversion Google Ads — clic WhatsApp"],
+              ["google_conv_appel", "Conversion Google Ads — clic appel"],
+              ["google_conv_formulaire", "Conversion Google Ads — demande envoyée"],
+            ] as const).map(([nom, titre]) => (
+              <div key={nom}>
+                <label className={label}>{titre}</label>
+                <input name={nom} defaultValue={convGoogle[nom.replace("google_conv_", "")] ?? ""} placeholder="ex. AW-18483714391/AbCdEf123" className={field} />
+              </div>
+            ))}
+            <p className="sm:col-span-2 text-xs text-gray-400 -mt-2">
+              Google Ads → Objectifs → Conversions → votre action → « Configurer la balise » : copiez la valeur « send_to » (AW-…/…). Vide = conversion non suivie.
+            </p>
           </div>
         </section>
 

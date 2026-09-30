@@ -80,6 +80,12 @@ export async function saveSettings(form: FormData): Promise<ActionResult> {
     { key: "delai_expiration_jours", value: Number(str("delai_expiration_jours")) || 30 },
     { key: "contact_support", value: str("contact_support") },
     { key: "meta_pixel_id", value: str("meta_pixel_id").replace(/\D/g, "") },
+    // Balise Google Ads : « AW-123… » (majuscules, sans espaces) ; libellés de
+    // conversion « AW-…/… » — une valeur mal formée est ignorée, pas enregistrée.
+    { key: "google_tag_id", value: /^(AW|G|GT)-[A-Z0-9]+$/.test(str("google_tag_id").toUpperCase().replace(/\s/g, "")) ? str("google_tag_id").toUpperCase().replace(/\s/g, "") : "" },
+    { key: "google_ads_conversions", value: Object.fromEntries((["whatsapp", "appel", "formulaire"] as const)
+      .map(k => [k, str(`google_conv_${k}`).replace(/\s/g, "")] as const)
+      .filter(([, v]) => /^AW-\d+\/[\w-]+$/.test(v))) },
     { key: "commission_residence_pct", value: Number(str("commission_residence_pct")) || 10 },
     { key: "notif_canaux", value: canaux },
     { key: "followup_frequency_hours", value: Number(str("followup_frequency_hours")) || 24 },
