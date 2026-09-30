@@ -46,7 +46,7 @@ export type SearchArgs = {
 function categoryUniverse(cat: string): "residentiel" | "commercial" | "terrain" | "autre" {
   if (cat === "terrain") return "terrain"
   if (cat === "local_commercial" || cat === "bureau" || cat === "magasin") return "commercial"
-  if (cat === "maison" || cat === "appartement" || cat === "studio") return "residentiel"
+  if (cat === "maison" || cat === "appartement" || cat === "studio" || cat === "villa") return "residentiel"
   return "autre"
 }
 
@@ -129,6 +129,24 @@ const dateMs = (p: RawProperty) => (p.created_at ? new Date(p.created_at).getTim
 // façons (« entré couché », « entrer coucher », « entrée-couchée »…) : on détecte
 // le radical « entr…couch ».
 const ENTREE_COUCHEE_RE = /entr[a-z]*[\s-]*couch/i
+
+/**
+ * Logement d'UNE SEULE pièce : studio, entrée couchée, chambre en villa /
+ * chambre simple. À Bouaké, « maison » veut dire au moins une chambre ET un
+ * salon : qui cherche une maison ne veut ces biens qu'en dernier recours.
+ */
+const PIECE_UNIQUE_RE = /\bstudios?\b|chambre\s+(?:en|dans\s+une?)\s+(?:villa|cour|maison)|chambre\s+simple/i
+const CHAMBRE_SALON_RE = /chambres?\s*(?:et\s+)?(?:un\s+|1\s+)?salon|\b[2-9]\s*pi[eè]ces/i
+export function estPieceUnique(p: RawProperty): boolean {
+  if (p.categorie === "studio") return true
+  if (p.nb_pieces != null) return p.nb_pieces <= 1
+  const t = p.titre ?? ""
+  if (CHAMBRE_SALON_RE.test(t)) return false
+  return ENTREE_COUCHEE_RE.test(t) || PIECE_UNIQUE_RE.test(t)
+}
+
+/** Maison, appartement, villa : même besoin (« chambre salon » est rangé tantôt ici, tantôt là). */
+const LOGEMENTS_ENTIERS = new Set(["maison", "appartement", "villa"])
 
 /** Éclate un champ quartier libre en plusieurs quartiers (« Nimbo, Air France et Koko »). */
 function splitZones(args: SearchArgs): string[] {
@@ -242,7 +260,16 @@ export async function searchProperties(args: SearchArgs, opts: { limit?: number 
     // texte le dit, quelle que soit sa colonne (autre / magasin / local).
     const sousTypes = cats.filter(estSousTypeTexte)
     const parTexte = sousTypes.some(c => correspondSousType(c, p))
-    if (cats.length && !cats.includes(p.categorie) && !parTexte) {
+    // Qui demande une maison (ou au moins une chambre) veut un logement entier :
+    // « chambre salon » rangé en appartement lui convient autant qu'une maison,
+    // mais un studio ou une entrée couchée ne vient qu'EN FIN DE LISTE — montré
+    // quand même, faute de mieux, jamais devant (demande du DG, 30/09/2026).
+    const veutLogementEntier = !cats.includes("studio")
+      && (cats.some(c => LOGEMENTS_ENTIERS.has(c)) || (args.chambres_min ?? 0) >= 1)
+    const pieceUnique = veutLogementEntier && categoryUniverse(p.categorie) === "residentiel" && estPieceUnique(p)
+    const equivalent = cats.some(c => LOGEMENTS_ENTIERS.has(c)) && LOGEMENTS_ENTIERS.has(p.categorie)
+    if (pieceUnique) { score -= 0.3; soft++ }
+    else if (cats.length && !cats.includes(p.categorie) && !parTexte && !equivalent) {
       // Seuls des sous-types demandés et aucun ne correspond : l'univers « autre »
       // (fourre-tout) ne doit pas faire passer n'importe quel bien pour un conteneur.
       if (args.strict && sousTypes.length === cats.length) continue
@@ -264,6 +291,8 @@ export async function searchProperties(args: SearchArgs, opts: { limit?: number 
       else if (p.prix <= args.prix_max * 1.5) { score -= 0.45; soft++ }
       else continue // au-delà de +50 % : hors budget
     }
+    // Budget donné mais prix inconnu : gardé, après ceux qui le respectent.
+    if (typeof args.prix_max === "number" && !(p.prix != null && p.prix > 0)) score -= 0.05
     if (typeof args.prix_min === "number" && p.prix != null && p.prix > 0 && p.prix < args.prix_min) {
       // Plancher EXPLICITE (filtre de l'app, ex. Opportunités ≥ 5 M) : dur.
       // Simple pénalité, il laissait les biens bon marché passer, et l'app
