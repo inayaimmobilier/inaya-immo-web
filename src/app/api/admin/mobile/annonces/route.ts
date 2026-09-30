@@ -54,7 +54,23 @@ export async function GET(req: NextRequest) {
   const statut = p.get("statut") ?? ""
   const q = (p.get("q") ?? "").trim()
   const page = Math.max(1, Number(p.get("page") ?? 1))
+  // « Signalées » : annonces portant au moins un signalement NON traité, quel
+  // que soit leur statut — l'onglet du back-office, enfin sur le téléphone.
+  const signalees = p.get("signalees") === "1"
+  // Période des tuiles du tableau de bord : « aujourd'hui » = dernières 24 h,
+  // « semaine » = 7 derniers jours — le même calcul que leurs compteurs.
+  const jours = p.get("periode") === "jour" ? 1 : p.get("periode") === "semaine" ? 7 : 0
+  const depuis = jours ? new Date(Date.now() - jours * 86_400_000).toISOString() : null
   const admin = createAdminClient()
+
+  // Signalements ouverts (table courte) : pour le filtre, le badge de chaque
+  // carte et le compteur de l'onglet.
+  const nbSignal = new Map<string, number>()
+  {
+    const { data } = await admin.from("signalements").select("property_id").eq("statut", "nouveau").limit(5000)
+    for (const x of (data ?? []) as { property_id: string }[]) nbSignal.set(x.property_id, (nbSignal.get(x.property_id) ?? 0) + 1)
+  }
+  const idsSignales = [...nbSignal.keys()]
 
   let lignes: Record<string, unknown>[] = []
   let total = 0
@@ -91,17 +107,32 @@ export async function GET(req: NextRequest) {
         const id = String(r.id)
         if (vues.has(id)) continue
         if (statut && r.statut !== statut) continue
+        if (signalees && !nbSignal.has(id)) continue
+        if (depuis && String(r.created_at) < depuis) continue
         vues.add(id); fusion.push(r)
       }
     }
     total = fusion.length
     lignes = fusion.slice((page - 1) * PAR_PAGE, page * PAR_PAGE)
+  } else if (signalees) {
+    if (idsSignales.length) {
+      const lus: Record<string, unknown>[] = []
+      for (let i = 0; i < idsSignales.length; i += 100) {
+        const { data } = await admin.from("properties").select(COLONNES).in("id", idsSignales.slice(i, i + 100))
+        lus.push(...((data ?? []) as Record<string, unknown>[]))
+      }
+      lus.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+      if (depuis) lus.splice(0, lus.length, ...lus.filter(r => String(r.created_at) >= depuis))
+      total = lus.length
+      lignes = lus.slice((page - 1) * PAR_PAGE, page * PAR_PAGE)
+    }
   } else {
     let compte = admin.from("properties").select("id", { count: "exact", head: true })
     let data = admin.from("properties").select(COLONNES)
       .order("created_at", { ascending: false })
       .range((page - 1) * PAR_PAGE, page * PAR_PAGE - 1)
     if (statut) { compte = compte.eq("statut", statut); data = data.eq("statut", statut) }
+    if (depuis) { compte = compte.gte("created_at", depuis); data = data.gte("created_at", depuis) }
     const [c, d] = await Promise.all([compte, data])
     total = c.count ?? 0
     lignes = (d.data ?? []) as Record<string, unknown>[]
@@ -121,7 +152,8 @@ export async function GET(req: NextRequest) {
   }
 
   return NextResponse.json({
-    annonces: lignes.map(r => ({ ...r, cover: couverture.get(String(r.id)) ?? null })),
+    annonces: lignes.map(r => ({ ...r, cover: couverture.get(String(r.id)) ?? null, signalements: nbSignal.get(String(r.id)) ?? 0 })),
+    nbSignalees: idsSignales.length,
     total,
     page,
     pages: Math.max(1, Math.ceil(total / PAR_PAGE)),
