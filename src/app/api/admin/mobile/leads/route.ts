@@ -10,8 +10,9 @@ import { staffDepuisEntete, peut, refus } from "@/lib/admin-mobile"
 // première d'avoir cette application en poche.
 //
 // Les leads dont le client attend le plus viennent en premier — les « nouveau »
-// avant les dossiers déjà engagés — et à statut égal, les plus anciens d'abord :
-// un lead qui traîne est un client qui a déjà appelé ailleurs.
+// avant les dossiers déjà engagés — et à statut égal, le plus récent d'abord :
+// c'est le client qui attend une réponse MAINTENANT (le plus ancien d'abord
+// enterrait les demandes du jour derrière 80 dossiers jamais traités).
 // ============================================================================
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -57,7 +58,9 @@ export async function GET(req: NextRequest) {
   const lignes = (data ?? []) as unknown as Ligne[]
   const triees = [...lignes].sort((a, b) =>
     (URGENCE[a.statut] ?? 9) - (URGENCE[b.statut] ?? 9) ||
-    a.created_at.localeCompare(b.created_at))
+    // À urgence égale, le plus RÉCENT d'abord : 87 leads « nouveau » jamais
+    // traités repoussaient les demandes du jour en dernière page (01/10/2026).
+    b.created_at.localeCompare(a.created_at))
 
   const voitNumeros = peut(staff.role, "numeros")
   const debut = (page - 1) * PAR_PAGE

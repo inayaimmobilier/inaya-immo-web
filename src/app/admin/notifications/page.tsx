@@ -1,6 +1,7 @@
+import Link from "next/link"
 import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
-import { Bell, MessageSquare, Home, TrendingUp, Send, Clock } from "lucide-react"
+import { Bell, MessageSquare, Home, TrendingUp, Send, Clock, ArrowRight } from "lucide-react"
 import { formatRelativeDate } from "@/lib/utils"
 import type { UserRole, NotifCanal } from "@/types/database"
 import AutoRefresh from "@/components/shared/AutoRefresh"
@@ -13,6 +14,7 @@ interface NotifRow {
   id: string; canal: NotifCanal; type: string; titre: string | null
   contenu: string; lu: boolean; envoye: boolean; envoye_le: string | null
   erreur: string | null; created_at: string
+  payload: { lead_id?: string; property_id?: string } | null
 }
 
 const TYPE_ICON: Record<string, typeof Bell> = {
@@ -39,7 +41,7 @@ export default async function NotificationsPage() {
   // Notifications destinées à l'utilisateur courant
   const { data } = await supabase
     .from("notifications")
-    .select("id,canal,type,titre,contenu,lu,envoye,envoye_le,erreur,created_at")
+    .select("id,canal,type,titre,contenu,lu,envoye,envoye_le,erreur,created_at,payload")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false })
     .limit(100)
@@ -82,6 +84,21 @@ export default async function NotificationsPage() {
                       {!n.lu && <span className="w-2 h-2 rounded-full bg-blue-500" />}
                     </div>
                     <p className="text-sm text-gray-600 mt-0.5">{n.contenu}</p>
+                    {/* Ce que la notification concerne : un clic, et on agit. */}
+                    {(n.payload?.lead_id || n.payload?.property_id) && (
+                      <div className="flex flex-wrap gap-3 mt-1.5 text-xs font-medium">
+                        {n.payload?.lead_id && (
+                          <Link href={`/admin/leads/${n.payload.lead_id}`} className="inline-flex items-center gap-1 text-blue-600 hover:underline">
+                            Ouvrir la demande <ArrowRight className="w-3 h-3" />
+                          </Link>
+                        )}
+                        {n.payload?.property_id && (
+                          <Link href={`/admin/annonces/${n.payload.property_id}`} className="inline-flex items-center gap-1 text-gray-600 hover:underline">
+                            Voir l&apos;annonce <ArrowRight className="w-3 h-3" />
+                          </Link>
+                        )}
+                      </div>
+                    )}
                     <div className="flex items-center gap-3 mt-1.5 text-[11px] text-gray-400">
                       <span>{formatRelativeDate(n.created_at)}</span>
                       {n.envoye ? (
