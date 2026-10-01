@@ -18,8 +18,16 @@ export const dynamic = "force-dynamic"
 export const maxDuration = 60
 
 const PAR_PAGE = 25
-/** Notification périmée au redémarrage du service (jamais envoyée, et c'est voulu). */
-const OBSOLETE = "INAYA-NOTIF-013"
+/**
+ * Envois VOLONTAIREMENT abandonnés : périmés au redémarrage du service
+ * (« obsolète (purge démarrage) », sous plusieurs codes) ou annulés par
+ * l'anti-spam. 40 836 des ~40 950 « échecs » au 01/10/2026 : ce ne sont pas des
+ * clients oubliés, ils noyaient la centaine de vrais échecs.
+ */
+const ABANDON_OU = "erreur.ilike.obsol*,erreur.ilike.annul*,erreur.ilike.nettoyage*"
+type Requete = { not: (c: string, op: string, v: string) => Requete }
+const sansAbandons = <T extends Requete>(q: T): T =>
+  q.not("erreur", "ilike", "obsol*").not("erreur", "ilike", "annul*").not("erreur", "ilike", "nettoyage*") as T
 
 export async function GET(req: NextRequest) {
   const staff = await staffDepuisEntete(req.headers.get("authorization"))
@@ -38,8 +46,8 @@ export async function GET(req: NextRequest) {
 
   // Les échecs RÉELS : une notification périmée au redémarrage n'est pas un
   // client oublié — elle a sa propre ligne (et son bouton de nettoyage).
-  if (etat === "echec") q = q.not("erreur", "is", null).or(`code_erreur.is.null,code_erreur.neq.${OBSOLETE}`)
-  else if (etat === "obsolete") q = q.eq("code_erreur", OBSOLETE)
+  if (etat === "echec") q = sansAbandons(q.not("erreur", "is", null))
+  else if (etat === "obsolete") q = q.or(ABANDON_OU)
   else if (etat === "attente") q = q.eq("envoye", false).is("erreur", null)
   else if (etat === "envoye") q = q.eq("envoye", true)
   if (type) q = q.eq("type", type)
@@ -51,9 +59,8 @@ export async function GET(req: NextRequest) {
         admin.from("notifications").select("id", { count: "exact", head: true }).eq("envoye", false).is("erreur", null),
         admin.from("notifications").select("id", { count: "exact", head: true }).eq("envoye", true)
           .gte("created_at", new Date(Date.now() - 7 * 86400_000).toISOString()),
-        admin.from("notifications").select("id", { count: "exact", head: true }).not("erreur", "is", null)
-          .or(`code_erreur.is.null,code_erreur.neq.${OBSOLETE}`),
-        admin.from("notifications").select("id", { count: "exact", head: true }).eq("code_erreur", OBSOLETE),
+        sansAbandons(admin.from("notifications").select("id", { count: "exact", head: true }).not("erreur", "is", null)),
+        admin.from("notifications").select("id", { count: "exact", head: true }).or(ABANDON_OU),
       ])
       return { enAttente: att.count ?? 0, envoyees7j: env.count ?? 0, enEchec: ech.count ?? 0, obsoletes: obs.count ?? 0 }
     })(),
@@ -86,8 +93,8 @@ export async function GET(req: NextRequest) {
 }
 
 /**
- * Suppression : une sélection (`ids`), ou toutes les notifications périmées
- * (`obsoletes: true`), par lots pour rester sous le délai SQL. Renvoie ce qui
+ * Suppression : une sélection (`ids`), ou tous les envois abandonnés (périmés,
+ * annulés — `obsoletes: true`), par lots pour rester sous le délai SQL. Renvoie ce qui
  * reste à nettoyer : l'application relance tant qu'il en reste.
  */
 export async function DELETE(req: NextRequest) {
@@ -111,14 +118,14 @@ export async function DELETE(req: NextRequest) {
     let supprimees = 0
     const fin = Date.now() + 40_000
     while (Date.now() < fin) {
-      const { data } = await admin.from("notifications").select("id").eq("code_erreur", OBSOLETE).limit(500)
+      const { data } = await admin.from("notifications").select("id").or(ABANDON_OU).limit(500)
       const ids = ((data ?? []) as { id: string }[]).map(x => x.id)
       if (!ids.length) break
       const { error } = await admin.from("notifications").delete().in("id", ids)
       if (error) return NextResponse.json({ error: error.message, supprimees }, { status: 500 })
       supprimees += ids.length
     }
-    const { count } = await admin.from("notifications").select("id", { count: "exact", head: true }).eq("code_erreur", OBSOLETE)
+    const { count } = await admin.from("notifications").select("id", { count: "exact", head: true }).or(ABANDON_OU)
     return NextResponse.json({ ok: true, supprimees, restantes: count ?? 0 })
   }
   return NextResponse.json({ error: "rien_a_supprimer" }, { status: 400 })
