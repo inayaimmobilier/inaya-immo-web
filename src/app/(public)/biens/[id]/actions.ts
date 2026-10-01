@@ -6,6 +6,7 @@ import { enregistrerSignalement, type ResultatSignalement } from "@/lib/signalem
 import {
   notifyNewLead, notifyClientVisiteRecue, notifyProprietaireVisite, notifyStaff,
 } from "@/lib/notifications"
+import { journaliser, leadRecent } from "@/lib/lead-suivi"
 
 type LeadResult = { ok: true } | { ok: false; error: string }
 
@@ -45,6 +46,21 @@ export async function createLead(form: FormData): Promise<LeadResult> {
     return { ok: false, error: "Cette annonce n'est plus disponible." }
 
   const creneaux = creneau ? [{ souhaite: creneau }] : []
+
+  // DOUBLON (même personne, même bien, < 24 h) : on complète la demande
+  // existante au lieu d'en ouvrir une autre — pas de second dossier, pas de
+  // second accusé de réception, pas de seconde alerte au staff.
+  {
+    const admin = createAdminClient()
+    const dejaLa = await leadRecent(admin, propertyId, tel)
+    if (dejaLa) {
+      if (message && !(dejaLa.message ?? "").includes(message)) {
+        await admin.from("leads").update({ message: [dejaLa.message, message].filter(Boolean).join("\n— ") } as never).eq("id", dejaLa.id)
+      }
+      await journaliser(admin, dejaLa.id, { type: "doublon", detail: "Le client a renvoyé sa demande (regroupée avec celle-ci)." })
+      return { ok: true }
+    }
+  }
 
   // Jeton du lien de validation envoyé au propriétaire.
   const token = randomUUID()

@@ -11,6 +11,14 @@
     {
       "path": "/api/cron/agent-automations",
       "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/suivi-leads?mode=matin",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/suivi-leads?mode=soir",
+      "schedule": "0 17 * * *"
     }
   ]
 }

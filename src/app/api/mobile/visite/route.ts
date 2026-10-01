@@ -46,6 +46,17 @@ export async function POST(req: NextRequest) {
   if (!prop || prop.statut !== "publie") return NextResponse.json({ error: "Cette annonce n'est plus disponible." }, { status: 404 })
   const reservation = prop.type_offre === "residence_meublee"
 
+  // DOUBLON (même personne, même bien, < 24 h) : demande regroupée, sans
+  // nouvel accusé de réception ni nouvelle alerte au staff.
+  {
+    const { journaliser, leadRecent } = await import("@/lib/lead-suivi")
+    const dejaLa = await leadRecent(admin, propertyId, tel)
+    if (dejaLa) {
+      await journaliser(admin, dejaLa.id, { type: "doublon", detail: "Le client a renvoyé sa demande depuis l'application (regroupée)." })
+      return NextResponse.json({ ok: true, lead_id: dejaLa.id, deja: true })
+    }
+  }
+
   const token = randomUUID()
   const payload: Record<string, unknown> = {
     property_id: propertyId,

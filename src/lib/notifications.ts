@@ -99,6 +99,17 @@ export async function notifyStaff(
     return 0
   }
 
+  // Push sur les téléphones du staff (application admin) : un appui ouvre la
+  // demande / l'annonce concernée (data.lead_id / data.property_id). Inopérant
+  // tant qu'aucun appareil n'est enregistré — jamais bloquant.
+  try {
+    const { sendExpoPushToUser } = await import("@/lib/push")
+    await Promise.all(recipients.map(uid => sendExpoPushToUser(uid, {
+      title: notif.titre ?? "Inaya Immo", body: notif.contenu,
+      data: { type: notif.type, ...(notif.payload ?? {}) },
+    })))
+  } catch (e) { console.error("INAYA-NOTIF-PUSH", e) }
+
   // Doublon volontaire vers Telegram, envoyé par le site lui-même : les lignes
   // ci-dessus attendent le service WhatsApp pour partir, or celui-ci tombe
   // régulièrement. La supervision de l'admin ne doit pas en dépendre.
