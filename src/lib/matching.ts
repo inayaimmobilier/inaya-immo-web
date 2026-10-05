@@ -288,7 +288,11 @@ export async function runMatchingForProperty(propertyId: string): Promise<number
   ])
   // Alertes EXPIRÉES (durée de vie des alertes pro, migration 045) : ni matchées
   // ni notifiées. Les alertes des clients finaux (expire_at NULL) sont permanentes.
-  const requests = ((reqData ?? []) as MatchableRequest[]).filter(r => !isSearchExpired(r))
+  // Agents immobiliers externes (liste du DG) : leurs demandes de groupe ne
+  // reçoivent aucune alerte.
+  const { finsAgents, demandeDAgent } = await import("@/lib/agents-immobiliers")
+  const agents = await finsAgents(db)
+  const requests = ((reqData ?? []) as MatchableRequest[]).filter(r => !isSearchExpired(r) && !demandeDAgent(r, agents))
   const already = new Set((existing ?? []).map(m => (m as { search_request_id: string }).search_request_id))
   const allowGroup = await groupAlertsEnabled(db)
   const regles = await lireReglesAlertes(db)
@@ -373,6 +377,10 @@ export async function runMatchingForRequest(requestId: string, opts: { notify?: 
   const { data: reqData } = await db.from("search_requests").select(REQ_COLS).eq("id", requestId).single()
   const request = reqData as MatchableRequest | null
   if (!request || isSearchExpired(request)) return []
+  {
+    const { finsAgents, demandeDAgent } = await import("@/lib/agents-immobiliers")
+    if (demandeDAgent(request, await finsAgents(db))) return []
+  }
 
   // Pré-filtre large pour limiter la charge ; le scoring fin fait le reste.
   let q = db.from("properties").select(PROP_COLS).eq("statut", "publie").limit(500)

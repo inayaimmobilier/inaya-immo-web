@@ -67,6 +67,15 @@ export async function respondToDemande(requestId: string): Promise<{ matched: nu
   const tel = request.contact_telephone?.trim()
   if (!tel) return { matched: 0, sent: false, skipped: "sans_numero" }
 
+  // Agent immobilier externe (liste du DG) : la demande reste enregistrée, à
+  // part, mais la plateforme ne lui répond pas.
+  {
+    const { finsAgents, demandeDAgent } = await import("@/lib/agents-immobiliers")
+    if (demandeDAgent(request as { canal?: string | null; contact_telephone?: string | null }, await finsAgents(db))) {
+      return { matched: 0, sent: false, skipped: "agent_immobilier" }
+    }
+  }
+
   // Garde-fou anti-ban : pas de nouvelle réponse « à froid » si ce numéro en a déjà
   // reçu une récemment (il a pu poster plusieurs demandes d'affilée).
   const cutoff = new Date(Date.now() - COOLDOWN_H * 3_600_000).toISOString()

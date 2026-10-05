@@ -60,7 +60,14 @@ export async function GET(req: NextRequest) {
   const { data, error } = await requete
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  let lignes = (data ?? []) as Recherche[]
+  // Agents immobiliers externes : leurs demandes de groupe sont rangées À PART
+  // (vue « agents »), hors des autres vues.
+  const { finsAgents, demandeDAgent } = await import("@/lib/agents-immobiliers")
+  const agents = await finsAgents(admin)
+  const dAgent = (r: Recherche) => demandeDAgent(r as { canal?: string | null; contact_telephone?: string | null }, agents)
+  const nbAgents = ((data ?? []) as Recherche[]).filter(dAgent).length
+
+  let lignes = ((data ?? []) as Recherche[]).filter(r => (vue === "agents" ? dAgent(r) : !dAgent(r)))
   if (q) {
     lignes = lignes.filter(r =>
       [r.contact_nom, r.contact_telephone, r.description_libre, ...(r.zones ?? [])]
@@ -81,9 +88,11 @@ export async function GET(req: NextRequest) {
       nb_pieces_min: r.nb_pieces_min, surface_min: r.surface_min, meuble: r.meuble,
       description_libre: r.description_libre,
       exploitable: estExploitable(r),
+      agent_immobilier: dAgent(r),
     })),
     total: lignes.length,
-    aQualifier: (data ?? []).filter(r => !estExploitable(r as Recherche)).length,
+    aQualifier: (data ?? []).filter(r => !dAgent(r as Recherche) && !estExploitable(r as Recherche)).length,
+    agents: nbAgents,
     page,
     pages: Math.max(1, Math.ceil(lignes.length / PAR_PAGE)),
     droits: { modifier: peut(staff.role, "moderer") },
