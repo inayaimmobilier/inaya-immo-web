@@ -47,8 +47,15 @@ export async function GET(req: NextRequest) {
   const { count: enAttenteIngestion } = await db.from("whatsapp_messages")
     .select("id", { count: "exact", head: true }).eq("traite", false)
 
+  // État de l'IA d'ingestion (écrit par le service) : une panne — crédit
+  // épuisé — arrête toute création d'annonce, il faut la voir tout de suite.
+  const { data: iaRow } = await db.from("app_settings").select("value").eq("key", "ia_ingestion").maybeSingle()
+  const iaVal = (iaRow as { value?: { ok?: boolean; cause?: string; depuis?: string } } | null)?.value
+  const ia = { ok: iaVal?.ok !== false, cause: iaVal?.cause ?? null, depuis: iaVal?.depuis ?? null }
+
   const n = (r: { count: number | null }) => r.count ?? 0
   return NextResponse.json({
+    ia,
     annonces: {
       publiees: n(publiees), enAttente: n(enAttente), signalees: n(signalees),
       aujourdhui: n(aujourdhui), semaine: n(semaine),

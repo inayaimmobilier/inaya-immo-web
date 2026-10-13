@@ -30,7 +30,24 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(mode === "matin" ? await recapitulatif(admin) : await rappelsVisites(admin))
 }
 
+/** IA d'ingestion en panne (crédit épuisé…) : rappel au staff chaque matin tant que ça dure. */
+async function alerteIa(admin: ReturnType<typeof createAdminClient>): Promise<boolean> {
+  const { data } = await admin.from("app_settings").select("value").eq("key", "ia_ingestion").maybeSingle()
+  const v = (data as { value?: { ok?: boolean; cause?: string; depuis?: string } } | null)?.value
+  if (!v || v.ok !== false) return false
+  const { count } = await admin.from("whatsapp_messages").select("id", { count: "exact", head: true }).eq("traite", false)
+  const { notifyStaff } = await import("@/lib/notifications")
+  await notifyStaff({
+    type: "alerte_ia",
+    titre: "IA d'ingestion en panne",
+    contenu: `Aucune annonce n'est créée depuis le ${v.depuis ? new Date(v.depuis).toLocaleDateString("fr-FR", { day: "numeric", month: "long", timeZone: "UTC" }) : "début de la panne"} : ${v.cause ?? "l'IA ne répond plus"}. ${count ?? 0} messages des groupes attendent.`,
+    payload: { ecran: "accueil" },
+  })
+  return true
+}
+
 async function recapitulatif(admin: ReturnType<typeof createAdminClient>) {
+  await alerteIa(admin).catch(() => false)
   const hier = new Date(Date.now() - 24 * 3600_000).toISOString()
   const { count } = await admin.from("leads").select("id", { count: "exact", head: true })
     .eq("statut", "nouveau").lt("created_at", hier)
