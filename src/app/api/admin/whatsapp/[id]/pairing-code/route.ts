@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 
+export const maxDuration = 60
+
 const WA_SERVICE_URL = process.env.WA_SERVICE_URL ?? "http://localhost:3099"
 const WA_HTTP_SECRET = process.env.WA_HTTP_SECRET ?? ""
 
@@ -28,7 +30,8 @@ export async function POST(
         ...(WA_HTTP_SECRET ? { "x-inaya-secret": WA_HTTP_SECRET } : {}),
       },
       body: JSON.stringify({ accountId: id }),
-      signal: AbortSignal.timeout(15_000),
+      // Le service peut devoir rouvrir une connexion avant de demander le code.
+      signal: AbortSignal.timeout(45_000),
     })
     const data = await res.json() as Record<string, unknown>
     return NextResponse.json(data, { status: res.status })
