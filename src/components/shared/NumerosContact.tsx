@@ -37,12 +37,30 @@ export function BarreContact() {
   if (!numeros.length) return null
   return (
     <div className="bg-slate-950 text-white">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 h-9 flex items-center gap-3 overflow-x-auto whitespace-nowrap text-xs [scrollbar-width:none]">
-        <span className="hidden sm:inline-flex items-center gap-1.5 text-slate-300 shrink-0">
+      {/* Mobile : centré, gros boutons Appeler / WhatsApp faciles à toucher. */}
+      <div className="sm:hidden overflow-x-auto [scrollbar-width:none] py-2 px-3">
+        <div className="w-max mx-auto flex items-center gap-3">
+          {numeros.map(n => (
+            <div key={n.numero} className="flex items-center gap-1.5">
+              <a href={lienAppel(n.numero)}
+                className="inline-flex items-center gap-1.5 bg-amber-400 active:bg-amber-300 text-slate-900 font-bold text-sm pl-2.5 pr-3 py-1.5 rounded-full shadow"
+                aria-label={`Appeler ${n.libelle ?? "Inaya"} au ${numeroAffiche(n.numero)}`}>
+                <Phone className="w-4 h-4" /> {numeroAffiche(n.numero)}
+              </a>
+              {n.whatsapp && (
+                <a href={lienWhatsApp(n.numero)} target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 bg-green-500 active:bg-green-400 text-white font-bold text-sm px-3 py-1.5 rounded-full shadow"
+                  aria-label="Écrire sur WhatsApp">
+                  <MessageCircle className="w-4 h-4" /> WhatsApp
+                </a>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="hidden sm:flex max-w-6xl mx-auto px-4 sm:px-6 h-9 items-center gap-3 overflow-x-auto whitespace-nowrap text-xs [scrollbar-width:none]">
+        <span className="inline-flex items-center gap-1.5 text-slate-300 shrink-0">
           <Headset className="w-3.5 h-3.5 text-amber-400" /> Besoin d&apos;aide ? Appelez un conseiller Inaya :
-        </span>
-        <span className="sm:hidden inline-flex items-center gap-1.5 text-amber-400 font-semibold shrink-0">
-          <Phone className="w-3.5 h-3.5" /> Appelez-nous
         </span>
         {numeros.map(n => (
           <span key={n.numero} className="inline-flex items-center gap-1.5 shrink-0">
