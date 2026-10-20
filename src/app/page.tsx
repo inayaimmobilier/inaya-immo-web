@@ -5,6 +5,8 @@ import PropertyCard from "@/components/properties/PropertyCard"
 import Navbar from "@/components/shared/Navbar"
 import HomeSearch from "@/components/shared/HomeSearch"
 import ServiceBanners from "@/components/shared/ServiceBanners"
+import { BandeauConseiller, ContactPied } from "@/components/shared/NumerosContact"
+import { lireNumerosContact } from "@/lib/numeros-contact"
 import AdSpace from "@/components/ads/AdComponents"
 import CityMarquee from "@/components/shared/CityMarquee"
 import AutoRefresh from "@/components/shared/AutoRefresh"
@@ -98,8 +100,8 @@ async function getServiceBanners() {
 }
 
 export default async function Home() {
-  const [stats, recentProperties, residences, villes, serviceBanners, testimonials, hero] = await Promise.all([
-    getStats(), getRecentProperties(), getResidences(), getVilles(), getServiceBanners(), getPublishedTestimonials(6), getHero(),
+  const [stats, recentProperties, residences, villes, serviceBanners, testimonials, hero, numerosContact] = await Promise.all([
+    getStats(), getRecentProperties(), getResidences(), getVilles(), getServiceBanners(), getPublishedTestimonials(6), getHero(), lireNumerosContact(),
   ])
 
   return (
@@ -230,6 +232,9 @@ export default async function Home() {
         )}
 
         {/* ── NOS SERVICES ─────────────────────────────────────────────── */}
+        {/* Au milieu de l'accueil : appeler un conseiller, sans formulaire. */}
+        <BandeauConseiller numeros={numerosContact} />
+
         <ServiceBanners banners={serviceBanners} />
 
         {/* ── CTA PROPRIÉTAIRES ────────────────────────────────────────── */}
@@ -350,6 +355,7 @@ export default async function Home() {
                 <span className="text-white font-bold text-sm">Inaya Immo</span>
                 <span className="text-slate-600 text-sm hidden sm:inline">· Bouaké, Côte d&apos;Ivoire</span>
               </div>
+              <ContactPied numeros={numerosContact} />
               <div className="flex items-center gap-6 text-xs text-slate-500">
                 <Link href="/biens" className="hover:text-slate-300 transition-colors">Annonces</Link>
                 <Link href="/publier" className="hover:text-slate-300 transition-colors">Publier</Link>

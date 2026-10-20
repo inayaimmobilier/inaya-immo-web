@@ -176,3 +176,50 @@ export async function saveSettings(form: FormData): Promise<ActionResult> {
   revalidatePath("/admin/parametres")
   return { ok: true }
 }
+
+/**
+ * Numéros de contact d'Inaya affichés sur le site et l'application (en haut
+ * des pages, au milieu et en bas de l'accueil). Liste libre : ajout,
+ * modification, suppression, ordre.
+ */
+export async function saveNumerosContact(
+  numeros: { numero: string; libelle: string | null; whatsapp: boolean; actif: boolean }[],
+): Promise<ActionResult> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { ok: false, error: "Non authentifié." }
+  const { data } = await supabase.from("profiles").select("role").eq("id", user.id).single()
+  const role = (data as { role: UserRole } | null)?.role
+  if (role !== "super_admin" && role !== "admin")
+    return { ok: false, error: "Action réservée aux administrateurs." }
+
+  const vus = new Set<string>()
+  const propre: typeof numeros = []
+  for (const n of numeros) {
+    const chiffres = (n.numero ?? "").replace(/\D/g, "")
+    if (chiffres.length < 8) continue
+    const cle = chiffres.slice(-8)
+    if (vus.has(cle)) continue
+    vus.add(cle)
+    propre.push({
+      numero: (n.numero ?? "").trim().replace(/[^\d+ ]/g, ""),
+      libelle: n.libelle?.trim().slice(0, 40) || null,
+      whatsapp: !!n.whatsapp, actif: n.actif !== false,
+    })
+  }
+  if (numeros.some(n => (n.numero ?? "").replace(/\D/g, "").length > 0 && (n.numero ?? "").replace(/\D/g, "").length < 8)) {
+    return { ok: false, error: "Un numéro est incomplet (au moins 8 chiffres)." }
+  }
+
+  const { error } = await supabase.from("app_settings")
+    .upsert({ key: "numeros_contact", value: propre, updated_by: user.id } as never, { onConflict: "key" })
+  if (error) {
+    console.error("INAYA-SET-030", error)
+    return { ok: false, error: "Échec de l'enregistrement des numéros." }
+  }
+  // updateTag (action serveur) : la nouvelle liste est servie dès la page suivante.
+  const { updateTag } = await import("next/cache")
+  updateTag("numeros-contact")
+  revalidatePath("/", "layout")
+  return { ok: true }
+}

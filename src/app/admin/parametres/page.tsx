@@ -8,6 +8,8 @@ import { configuredSecretNames } from "@/lib/secrets"
 import { getPropertyTypes } from "@/lib/property-types-server"
 import { fusionner } from "@/lib/alertes-reglages"
 import PropertyTypesManager from "./PropertyTypesManager"
+import NumerosContactManager from "./NumerosContactManager"
+import { lireNumerosContact } from "@/lib/numeros-contact"
 
 export const metadata = { title: "Paramètres · Inaya Immo" }
 
@@ -75,6 +77,8 @@ export default async function ParametresPage({ searchParams }: PageProps) {
 
       {/* Types de biens gérés par l'admin (recherche accueil + filtres) */}
       <div className="max-w-2xl">
+        <NumerosContactManager initial={await lireNumerosContact()} />
+
         <PropertyTypesManager initial={propertyTypes} />
       </div>
 

@@ -6,6 +6,7 @@ import { useEffect, useState } from "react"
 import { Menu, X, Search, PlusCircle, User, KeyRound, LogOut, LayoutDashboard, Smartphone } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { postLoginPath } from "@/lib/account-actions"
+import { BarreContact } from "@/components/shared/NumerosContact"
 
 interface Session {
   nom: string
@@ -51,6 +52,8 @@ export default function Navbar() {
 
   return (
     <nav className="bg-white border-b border-gray-200 sticky top-0 z-50">
+      {/* Numéros d'Inaya, en haut de chaque page : un toucher pour appeler. */}
+      <BarreContact />
       <div className="max-w-6xl mx-auto px-4 sm:px-6">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
